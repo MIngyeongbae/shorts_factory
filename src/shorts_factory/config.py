@@ -3,6 +3,7 @@
 파이프라인 산출물 배치는 specs/05-pipeline.md, specs/06-topic-research.md를 따른다.
 - topics/{slug}/  : 토픽 패키지 (사람이 읽는 산출물, ADR-0009)
 - runs/{run_id}/  : 단계 간 JSON 계약 + 실행 상태 (재시작 가능성)
+- knowledge/      : 소스 카드 라이브러리 (토픽 간 누적 자산, ADR-0012)
 """
 
 from __future__ import annotations
@@ -49,6 +50,11 @@ class Paths:
     @property
     def runs(self) -> Path:
         return self.root / "runs"
+
+    @property
+    def knowledge(self) -> Path:
+        """소스 카드 라이브러리. run·토픽에 종속되지 않는 누적 자산 (ADR-0012)."""
+        return self.root / "knowledge"
 
     def topic_dir(self, slug: str) -> Path:
         return self.topics / slug

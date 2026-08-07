@@ -75,7 +75,12 @@ class ClaudeCodeClient(LLMClient):
 
     # --- 내부 -------------------------------------------------------------
 
-    def _build_cmd(self, allowed_tools: Sequence[str], system_append: str) -> list[str]:
+    def _build_cmd(
+        self,
+        allowed_tools: Sequence[str],
+        system_append: str,
+        add_dirs: Sequence[Path] = (),
+    ) -> list[str]:
         cmd = [
             self.executable,
             "-p",
@@ -86,6 +91,9 @@ class ClaudeCodeClient(LLMClient):
         if allowed_tools:
             # 가변 인자 옵션이므로 콤마로 합쳐 하나의 토큰으로 넘긴다
             cmd += ["--allowedTools", ",".join(allowed_tools)]
+        for directory in add_dirs:
+            # 작업 디렉터리는 중립 임시 경로로 유지한 채 읽기 경로만 연다 (ADR-0012)
+            cmd += ["--add-dir", str(directory)]
         if self.model:
             cmd += ["--model", self.model]
         if system_append:
@@ -131,9 +139,10 @@ class ClaudeCodeClient(LLMClient):
         timeout: int | None = None,
         system_append: str = "",
         label: str = "",
+        add_dirs: Sequence[Path] = (),
     ) -> LLMResult:
         timeout = timeout or self.default_timeout
-        cmd = self._build_cmd(allowed_tools, system_append)
+        cmd = self._build_cmd(allowed_tools, system_append, add_dirs)
         last_error = ""
 
         for attempt in range(1, self.max_retries + 1):

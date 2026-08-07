@@ -23,6 +23,7 @@ from .. import runstate
 from ..backlog import STATUS_REJECTED
 from ..config import Paths, write_text
 from ..jsonio import JSONExtractionError, dump_json, extract_json_object
+from ..knowledge import KnowledgeStore, extract_contract
 from ..llm.base import LLMClient
 from ..runstate import RunState
 from ..schemas.factsheet import validate_factsheet
@@ -34,6 +35,8 @@ STAGE = "0b-research"
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 WEB_TOOLS = ("WebSearch", "WebFetch")
+#: 소스 카드를 읽어야 하는 세션 (ADR-0012). Read는 열어준 디렉터리에만 닿는다.
+SOURCE_TOOLS = WEB_TOOLS + ("Read",)
 
 #: 팩트시트가 스키마·규칙 검증을 통과할 때까지의 재생성 상한
 MAX_FACTSHEET_ATTEMPTS = 3
@@ -56,6 +59,9 @@ class Substep:
     timeout: int
     #: 프롬프트에 주입할 선행 산출물 (ADR-0009 오염 방지: 03은 01만 받는다)
     needs: tuple[str, ...] = ()
+    #: 소스 카드 인덱스를 주입하고 `## 참조 소스`를 수확할지 (ADR-0012).
+    #: 03은 콘텐츠 가치만 판정하므로 라이브러리에 닿지 않는다.
+    uses_knowledge: bool = False
 
     @property
     def stage_key(self) -> str:
@@ -63,8 +69,10 @@ class Substep:
 
 
 SUBSTEPS: tuple[Substep, ...] = (
-    Substep("01-research", "01-research.md", "01-research.md", WEB_TOOLS, 900),
-    Substep("02-verify", "02-verify.md", "02-verify.md", WEB_TOOLS, 900, ("research",)),
+    Substep("01-research", "01-research.md", "01-research.md", SOURCE_TOOLS, 900,
+            uses_knowledge=True),
+    Substep("02-verify", "02-verify.md", "02-verify.md", SOURCE_TOOLS, 900, ("research",),
+            uses_knowledge=True),
     Substep("03-critique", "03-critique.md", "03-critique.md", WEB_TOOLS, 900, ("research",)),
     Substep(
         "04-factsheet",
@@ -145,14 +153,43 @@ def _build_feedback(problems: list[str]) -> str:
     )
 
 
+def _harvest_sources(
+    step: Substep,
+    text: str,
+    *,
+    slug: str,
+    store: KnowledgeStore,
+    warnings: list[str],
+) -> None:
+    """산출물 끝의 `## 참조 소스`를 카드로 반영한다 (ADR-0012).
+
+    계약 위반은 경고로만 올린다. 조사 본문은 유효한데 부록 파싱 실패로
+    900초짜리 세션을 버리는 것은 손해다.
+    """
+    contract = extract_contract(text)
+    if contract is None:
+        warnings.append(
+            f"{step.key}: 산출물에 `## 참조 소스` JSON이 없어 소스 카드를 만들지 못했다"
+        )
+        return
+
+    created, updated, issues = store.apply(contract, slug=slug)
+    warnings.extend(f"{step.key}: {issue}" for issue in issues)
+    if created or updated:
+        store.reindex()
+        log.info("[%s] 소스 카드 신규 %d건 / 갱신 %d건", step.key, created, updated)
+
+
 def _run_substep(
     step: Substep,
     *,
     topic: str,
+    slug: str,
     topic_dir: Path,
     state: RunState,
     llm: LLMClient,
     paths: Paths,
+    store: KnowledgeStore,
     force: bool,
     executed: list[str],
     skipped: list[str],
@@ -168,7 +205,7 @@ def _run_substep(
                         output=out_path.relative_to(paths.root).as_posix())
         return out_path.read_text(encoding="utf-8")
 
-    context = {"topic": topic}
+    context = {"topic": topic, "knowledge": ""}
     for need in step.needs:
         source = topic_dir / _SOURCE_FILES[need]
         if not source.exists():
@@ -176,6 +213,13 @@ def _run_substep(
                 f"[{step.key}] 선행 산출물이 없다: {source.name}"
             )
         context[need] = source.read_text(encoding="utf-8")
+
+    add_dirs: tuple[Path, ...] = ()
+    if step.uses_knowledge:
+        # 카드가 0장이면 주입문이 빈 문자열이라 첫 실행은 현행과 동일하게 돈다
+        context["knowledge"] = store.injection()
+        if context["knowledge"]:
+            add_dirs = (store.root,)
 
     prompt = _load_prompt(step.prompt).safe_substitute(**context, feedback="")
 
@@ -186,6 +230,7 @@ def _run_substep(
         allowed_tools=step.tools,
         timeout=step.timeout,
         label=step.key,
+        add_dirs=add_dirs,
     )
 
     if step.tools and (result.num_turns or 0) < MIN_TOOL_TURNS:
@@ -196,6 +241,10 @@ def _run_substep(
 
     write_text(out_path, result.text.strip() + "\n")
     executed.append(step.key)
+
+    if step.uses_knowledge:
+        _harvest_sources(step, result.text, slug=slug, store=store, warnings=warnings)
+
     state.mark_done(
         step.stage_key,
         output=out_path.relative_to(paths.root).as_posix(),
@@ -315,6 +364,7 @@ def run_research_stage(
     topic_dir = paths.topic_dir(slug)
     run_dir = paths.run_dir(run_id)
     state = RunState.load_or_create(run_dir, run_id, topic=topic, slug=slug)
+    store = KnowledgeStore(paths.knowledge)
 
     if state.is_done(STAGE) and not force and not only:
         existing_path = topic_dir / "04-factsheet.json"
@@ -354,9 +404,9 @@ def run_research_stage(
                 warnings.extend(sheet_warnings)
             else:
                 _run_substep(
-                    step, topic=topic, topic_dir=topic_dir, state=state, llm=llm,
-                    paths=paths, force=force, executed=executed, skipped=skipped,
-                    warnings=warnings,
+                    step, topic=topic, slug=slug, topic_dir=topic_dir, state=state,
+                    llm=llm, paths=paths, store=store, force=force,
+                    executed=executed, skipped=skipped, warnings=warnings,
                 )
     except Exception as exc:
         state.mark_failed(STAGE, f"{type(exc).__name__}: {exc}")

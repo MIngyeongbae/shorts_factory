@@ -14,6 +14,7 @@ import pytest
 
 from conftest import load_fixture
 from shorts_factory.backlog import parse_backlog
+from shorts_factory.knowledge import KnowledgeStore, make_source_id
 from shorts_factory.llm.base import LLMError
 from shorts_factory.llm.fake import FakeLLMClient
 from shorts_factory.stages import status as status_mod
@@ -114,8 +115,9 @@ def test_web_tools_granted_only_to_collecting_sessions(prepared):
     llm = FakeLLMClient(_responses())
     run_research_stage(SLUG, llm=llm, paths=prepared)
 
-    assert llm.calls[0]["allowed_tools"] == ("WebSearch", "WebFetch")
-    assert llm.calls[1]["allowed_tools"] == ("WebSearch", "WebFetch")
+    # 01·02는 소스 카드를 읽어야 해서 Read가 더 붙는다 (ADR-0012)
+    assert llm.calls[0]["allowed_tools"] == ("WebSearch", "WebFetch", "Read")
+    assert llm.calls[1]["allowed_tools"] == ("WebSearch", "WebFetch", "Read")
     assert llm.calls[2]["allowed_tools"] == ("WebSearch", "WebFetch")
     # 종합 단계는 새 사실을 찾으면 안 되므로 도구를 주지 않는다
     assert llm.calls[3]["allowed_tools"] == ()
@@ -271,3 +273,118 @@ def test_unknown_substep_raises(prepared):
 def test_missing_run_raises(paths):
     with pytest.raises(ResearchStageError, match="0a"):
         run_research_stage("없는-슬러그", llm=FakeLLMClient([]), paths=paths)
+
+
+# --- 소스 카드 라이브러리 (ADR-0012) --------------------------------------
+
+SOURCE_URL = "https://seoulcitywall.seoul.go.kr/content/8.do"
+CONTRACT = json.dumps(
+    {
+        "reused": [],
+        "new": [
+            {
+                "url": SOURCE_URL,
+                "title": "서울 한양도성 — 도성의 역사",
+                "type": "reference",
+                "subjects": ["한양도성"],
+                "excerpts": ["숙종 이후에는 감독관·책임기술자·날짜 등을 명기하였다."],
+                "facts": [{"claim": "실명 각인은 숙종 대 이후다.", "confidence": "high"}],
+            }
+        ],
+    },
+    ensure_ascii=False,
+)
+
+
+def _with_sources(body: str) -> str:
+    return f"{body}\n\n## 참조 소스\n\n```json\n{CONTRACT}\n```\n"
+
+
+def _harvesting_responses() -> list[str]:
+    """01·02가 참조 소스를 달고 나오는 정상 응답."""
+    return [
+        _with_sources(RESEARCH_MD),
+        _with_sources(VERIFY_MD),
+        CRITIQUE_MD,
+        _sheet("factsheet_pass.json"),
+    ]
+
+
+def test_harvests_cards_from_research_and_verify(prepared):
+    result = run_research_stage(SLUG, llm=FakeLLMClient(_harvesting_responses()),
+                                paths=prepared)
+
+    store = KnowledgeStore(prepared.knowledge)
+    card = store.load(make_source_id(SOURCE_URL))
+    assert card is not None
+    assert card.topics == [SLUG]
+    # 01과 02가 같은 사실을 냈으므로 두 줄이 아니라 한 줄이어야 한다
+    assert len(card.facts) == 1
+    assert store.index_path.is_file()
+    assert not result.warnings
+
+
+def test_first_run_injects_nothing_and_opens_no_directory(prepared):
+    """카드가 0장이면 현행 파이프라인과 동일하게 돈다."""
+    llm = FakeLLMClient(_harvesting_responses())
+    run_research_stage(SLUG, llm=llm, paths=prepared)
+
+    assert "재검색·재fetch를 금지한다" not in llm.calls[0]["prompt"]
+    assert llm.calls[0]["add_dirs"] == ()
+
+
+def test_existing_cards_are_injected_into_research_and_verify(prepared):
+    store = KnowledgeStore(prepared.knowledge)
+    store.apply(json.loads(CONTRACT), slug="다른-토픽")
+    store.reindex()
+
+    llm = FakeLLMClient(_harvesting_responses())
+    run_research_stage(SLUG, llm=llm, paths=prepared)
+
+    for call in llm.calls[:2]:
+        assert "재검색·재fetch를 금지한다" in call["prompt"]
+        assert make_source_id(SOURCE_URL) in call["prompt"]
+        assert call["add_dirs"] == (prepared.knowledge,)
+
+
+def test_critique_never_sees_the_library(prepared):
+    """03은 콘텐츠 가치만 판정한다. 라이브러리에 닿을 이유가 없다 (ADR-0009)."""
+    store = KnowledgeStore(prepared.knowledge)
+    store.apply(json.loads(CONTRACT), slug="다른-토픽")
+    store.reindex()
+
+    llm = FakeLLMClient(_harvesting_responses())
+    run_research_stage(SLUG, llm=llm, paths=prepared)
+
+    critique = llm.calls[2]
+    assert "재검색·재fetch를 금지한다" not in critique["prompt"]
+    assert make_source_id(SOURCE_URL) not in critique["prompt"]
+    assert critique["add_dirs"] == ()
+    assert critique["allowed_tools"] == ("WebSearch", "WebFetch")
+
+
+def test_collecting_sessions_get_read_tool(prepared):
+    llm = FakeLLMClient(_harvesting_responses())
+    run_research_stage(SLUG, llm=llm, paths=prepared)
+
+    assert llm.calls[0]["allowed_tools"] == ("WebSearch", "WebFetch", "Read")
+    assert llm.calls[1]["allowed_tools"] == ("WebSearch", "WebFetch", "Read")
+
+
+def test_missing_contract_warns_without_failing_the_stage(prepared):
+    """부록 파싱 실패로 900초짜리 조사 세션을 버리지 않는다."""
+    llm = FakeLLMClient(_responses())  # 참조 소스 섹션이 없는 응답
+    result = run_research_stage(SLUG, llm=llm, paths=prepared)
+
+    assert result.passed
+    assert any("참조 소스" in w for w in result.warnings)
+    assert KnowledgeStore(prepared.knowledge).load_all() == []
+
+
+def test_rerun_does_not_duplicate_cards(prepared):
+    run_research_stage(SLUG, llm=FakeLLMClient(_harvesting_responses()), paths=prepared)
+    run_research_stage(SLUG, llm=FakeLLMClient([]), paths=prepared)
+
+    store = KnowledgeStore(prepared.knowledge)
+    assert len(store.load_all()) == 1
+    assert store.load(make_source_id(SOURCE_URL)).topics == [SLUG]

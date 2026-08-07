@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Sequence
 
 
@@ -56,9 +57,14 @@ class LLMClient(ABC):
         timeout: int | None = None,
         system_append: str = "",
         label: str = "",
+        add_dirs: Sequence[Path] = (),
     ) -> LLMResult:
         """프롬프트 1건을 **독립 세션**으로 실행하고 최종 텍스트를 돌려준다.
 
         세션 간 컨텍스트는 공유되지 않는다 (ADR-0009 자기 검증 오염 방지).
+
+        `add_dirs`는 세션이 Read할 수 있게 열어줄 디렉터리다 (ADR-0012의 소스 카드).
+        작업 디렉터리는 여전히 중립 임시 경로이고 도구도 읽기 전용이므로,
+        ADR-0011의 격리 계약은 그대로다.
         """
         raise NotImplementedError

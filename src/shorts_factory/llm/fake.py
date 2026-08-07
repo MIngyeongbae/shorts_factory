@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable, Sequence
 
 from .base import LLMClient, LLMError, LLMResult
@@ -30,6 +31,7 @@ class FakeLLMClient(LLMClient):
         timeout: int | None = None,
         system_append: str = "",
         label: str = "",
+        add_dirs: Sequence[Path] = (),
     ) -> LLMResult:
         self.calls.append(
             {
@@ -37,6 +39,7 @@ class FakeLLMClient(LLMClient):
                 "allowed_tools": tuple(allowed_tools),
                 "label": label,
                 "system_append": system_append,
+                "add_dirs": tuple(add_dirs),
             }
         )
         if not self._responses:

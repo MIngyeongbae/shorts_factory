@@ -58,6 +58,7 @@ topics/backlog.md
 | `research.json` | [0b] | 팩트시트 사본 (스펙 06) |
 | `logs/*.json` | LLM 어댑터 | 헤드리스 세션 응답 원본 |
 
+- 소스 카드(`knowledge/`)는 run·토픽에 종속되지 않는 **누적 자산**이라 run 디렉터리에 두지 않는다 (ADR-0012)
 - `slug`: 음운 변화 미적용 로마자 표기, `[a-z0-9-]` 최대 60자 (ADR-0011)
 - `run_id`: `YYYYMMDD-{slug}`
 - 헤드리스 세션에는 읽기 도구만 준다. 산출물 파일은 오케스트레이터가 쓴다 (ADR-0011)

@@ -3,6 +3,7 @@
     python run.py topic     [--topic 소재명]
     python run.py research  --slug SLUG [--only 01-research]
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
+    python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
 ADR-0008에 따라 LLM 단계는 claude 헤드리스 서브프로세스로 실행된다.
 """
@@ -15,6 +16,7 @@ import sys
 from pathlib import Path
 
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths
+from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.topic import TopicStageError, run_topic_stage
@@ -89,6 +91,13 @@ def _cmd_package(args, paths: Paths) -> int:
     return 3 if research_result.verdict == "fail" else 0
 
 
+def _cmd_knowledge(args, paths: Paths) -> int:
+    store = KnowledgeStore(paths.knowledge)
+    count = store.reindex()
+    print(f"소스 카드 {count}건 → {store.index_path}")
+    return 0
+
+
 def _common_options() -> argparse.ArgumentParser:
     """서브커맨드 앞뒤 어느 위치에서도 받는 공통 옵션.
 
@@ -141,6 +150,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
     p_package.add_argument("--topic", default=None)
     p_package.set_defaults(func=_cmd_package)
+
+    p_knowledge = sub.add_parser("knowledge", parents=[common],
+                                 help="소스 카드 라이브러리 (ADR-0012)")
+    p_knowledge.add_argument("action", choices=["reindex"],
+                             help="reindex: 카드 frontmatter에서 index.md를 다시 만든다")
+    p_knowledge.set_defaults(func=_cmd_knowledge)
 
     return parser
 
