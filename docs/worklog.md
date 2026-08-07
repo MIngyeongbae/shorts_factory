@@ -18,3 +18,4 @@
   - 없음
 - **주의**
   - 훅 스크립트는 Windows PowerShell 5.1로 실행된다. 수정 시 UTF-8 **BOM** 유지 필수 (BOM 없으면 한글이 cp949로 읽혀 깨짐)
+  - PreToolUse 훅의 `git commit` 정규식은 명령 문자열에 그 글자가 들어 있기만 해도 걸린다 (예: `git show HEAD:.claude/hooks/pre-commit-worklog.ps1`). 경고 전용이라 무해하니 헛경고는 무시한다
