@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 환경변수 / API 키 (ElevenLabs, 이미지 모델 등)
+.env
+.env.*
+!.env.example
+*.key
+
+# 파이프라인 산출물 (runs/ 아래 렌더 결과물은 커밋하지 않음)
+runs/*
+!runs/.gitkeep
+
+# 미디어 바이너리 (스타일 앵커 등 레퍼런스는 예외적으로 명시 커밋)
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.m4a
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# OS / 에디터
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
