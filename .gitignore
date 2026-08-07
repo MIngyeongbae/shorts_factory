@@ -19,7 +19,7 @@ env/
 runs/*
 !runs/.gitkeep
 
-# 미디어 바이너리 (스타일 앵커 등 레퍼런스는 예외적으로 명시 커밋)
+# 미디어 바이너리 (생성 산출물은 재생성 가능하므로 커밋하지 않음)
 *.mp4
 *.mov
 *.mp3
@@ -29,6 +29,12 @@ runs/*
 *.jpg
 *.jpeg
 *.webp
+
+# 예외: 스타일 앵커는 룩 재현의 기준이므로 버전 관리 대상 (ADR-0005)
+!assets/style_anchors/*.png
+!assets/style_anchors/*.jpg
+!assets/style_anchors/*.jpeg
+!assets/style_anchors/*.webp
 
 # OS / 에디터
 Thumbs.db
