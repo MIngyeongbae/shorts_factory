@@ -1,0 +1,31 @@
+{
+  "topic": "미완성 소재",
+  "verdict": "fail",
+  "conditions": {
+    "twist": true,
+    "failed_alternative": false,
+    "numbers": true,
+    "present_link": true
+  },
+  "facts": [
+    {
+      "id": "f01",
+      "claim": "해당 유적은 1520년에 처음 기록에 등장한다",
+      "numbers": ["1520년"],
+      "source": "실록 중종 15년",
+      "confidence": "medium"
+    },
+    {
+      "id": "f02",
+      "claim": "기록상 규모는 둘레 4km, 인부 3천 명이다",
+      "numbers": ["4km", "3천 명"],
+      "source": "읍지 기록",
+      "confidence": "low"
+    }
+  ],
+  "twist": "알려진 축조 목적과 사료의 기록이 다르다",
+  "failed_alternatives": [],
+  "present_link": "현재 터만 남아 있으나 방문 가능",
+  "reject_reason": "딜레마 구간을 채울 '실패한 대안'의 사료가 없다",
+  "notes": "테스트 픽스처 (verdict=fail 경로 검증용)"
+}

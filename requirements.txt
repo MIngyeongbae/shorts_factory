@@ -1,0 +1,6 @@
+# 1부 파이프라인 ([0a. topic] ~ [0b. research])
+# LLM 호출은 claude CLI 서브프로세스라 SDK 의존성이 없다 (ADR-0008)
+jsonschema>=4.20
+
+# 개발/테스트
+pytest>=8.0

@@ -1,0 +1,24 @@
+[project]
+name = "shorts-factory"
+version = "0.1.0"
+description = "지식 쇼츠 자동 생성 파이프라인"
+requires-python = ">=3.11"
+dependencies = ["jsonschema>=4.20"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+shorts_factory = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
