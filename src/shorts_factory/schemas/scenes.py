@@ -3,8 +3,11 @@
 [1. script]가 대본과 비트 태그를 한 번에 출력하므로(ADR-0003) 이 계약이 대본 단계의
 첫 기계 검증 지점이다.
 
+씬 1개 = 자막 줄(SRT 큐) 1개다 (ADR-0013). 문장이 아니라서 한 씬의 `text`에 문장이
+1~3개 들어갈 수 있다.
+
 이 모듈은 **스펙 02의 씬 스키마와 스펙 05의 봉투(run_id/topic/total_duration/scenes)만**
-본다. 스펙 01의 대본 규칙(글자 수, 문장 수, 시그니처 문구, 수미상관)과 ADR-0007
+본다. 스펙 01의 대본 규칙(글자 수, 자막 줄 수, 시그니처 문구, 수미상관)과 ADR-0007
 그라운딩은 이 모듈이 손대지 않는다 — 별도 검증기가 맡는다.
 
 `est_start`/`est_end`는 TTS 이전 추정치다. TTS 후 `start`/`end`로 바뀐 형태(스펙 02)는
@@ -124,7 +127,7 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     scenes: list[dict[str, Any]] = data.get("scenes", [])
 
-    # 규칙: scene_id는 1부터 연번이며 대본 문장 순서와 일치 (specs/02)
+    # 규칙: scene_id는 1부터 연번이며 자막 줄 순서와 일치 (specs/02, ADR-0013)
     expected = list(range(1, len(scenes) + 1))
     actual = [s.get("scene_id") for s in scenes]
     if actual != expected:
@@ -140,8 +143,8 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
 
         if start >= end:
             errors.append(f"scenes/{sid}: est_start({start}) >= est_end({end})")
-        # 씬은 대본 문장 순서를 그대로 따르므로 시간이 역행하거나 겹칠 수 없다.
-        # (스펙 02에 명시된 문장은 아니고 "scene_id는 문장 순서와 일치"에서 파생한 규칙)
+        # 씬은 자막 줄 순서를 그대로 따르므로 시간이 역행하거나 겹칠 수 없다.
+        # (스펙 02에 명시된 문장은 아니고 "scene_id는 자막 줄 순서와 일치"에서 파생한 규칙)
         elif prev_end is not None and start < prev_end:
             errors.append(
                 f"scenes/{sid}: est_start({start})가 앞 씬의 est_end({prev_end})보다 이르다"
