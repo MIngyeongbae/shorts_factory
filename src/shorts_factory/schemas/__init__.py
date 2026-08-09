@@ -6,6 +6,12 @@ from .factsheet import (
     semantic_warnings,
     validate_factsheet,
 )
+from .grounding import (
+    MAGNITUDES,
+    extract_values,
+    factsheet_values,
+    validate_grounding,
+)
 from .scenes import (
     BEATS,
     CAMERAS,
@@ -32,4 +38,8 @@ __all__ = [
     "SCENE_SCHEMA",
     "SCENES_SCHEMA",
     "validate_scenes",
+    "MAGNITUDES",
+    "extract_values",
+    "factsheet_values",
+    "validate_grounding",
 ]
