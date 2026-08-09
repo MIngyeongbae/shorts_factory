@@ -1,0 +1,204 @@
+{
+  "run_id": "20260807-hanyangdoseong-gakjaseongseok",
+  "topic": "한양도성 각자성석",
+  "total_duration": 63.2,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "beat": "hook_fact",
+      "text": "한양도성 성벽에는 글자가 새겨진 돌이 있습니다.",
+      "est_start": 0.0,
+      "est_end": 4.6,
+      "subject": "한양도성 성벽 전경",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 2,
+      "beat": "hook_twist",
+      "text": "그런데 이건 인부의 낙서가 아닙니다.",
+      "est_start": 4.6,
+      "est_end": 8.4,
+      "emphasis": {
+        "type": "red_x",
+        "value": "낙서"
+      },
+      "subject": "각자성석 클로즈업",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 3,
+      "beat": "context",
+      "text": "성벽은 전국에서 올라온 백성들이 쌓았습니다.",
+      "est_start": 8.4,
+      "est_end": 12.6,
+      "subject": "성벽 축조 현장 조감",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 4,
+      "beat": "context_number",
+      "text": "동원된 인원만 십일만 팔천 명이었죠.",
+      "est_start": 12.6,
+      "est_end": 17.0,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "11만 8천"
+      },
+      "subject": "축조 인부 행렬 조감",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 5,
+      "beat": "failed_solution",
+      "text": "가장 쉬운 방법은 감독관을 붙이는 겁니다.",
+      "est_start": 17.0,
+      "est_end": 21.4,
+      "emphasis": {
+        "type": "red_label_box",
+        "value": "감독관"
+      },
+      "subject": "성벽 앞 감독관",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 6,
+      "beat": "failure_reason",
+      "text": "하지만 성벽 전 구간을 감시할 수는 없었죠.",
+      "est_start": 21.4,
+      "est_end": 26.0,
+      "subject": "끝없이 이어지는 성벽 능선",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 7,
+      "beat": "failed_solution",
+      "text": "그럼 잘 쌓은 구간에 포상하면 되지 않냐고요?",
+      "est_start": 26.0,
+      "est_end": 30.8,
+      "subject": "포상 장면 미디엄 샷",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 8,
+      "beat": "failure_reason",
+      "text": "무너진 뒤엔 누가 쌓았는지 알 수가 없었습니다.",
+      "est_start": 30.8,
+      "est_end": 35.4,
+      "emphasis": {
+        "type": "red_x",
+        "value": "무너진 구간"
+      },
+      "subject": "무너진 성벽 잔해",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 9,
+      "beat": "dilemma_peak",
+      "text": "환장할 노릇이죠.",
+      "est_start": 35.4,
+      "est_end": 37.2,
+      "emphasis": {
+        "type": "red_x_large",
+        "value": "성벽 전체"
+      },
+      "subject": "붕괴된 성벽 와이드 뷰",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 10,
+      "beat": "turning_point",
+      "text": "그래서 발상을 뒤집습니다.",
+      "est_start": 37.2,
+      "est_end": 39.4,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "발상"
+      },
+      "subject": "각자성석 정면 대칭 구도",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 11,
+      "beat": "solution_step",
+      "text": "감시하는 대신 돌에 이름을 새기게 했습니다.",
+      "est_start": 39.4,
+      "est_end": 44.0,
+      "subject": "성돌에 글자를 새기는 손",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 12,
+      "beat": "solution_number",
+      "text": "성벽을 아흔일곱 개 구간으로 나눴습니다.",
+      "est_start": 44.0,
+      "est_end": 48.6,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "97"
+      },
+      "subject": "구간으로 분할된 성벽 단면",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 13,
+      "beat": "solution_step",
+      "text": "구간마다 책임자의 이름과 직책을 새겼죠.",
+      "est_start": 48.6,
+      "est_end": 53.4,
+      "subject": "각자성석 글자 클로즈업",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 14,
+      "beat": "present_link",
+      "text": "지금도 낙산 구간에서 그 돌을 볼 수 있습니다.",
+      "est_start": 53.4,
+      "est_end": 58.0,
+      "emphasis": {
+        "type": "place_label",
+        "value": "낙산 구간"
+      },
+      "subject": "안개 낀 낙산 성벽 현재 모습",
+      "camera": "slow_zoom_out",
+      "motion": "kling",
+      "notes": "안개 유체 모션이 서사상 필요한 씬 (ADR-0006)"
+    },
+    {
+      "scene_id": 15,
+      "beat": "ending_echo",
+      "text": "낙서로 보이던 그 글자가 조선의 품질관리였습니다.",
+      "est_start": 58.0,
+      "est_end": 63.2,
+      "subject": "한양도성 성벽 전경",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    }
+  ]
+}

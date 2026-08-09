@@ -6,6 +6,16 @@ from .factsheet import (
     semantic_warnings,
     validate_factsheet,
 )
+from .scenes import (
+    BEATS,
+    CAMERAS,
+    MAX_KLING_SCENES,
+    MOTIONS,
+    NUMBER_BEATS,
+    SCENE_SCHEMA,
+    SCENES_SCHEMA,
+    validate_scenes,
+)
 
 __all__ = [
     "FACTSHEET_SCHEMA",
@@ -14,4 +24,12 @@ __all__ = [
     "semantic_errors",
     "semantic_warnings",
     "validate_factsheet",
+    "BEATS",
+    "CAMERAS",
+    "MAX_KLING_SCENES",
+    "MOTIONS",
+    "NUMBER_BEATS",
+    "SCENE_SCHEMA",
+    "SCENES_SCHEMA",
+    "validate_scenes",
 ]
