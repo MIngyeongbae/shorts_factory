@@ -3,11 +3,14 @@
 기준 픽스처는 `scenes_golden_baegak.json` — 레퍼런스 채널 "경복궁 뒷산은 왜 500년 동안
 도끼가 금지됐을까"의 원본 SRT를 그대로 옮긴 것이다. 실제로 성공한 대본이 자기 검증기를
 통과하는지가 이 슬라이스의 첫 시험이다.
+
+이 픽스처는 대본 전문을 담고 있어 저장소에 올리지 않는다. 없으면 해당 테스트는 skip된다.
+생성: `python tools/srt_to_scenes.py`
 """
 
 import pytest
 
-from conftest import load_fixture
+from conftest import FIXTURES, load_fixture
 from shorts_factory.schemas.script_rules import (
     LINE_CHARS_MAX,
     MIN_FAILED_SOLUTIONS,
@@ -21,6 +24,14 @@ from shorts_factory.schemas.scenes import validate_scenes
 GOLDEN = "scenes_golden_baegak.json"
 
 
+@pytest.fixture
+def golden() -> dict:
+    """골든 픽스처 사본. 없으면 skip (저작권 있는 원본 SRT에서 로컬 생성한다)."""
+    if not (FIXTURES / GOLDEN).exists():
+        pytest.skip(f"{GOLDEN}이 없다 — python tools/srt_to_scenes.py 로 생성한다")
+    return load_fixture(GOLDEN)
+
+
 def find(scenes: dict, beat: str) -> dict:
     return next(s for s in scenes["scenes"] if s["beat"] == beat)
 
@@ -28,16 +39,16 @@ def find(scenes: dict, beat: str) -> dict:
 # --- 기준 픽스처 -------------------------------------------------------------
 
 
-def test_golden_script_passes_clean():
+def test_golden_script_passes_clean(golden):
     """성공한 실제 대본이 오류·경고 없이 통과해야 한다."""
-    errors, warnings = validate_script(load_fixture(GOLDEN))
+    errors, warnings = validate_script(golden)
     assert errors == []
     assert warnings == []
 
 
-def test_golden_script_also_satisfies_scene_schema():
+def test_golden_script_also_satisfies_scene_schema(golden):
     """스펙 01과 스펙 02는 같은 파일을 두 각도에서 본다."""
-    errors, warnings = validate_scenes(load_fixture(GOLDEN))
+    errors, warnings = validate_scenes(golden)
     assert errors == []
     assert warnings == []
 
@@ -55,23 +66,23 @@ def test_schema_fixture_is_not_a_golden_script():
 # --- 검증 1: 7단 순서 ---------------------------------------------------------
 
 
-def test_stage_regression_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_stage_regression_is_rejected(golden):
+    scenes = golden
     scenes["scenes"][2]["beat"] = "ending_echo"  # 3번째 줄에 7단이 오면 뒤가 역행한다
     errors, _ = validate_script(scenes)
     assert any("역행" in e for e in errors)
 
 
-def test_missing_turning_point_beat_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_missing_turning_point_beat_is_rejected(golden):
+    scenes = golden
     find(scenes, "turning_point")["beat"] = "solution_step"
     errors, _ = validate_script(scenes)
     assert any("5단" in e for e in errors)
 
 
-def test_single_failed_solution_is_rejected():
+def test_single_failed_solution_is_rejected(golden):
     """3단·4단이 각각 있으려면 실패 대안이 두 번 나와야 한다."""
-    scenes = load_fixture(GOLDEN)
+    scenes = golden
     for scene in scenes["scenes"]:
         if scene["beat"] == "failed_solution":
             scene["beat"] = "failure_reason"
@@ -83,23 +94,23 @@ def test_single_failed_solution_is_rejected():
 # --- 검증 2: 필수 시그니처 문구 -----------------------------------------------
 
 
-def test_missing_turning_phrase_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_missing_turning_phrase_is_rejected(golden):
+    scenes = golden
     find(scenes, "turning_point")["text"] = "그래서 생각을 바꿉니다."
     errors, _ = validate_script(scenes)
     assert any(TURNING_PHRASE in e for e in errors)
 
 
-def test_turning_phrase_outside_window_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_turning_phrase_outside_window_is_rejected(golden):
+    scenes = golden
     find(scenes, "turning_point")["est_start"] = 20.0
     errors, _ = validate_script(scenes)
     assert any("44~54초" in e for e in errors)
 
 
-def test_dilemma_phrase_variant_is_not_required():
+def test_dilemma_phrase_variant_is_not_required(golden):
     """'환장할 노릇'은 권장이라 없어도 통과한다 (3편 중 1편은 아예 없다)."""
-    scenes = load_fixture(GOLDEN)
+    scenes = golden
     scene = find(scenes, "dilemma_peak")
     scene["text"] = scene["text"].replace(" 환장할 노릇입니다.", "")
     errors, _ = validate_script(scenes)
@@ -109,15 +120,15 @@ def test_dilemma_phrase_variant_is_not_required():
 # --- 검증 3: 분량 -------------------------------------------------------------
 
 
-def test_too_few_lines_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_too_few_lines_is_rejected(golden):
+    scenes = golden
     scenes["scenes"] = scenes["scenes"][:20]
     errors, _ = validate_script(scenes)
     assert any("자막" in e and "줄" in e for e in errors)
 
 
-def test_too_few_chars_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_too_few_chars_is_rejected(golden):
+    scenes = golden
     for scene in scenes["scenes"]:
         scene["text"] = scene["text"][:5]
     errors, _ = validate_script(scenes)
@@ -127,8 +138,8 @@ def test_too_few_chars_is_rejected():
 # --- 검증 4: solution 숫자 ----------------------------------------------------
 
 
-def test_solution_without_numbers_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_solution_without_numbers_is_rejected(golden):
+    scenes = golden
     for scene in scenes["scenes"]:
         if scene["beat"] in ("solution_step", "solution_number"):
             scene["text"] = "해결책을 설명하는 문장입니다."
@@ -136,9 +147,9 @@ def test_solution_without_numbers_is_rejected():
     assert any("solution" in e and "숫자" in e for e in errors)
 
 
-def test_context_numbers_are_not_required():
+def test_context_numbers_are_not_required(golden):
     """실측 3편 중 2편이 context에 숫자가 없다 — 검증하지 않는다 (specs/01)."""
-    scenes = load_fixture(GOLDEN)
+    scenes = golden
     for scene in scenes["scenes"]:
         if scene["beat"] == "context":
             scene["text"] = "숫자가 없는 배경 설명입니다."
@@ -149,8 +160,8 @@ def test_context_numbers_are_not_required():
 # --- 검증 5: 수미상관 ---------------------------------------------------------
 
 
-def test_missing_echo_is_rejected():
-    scenes = load_fixture(GOLDEN)
+def test_missing_echo_is_rejected(golden):
+    scenes = golden
     for scene in scenes["scenes"]:
         if scene["beat"] in ("hook_fact", "hook_twist"):
             scene["text"] = "전혀 다른 화제의 도입부 문장을 넣습니다."
@@ -181,8 +192,8 @@ def test_core_chars_excludes_whitespace_and_punctuation():
 # --- 경고 (차단하지 않음) -----------------------------------------------------
 
 
-def test_overlong_line_is_warning_not_error():
-    scenes = load_fixture(GOLDEN)
+def test_overlong_line_is_warning_not_error(golden):
+    scenes = golden
     target = scenes["scenes"][2]
     target["text"] = "가" * (LINE_CHARS_MAX + 5)
     errors, warnings = validate_script(scenes)
@@ -190,8 +201,8 @@ def test_overlong_line_is_warning_not_error():
     assert any(str(LINE_CHARS_MAX) in w for w in warnings)
 
 
-def test_speed_out_of_range_is_warning_not_error():
-    scenes = load_fixture(GOLDEN)
+def test_speed_out_of_range_is_warning_not_error(golden):
+    scenes = golden
     scenes["total_duration"] = 200.0
     _, warnings = validate_script(scenes)
     assert any("발화 속도" in w for w in warnings)

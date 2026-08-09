@@ -82,10 +82,17 @@ scenes/9: 0.88초 (줄당 0.9~6.8초)
 
 ## 재현
 
+원본 SRT는 남의 저작물이라 저장소에 없다. 원본 대본 전문을 담은 골든 픽스처도 마찬가지로
+`.gitignore` 대상이다. 로컬에 SRT를 두고 픽스처를 생성한 뒤 테스트를 돌린다.
+
 ```bash
+python tools/srt_to_scenes.py          # 신비한 건축사전 대본/*.srt → tests/fixtures/
 python -m pytest tests/test_script_rules.py -q
 ```
 
-골든 픽스처는 `tests/fixtures/scenes_golden_baegak.json`이며, 원본 SRT에서 기계적으로
-변환한 것이라 텍스트·타임스탬프는 원본과 1:1이다. 사람 판단이 들어간 필드는
-`beat`·`subject`·`emphasis`뿐이고 `camera`는 스펙 03의 비트별 기본값을 그대로 썼다.
+SRT가 없으면 골든 픽스처를 쓰는 테스트 15건은 skip되고, 픽스처와 무관한 6건
+(`noun_stems`·`core_chars` 유닛, 스키마 픽스처 대조)만 돈다.
+
+`tools/srt_to_scenes.py`에서 사람 판단이 들어간 것은 `beat`·`subject`·`emphasis`·`motion`
+테이블뿐이다. `camera`는 스펙 03의 비트별 기본값을 그대로 쓰고, 텍스트와 타임스탬프는
+SRT에서 1:1로 옮긴다.

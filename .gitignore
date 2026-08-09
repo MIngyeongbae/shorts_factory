@@ -36,6 +36,13 @@ runs/*
 !assets/style_anchors/*.jpeg
 !assets/style_anchors/*.webp
 
+# 레퍼런스 채널 대본 (남의 저작물). 분석 결과와 실측 수치만 docs/에 남긴다.
+신비한 건축사전 대본/
+*.srt
+
+# 원본 대본 전문을 담은 골든 픽스처. tools/srt_to_scenes.py로 로컬에서 생성한다.
+tests/fixtures/scenes_golden_baegak.json
+
 # OS / 에디터
 Thumbs.db
 ehthumbs.db
