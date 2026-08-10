@@ -4,10 +4,12 @@
     python run.py research  --slug SLUG [--only 01-research]
     python run.py script    --slug SLUG           # 팩트시트 → 대본 후보
     python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
+    python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
 ADR-0008에 따라 LLM 단계는 claude 헤드리스 서브프로세스로 실행된다.
+`prompt`는 2부 단계이고 LLM도 네트워크도 쓰지 않는다 (순수 룰 변환, ADR-0001).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
+from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
 from .stages.topic import TopicStageError, run_topic_stage
@@ -147,6 +150,21 @@ def _cmd_validate(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_prompt(args, paths: Paths) -> int:
+    """[5] 씬 계약 → 씬별 이미지 프롬프트.
+
+    run_id를 받지 않는다. 2부 산출물은 대본과 같은 run 디렉터리에 놓이고
+    그 run_id는 06-script.json에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
+    """
+    result = run_prompt_stage(args.slug, paths=paths, force=args.force)
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    for gap in result.prompts["rule_gaps"]:
+        print(f"  룰 공백 [{gap['code']}] 씬 {len(gap['scene_ids'])}개: {gap['issue']}")
+    return 0
+
+
 def _cmd_package(args, paths: Paths) -> int:
     topic_result = run_topic_stage(args.topic, paths=paths, force=args.force)
     print(topic_result.summary)
@@ -232,6 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--run-id", default=None)
     p_validate.set_defaults(func=_cmd_validate)
 
+    p_prompt = sub.add_parser("prompt", parents=[common],
+                              help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
+    p_prompt.add_argument("--slug", required=True)
+    p_prompt.set_defaults(func=_cmd_prompt)
+
     p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
     p_package.add_argument("--topic", default=None)
     p_package.set_defaults(func=_cmd_package)
@@ -274,7 +297,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args, paths)
     except (
-        TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError
+        TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError,
+        PromptStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1

@@ -74,6 +74,18 @@ def test_validate_takes_slug_and_run_id():
     assert args.slug == "abc" and args.run_id == "20260810-abc"
 
 
+def test_prompt_requires_slug():
+    with pytest.raises(SystemExit):
+        parse(["prompt"])
+
+
+def test_prompt_takes_no_run_id():
+    """[5]의 run_id는 06-script.json이 들고 있다 (ADR-0017 계보 = run_id)."""
+    args = parse(["prompt", "--slug", "abc"])
+    assert args.slug == "abc"
+    assert not hasattr(args, "run_id")
+
+
 #: 실제로 요약문을 깨뜨린 문자들. em dash는 [0b] 요약, 나머지는 전 단계 공통이다.
 KOREAN_SUMMARY = "[0b] 통과 — 피사의 사탑 지반 보강 (사실 92건)"
 
