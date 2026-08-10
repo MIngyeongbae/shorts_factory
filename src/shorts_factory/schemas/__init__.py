@@ -29,6 +29,12 @@ from .scenes import (
     SCENES_SCHEMA,
     validate_scenes,
 )
+from .timed_scenes import (
+    TIMED_SCENE_SCHEMA,
+    TIMED_SCENES_SCHEMA,
+    build_timed_scenes,
+    validate_timed_scenes,
+)
 
 __all__ = [
     "FACTSHEET_SCHEMA",
@@ -45,6 +51,10 @@ __all__ = [
     "SCENE_SCHEMA",
     "SCENES_SCHEMA",
     "validate_scenes",
+    "TIMED_SCENE_SCHEMA",
+    "TIMED_SCENES_SCHEMA",
+    "build_timed_scenes",
+    "validate_timed_scenes",
     "MAGNITUDES",
     "extract_values",
     "factsheet_values",
