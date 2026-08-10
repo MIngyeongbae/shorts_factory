@@ -216,6 +216,42 @@ def validate_candidate(
     return errors, warnings
 
 
+def generate_candidate(
+    *,
+    llm: LLMClient,
+    topic: str,
+    run_id: str,
+    factsheet: dict[str, Any],
+    feedback: str = "",
+    label: str = STAGE,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """팩트시트 → 후보 1개. 파일 쓰기·상태 기록은 호출자 몫이다.
+
+    `feedback`은 [2. validate]가 검증 실패 사유를 넣는 자리다 (specs/05). 비우면
+    [1]의 첫 생성과 같다.
+
+    돌려주는 것은 `(scenes, meta)`. 세션 출력이 씬이 되지 못하면 `ScriptStageError`를
+    던지되 문맥은 붙이지 않는다 — 어느 단계가 부른 것인지는 호출자가 안다.
+    """
+    prompt = _load_prompt().safe_substitute(
+        topic=topic,
+        factsheet=dump_json(groundable_factsheet(factsheet)),
+        feedback=feedback,
+    )
+    result = llm.run(prompt, allowed_tools=TOOLS, timeout=TIMEOUT, label=label)
+
+    try:
+        payload = extract_json_object(result.text)
+    except JSONExtractionError as exc:
+        raise ScriptStageError(f"세션 출력이 JSON 객체가 아니다: {exc}") from exc
+
+    raw_scenes = payload.get("scenes")
+    if not isinstance(raw_scenes, list):
+        raise ScriptStageError("세션 출력에 scenes 배열이 없다")
+
+    return build_scenes(raw_scenes, run_id=run_id, topic=topic), result.meta
+
+
 def _load_factsheet(topic_dir: Path) -> dict[str, Any]:
     path = topic_dir / "04-factsheet.json"
     if not path.exists():
@@ -275,37 +311,19 @@ def run_script_stage(
                 scenes=existing, errors=errors, warnings=warnings, skipped=True,
             )
 
-    prompt = _load_prompt().safe_substitute(
-        topic=topic,
-        factsheet=dump_json(groundable_factsheet(factsheet)),
-        feedback="",
-    )
-
     state.mark_running(STAGE)
     log.info("[%s] 독립 헤드리스 세션 시작 (도구 없음)", STAGE)
-    result = llm.run(prompt, allowed_tools=TOOLS, timeout=TIMEOUT, label=STAGE)
 
     try:
-        payload = extract_json_object(result.text)
-    except JSONExtractionError as exc:
+        scenes, meta = generate_candidate(
+            llm=llm, topic=topic, run_id=run_id, factsheet=factsheet,
+        )
+    except ScriptStageError as exc:
         message = (
-            f"세션 출력이 JSON 객체가 아니다: {exc}. "
-            f"원본은 {run_dir / 'logs'}에 있다. 재생성은 [2. validate] 소관이다."
+            f"{exc} 원본은 {run_dir / 'logs'}에 있다. 재생성은 [2. validate] 소관이다."
         )
         state.mark_failed(STAGE, message)
         raise ScriptStageError(message) from exc
-
-    raw_scenes = payload.get("scenes")
-    if not isinstance(raw_scenes, list):
-        message = "세션 출력에 scenes 배열이 없다"
-        state.mark_failed(STAGE, message)
-        raise ScriptStageError(message)
-
-    try:
-        scenes = build_scenes(raw_scenes, run_id=run_id, topic=topic)
-    except ScriptStageError as exc:
-        state.mark_failed(STAGE, str(exc))
-        raise
 
     write_text(candidate_path, dump_json(scenes))
     errors, warnings = validate_candidate(scenes, factsheet)
@@ -319,7 +337,7 @@ def run_script_stage(
         "est_duration": scenes["total_duration"],
         "validation_errors": errors,
         "validation_warnings": warnings,
-        **result.meta,
+        **meta,
     }
     if errors:
         log.warning("[%s] 검증 실패 %d건 — 후보는 남긴다 ([2]가 판정)", STAGE, len(errors))

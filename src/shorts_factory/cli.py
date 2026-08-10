@@ -3,6 +3,7 @@
     python run.py topic     [--topic 소재명]
     python run.py research  --slug SLUG [--only 01-research]
     python run.py script    --slug SLUG           # 팩트시트 → 대본 후보
+    python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
@@ -22,6 +23,7 @@ from .llm.claude_code import ClaudeCodeClient
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
 from .stages.topic import TopicStageError, run_topic_stage
+from .stages.validate import ValidateStageError, run_validate_stage
 
 log = logging.getLogger("shorts_factory")
 
@@ -120,6 +122,31 @@ def _cmd_script(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_validate(args, paths: Paths) -> int:
+    run_id = args.run_id
+    if not run_id:
+        run_id, _ = find_run_for_slug(paths, args.slug)
+
+    client = _make_client(args, paths.run_dir(run_id) / "logs")
+    result = run_validate_stage(
+        args.slug, llm=client, paths=paths, run_id=run_id, force=args.force,
+    )
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    for error in result.errors:
+        print(f"  오류: {error}", file=sys.stderr)
+    if not result.passed:
+        print(
+            f"\n후보 {len(result.attempts)}개를 모두 남겼다 "
+            f"(topics/{args.slug}/05-candidates/). "
+            "재생성 상한을 넘었으므로 소재나 팩트시트를 손봐야 한다.",
+            file=sys.stderr,
+        )
+        return 5
+    return 0
+
+
 def _cmd_package(args, paths: Paths) -> int:
     topic_result = run_topic_stage(args.topic, paths=paths, force=args.force)
     print(topic_result.summary)
@@ -199,6 +226,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_script.add_argument("--run-id", default=None)
     p_script.set_defaults(func=_cmd_script)
 
+    p_validate = sub.add_parser("validate", parents=[common],
+                                help="[2] 후보 검증 → 실패 사유 피드백 재생성 (최대 3회)")
+    p_validate.add_argument("--slug", required=True)
+    p_validate.add_argument("--run-id", default=None)
+    p_validate.set_defaults(func=_cmd_validate)
+
     p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
     p_package.add_argument("--topic", default=None)
     p_package.set_defaults(func=_cmd_package)
@@ -240,7 +273,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return args.func(args, paths)
-    except (TopicStageError, ResearchStageError, ScriptStageError) as exc:
+    except (
+        TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError
+    ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

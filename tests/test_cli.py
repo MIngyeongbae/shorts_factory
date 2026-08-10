@@ -64,6 +64,16 @@ def test_only_flag():
     assert parse(["research", "--slug", "a", "--only", "02-verify"]).only == "02-verify"
 
 
+def test_validate_requires_slug():
+    with pytest.raises(SystemExit):
+        parse(["validate"])
+
+
+def test_validate_takes_slug_and_run_id():
+    args = parse(["validate", "--slug", "abc", "--run-id", "20260810-abc"])
+    assert args.slug == "abc" and args.run_id == "20260810-abc"
+
+
 #: 실제로 요약문을 깨뜨린 문자들. em dash는 [0b] 요약, 나머지는 전 단계 공통이다.
 KOREAN_SUMMARY = "[0b] 통과 — 피사의 사탑 지반 보강 (사실 92건)"
 
