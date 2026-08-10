@@ -122,7 +122,8 @@ topics/{slug}/
 │                           #       90초 적합성, 대본 후보의 훅 약점 지적
 ├── 04-factsheet.json       # 01~03 종합한 기계용 팩트시트 (아래 스키마)
 ├── 05-candidates/          # 대본 후보 3~5개 (JSON)
-├── 06-script.json          # 스코어링 선발본
+├── 06-script.json          # 스코어링 선발본. 2부의 읽기 전용 입력 (ADR-0017)
+├── judgment/human.json     # 사람 판정 (go/revise/no_go). 2부 진입 게이트 (스펙 07, ADR-0017)
 └── STATUS.md               # go / no-go / 보류 + 사유 (인간 게이트, 유일한 수동 지점)
 ```
 

@@ -23,7 +23,7 @@ topics/backlog.md
     L2 확신 구간 AI 전결 + 에스컬레이션, L3 AI 전결 + 샘플 감사. go 시에만 2부 진입
 
 === 2부: 영상 생산 (편당 ~$7, go 승인분만) ===
-  → [3. tts+sync]   → narration.wav + timing.json + scenes.json 갱신
+  → [3. tts+sync]   → narration.wav + timing.json + scenes.timed.json
                        (ElevenLabs with-timestamps 문자 정렬 → 문장 경계 실측, ADR-0004)
   → [5. prompt]     → prompts.json       (씬별 이미지 프롬프트, 스펙 03 룰 적용)
   → [6. imagegen]   → images/{scene_id}.png
@@ -63,13 +63,27 @@ topics/backlog.md
 - `run_id`: `YYYYMMDD-{slug}`
 - 헤드리스 세션에는 읽기 도구만 준다. 산출물 파일은 오케스트레이터가 쓴다 (ADR-0011)
 
+### 1부 ↔ 2부 경계 (ADR-0017)
+
+두 부는 아래 **두 파일로만** 만난다. 2부는 그 밖의 1부 산출물에 의존하지 않는다.
+
+| 파일 | 역할 |
+|---|---|
+| `topics/{slug}/06-script.json` | 씬 계약. 1부의 최종 산출물이자 2부의 **읽기 전용** 입력 |
+| `topics/{slug}/judgment/human.json` | 게이트. `decision: go`일 때만 2부 진입 (스펙 07 스키마) |
+
+- **2부는 `06-script.json`을 수정하지 않는다.** 모든 2부 산출물은 `runs/{run_id}/` 아래에 쓴다
+  (`narration.wav`, `timing.json`, `scenes.timed.json`, `prompts.json`, `images/`, `clips/`,
+  `timeline.mp4`, `final.mp4`, `report.md`). `runs/*`는 `.gitignore` 대상이라 미디어가 커밋되지 않는다
+- 계보는 `run_id`로 잇는다. 2부 산출물은 대본과 같은 `run_id`의 run 디렉터리에 놓인다
+
 ## 단계별 규칙
 
 - **[0b. research]**: 스펙 06의 소스 등급(A~D)에 따라 웹 검색·수집. 1차 사료 필수 아님, 위키백과는 B등급 근거로 인정, 확정되지 않은 유력 학설은 `confidence: medium` (ADR-0016). 해외 소재는 영어 검색 병행. verdict: fail 시 백로그 반려하고 종료. 팩트시트는 사람 검수 지점 (유일한 수동 게이트).
 - **[1. script]**: 팩트시트 그라운딩 (ADR-0007). 팩트시트에 없는 수치·연도·인명 사용 금지. 세션은 `beat`·`text`·`subject`만 출력하고 타임스탬프·카메라·오버레이·모션은 오케스트레이터가 룰 테이블로 채운다 (ADR-0014). `confidence: low` 사실은 프롬프트에 주입하지 않는다. 검증 실패 시 이 단계는 재생성하지 않는다 — 후보를 쓰고 검증 결과를 함께 넘긴다. **후보 수는 `[1b. score]` 도입 전까지 1개다** (채점기 없이 여러 개를 만들면 고를 수단이 없다).
 - **[1b. score]**: shorts-hook-scorer 루브릭(hook_strength / info_density / standalone) 기반 LLM 채점. 텍스트 생성 비용은 무시 가능한 수준이므로 후보 수는 비용이 아니라 채점 신뢰도로 결정. 전 후보가 기준 미달이면 주제 자체를 반려하고 리포트. 추후 실제 조회수 데이터로 루브릭 보정(피드백 루프)을 v2 과제로 둔다.
 - **[2. validate]**: 스펙 01의 검증 5항목 + 스펙 02 스키마 검증 + 그라운딩 검증(대본 숫자 전수 추출 → 팩트시트 대조, ADR-0007). 실패 시 실패 사유를 프롬프트에 피드백하여 재생성 (최대 3회, 초과 시 중단·리포트).
-- **[3. tts+sync]**: 대본 전체 단일 호출 + with-timestamps. 문자 정렬에서 씬(자막 줄) 경계 start/end 추출해 scenes.json 갱신 — 문장 경계를 뽑은 뒤 각 줄의 마지막 문장 끝만 취한다 (ADR-0013). 실측-추정 오차 씬당 ±1.5초 초과 시 경고, 총 길이 102초 초과 시 대본 축약 재생성 트리거. atempo 1.1 적용 후 타임스탬프도 1/1.1 스케일 보정.
+- **[3. tts+sync]**: 대본 전체 단일 호출 + with-timestamps. 문자 정렬에서 씬(자막 줄) 경계 start/end 추출해 `runs/{run_id}/scenes.timed.json`을 **새로 쓴다**(ADR-0017. `06-script.json`은 건드리지 않는다) — 문장 경계를 뽑은 뒤 각 줄의 마지막 문장 끝만 취한다 (ADR-0013). 실측-추정 오차 씬당 ±1.5초 초과 시 경고. 총 길이 102초 초과 시 **대본 축약이 필요하다고 리포트하고 멈춘다** — 2부가 1부를 직접 다시 돌리지 않는다 (ADR-0017의 단방향 경계). 재생성은 사람이 1부를 다시 실행해 판단한다. atempo 1.1 적용 후 타임스탬프도 1/1.1 스케일 보정.
 - **[6. imagegen]**: 씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로 폴백하고 리포트에 기록.
 - **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초.
 - **[9. assemble]**: 자막은 timing.json 기준 ASS 생성 후 번인. 싱크 오차 ±200ms 이내 검증.

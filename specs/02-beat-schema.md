@@ -45,7 +45,9 @@
 
 - `scene_id`: 1부터 연번. 자막 줄 순서와 일치 (ADR-0013).
 - `beat`: 위 테이블의 값만 허용 (enum).
-- `est_start`/`est_end`: TTS 생성 전 추정치. TTS 후 실측값으로 갱신되며, 갱신 후 필드명은 `start`/`end`.
+- `est_start`/`est_end`: TTS 생성 전 추정치. **이 값은 갱신되지 않는다** (ADR-0017).
+  `[3. tts+sync]`가 실측값을 `runs/{run_id}/scenes.timed.json`에 **새로 쓰며**, 그 파일에서
+  필드명은 `start`/`end`다. 추정(`est_*`)과 실측(`start`/`end`)은 파일 단위로 분리된다.
 - `emphasis`: 화면 강조 요소. `type`은 `03-visual-rules.md`의 오버레이 타입 enum. 숫자 비트는 필수, 그 외 옵션.
 - `subject`: 이미지 프롬프트 생성의 핵심 피사체 (한국어).
 - `camera`: `slow_zoom_in` | `slow_zoom_out` | `tilt_down` | `tilt_up` | `pan_left` | `pan_right` | `static` 만 허용. 복합 카메라 워크 금지 (AI 영상 왜곡 방지).
