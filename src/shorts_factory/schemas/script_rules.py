@@ -101,16 +101,25 @@ def core_chars(text: str) -> str:
 
 
 def noun_stems(text: str) -> set[str]:
-    """명사 후보 어간. 형태소 분석기 없이 조사만 떼는 휴리스틱이다."""
+    """명사 후보 어간. 형태소 분석기 없이 조사만 떼는 휴리스틱이다.
+
+    용언 판정은 **어절 원형에만** 한다. 조사를 뗀 어간에 같은 검사를 다시 걸면
+    '파비아의' → '파비아'처럼 아/어/야로 끝나는 명사가 통째로 사라진다. 도메인이
+    국가 무관이 된 뒤로(ADR-0016) 그런 외래 고유명사가 기본값이라 이건 예외가
+    아니다 — 피사 편 첫 대본의 수미상관(파비아)이 실제로 이걸로 오탐을 맞았다.
+
+    남는 한계: 조사가 붙지 않은 채 아/어/다로 끝나는 명사('바다', '언어')는 여전히
+    용언으로 보고 버린다. 조사가 붙으면('바다에') 잡힌다.
+    """
     found: set[str] = set()
     for word in _HANGUL.findall(text or ""):
-        if len(word) > 2 and word.endswith(_VERB_END):
+        if word.endswith(_VERB_END):
             continue
         for josa in _JOSA:
             if word.endswith(josa) and len(word) - len(josa) >= 2:
                 word = word[: -len(josa)]
                 break
-        if len(word) >= 2 and not word.endswith(_VERB_END) and word not in _STOPWORDS:
+        if len(word) >= 2 and word not in _STOPWORDS:
             found.add(word)
     return found
 

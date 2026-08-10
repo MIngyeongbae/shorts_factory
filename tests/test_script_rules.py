@@ -185,6 +185,35 @@ def test_noun_stem_drops_verbs_and_stopwords():
     assert noun_stems("있습니다 아니었죠 그런데 지금") == set()
 
 
+@pytest.mark.parametrize("word", ["파비아의", "파비아가", "베네치아는", "이탈리아의", "바다에"])
+def test_noun_stem_keeps_nouns_ending_in_verb_like_syllables(word):
+    """아/어/야로 끝나는 명사를 용언으로 오인하지 않는다.
+
+    도메인이 국가 무관이 된 뒤(ADR-0016) 외래 고유명사가 기본값이다. 조사를 뗀
+    어간에 용언 검사를 다시 걸면 '파비아의'→'파비아'가 통째로 사라졌고, 피사 편
+    첫 대본이 실제 수미상관(hook '파비아의' ↔ ending '파비아가')을 갖고도
+    실패 판정을 받았다.
+    """
+    assert noun_stems(word)
+
+
+def test_verb_check_still_applies_to_the_bare_word():
+    """어절 원형이 _VERB_END로 끝나면 조사가 없어도 버린다.
+
+    반대 방향의 누수는 그대로다 — '무너져'(져)나 '당긴'(긴)처럼 목록에 없는
+    어미의 용언은 통과한다. 그쪽은 수미상관 판정을 느슨하게 만들 뿐 오탐을
+    만들지 않아 이번 수정 범위 밖에 뒀다.
+    """
+    assert noun_stems("높아 기울어 커졌다") == set()
+
+
+def test_echo_is_found_through_a_foreign_proper_noun():
+    """오탐 회귀 고정 — 고유명사 하나로만 이어진 수미상관도 통과해야 한다."""
+    hook = noun_stems("파비아의 78m 시민탑이 예고 없이 주저앉습니다.")
+    ending = noun_stems("카티노는 지금도 그 자리에 있습니다. 파비아가 남긴 경고와 함께.")
+    assert hook & ending == {"파비아"}
+
+
 def test_core_chars_excludes_whitespace_and_punctuation():
     assert core_chars("경복궁 뒤, 백악입니다.") == "경복궁뒤백악입니다"
 
