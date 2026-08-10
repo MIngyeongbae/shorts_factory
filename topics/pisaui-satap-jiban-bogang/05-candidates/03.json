@@ -1,0 +1,306 @@
+{
+  "run_id": "20260810-pisaui-satap-jiban-bogang",
+  "topic": "피사의 사탑 지반 보강",
+  "total_duration": 97.437,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "beat": "hook_fact",
+      "text": "1989년 3월 17일 오전 8시 55분, 탑 하나가 무너집니다.",
+      "est_start": 0.0,
+      "est_end": 4.444,
+      "subject": "이탈리아 도시 광장의 오래된 벽돌 종탑",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 2,
+      "beat": "hook_fact",
+      "text": "4명이 숨졌고 잔해는 8,000 m³였죠.",
+      "est_start": 4.444,
+      "est_end": 7.35,
+      "subject": "출입 통제선이 쳐진 텅 빈 광장",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 3,
+      "beat": "hook_twist",
+      "text": "피사의 사탑이 아닙니다. 파비아의 시민탑이었습니다.",
+      "est_start": 7.35,
+      "est_end": 11.111,
+      "subject": "피사 두오모 광장에 기울어 선 사탑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 4,
+      "beat": "context",
+      "text": "그런데 이듬해, 피사의 사탑도 관광객에게 문을 닫습니다.",
+      "est_start": 11.111,
+      "est_end": 15.043,
+      "subject": "닫힌 철문과 관광객 출입 금지 표지판",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 5,
+      "beat": "context_number",
+      "text": "1993년 기울기는 5도 34분 7초, 안전율은 1.07.",
+      "est_start": 15.043,
+      "est_end": 18.975,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1993"
+      },
+      "subject": "기울어진 탑에 겹쳐진 각도 눈금",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 6,
+      "beat": "context_number",
+      "text": "무른 지반에 3 m 박힌 기초, 기울수록 더 기우는 경사 불안정.",
+      "est_start": 18.975,
+      "est_end": 23.078,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "3"
+      },
+      "subject": "얕게 박힌 탑 기초와 지층 단면도",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 7,
+      "beat": "failed_solution",
+      "text": "가장 쉬운 방법은 기초를 굳히는 겁니다.",
+      "est_start": 23.078,
+      "est_end": 25.813,
+      "subject": "탑 밑동의 석조 기초 확대 모습",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 8,
+      "beat": "failed_solution",
+      "text": "1930년대 중반, 기초에 시멘트 그라우트를 주입했죠.",
+      "est_start": 25.813,
+      "est_end": 29.745,
+      "subject": "석조 구멍으로 들어가는 그라우트 호스",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 9,
+      "beat": "failure_reason",
+      "text": "탑은 곧장 남쪽으로 10 mm 움직였습니다.",
+      "est_start": 29.745,
+      "est_end": 32.822,
+      "subject": "탑 남쪽 면에 붙은 변위 계측기",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 10,
+      "beat": "failed_solution",
+      "text": "그럼 지반을 얼려 앵커로 붙잡으면 되지 않냐고요?",
+      "est_start": 32.822,
+      "est_end": 36.241,
+      "subject": "탑 둘레 지중 앵커 배치 도해",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 11,
+      "beat": "failed_solution",
+      "text": "1995년엔 액체질소로 지반을 얼렸다고 하죠.",
+      "est_start": 36.241,
+      "est_end": 39.66,
+      "subject": "서리 낀 액체질소 배관과 언 흙",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 12,
+      "beat": "failure_reason",
+      "text": "언 물이 지반을 밀어 올렸고, 녹자 더 내려앉았다는 분석이죠.",
+      "est_start": 39.66,
+      "est_end": 43.763,
+      "subject": "얼었다 녹아 갈라진 흙 표면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 13,
+      "beat": "dilemma_peak",
+      "text": "동결을 멈추자 하루 4초각씩 기울었다고 하죠. 환장할 노릇입니다.",
+      "est_start": 43.763,
+      "est_end": 48.378,
+      "subject": "경사계 바늘과 기울기 기록 그래프",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 14,
+      "beat": "turning_point",
+      "text": "그래서 발상을 뒤집습니다.",
+      "est_start": 48.378,
+      "est_end": 50.258,
+      "subject": "탑 북쪽 지반을 가리키는 설계 도면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 15,
+      "beat": "solution_step",
+      "text": "남쪽은 건드리면 붕괴합니다. 그래서 반대편 북쪽 흙을 빼냅니다.",
+      "est_start": 50.258,
+      "est_end": 54.702,
+      "subject": "탑 남쪽 기초 아래 젖은 점토층",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 16,
+      "beat": "solution_step",
+      "text": "흙이 빠진 만큼 탑이 북쪽으로 따라 내려앉죠.",
+      "est_start": 54.702,
+      "est_end": 57.779,
+      "subject": "북쪽 기초 아래로 비스듬히 들어간 추출관",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 17,
+      "beat": "solution_step",
+      "text": "임계선을 넘으면 끝입니다. 북쪽 끝에서 반경의 절반 지점.",
+      "est_start": 57.779,
+      "est_end": 61.711,
+      "subject": "기초 평면도에 그어진 임계선",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 18,
+      "beat": "solution_number",
+      "text": "1999년 2월 9일, 관 12개로 흙 7 m³를 뽑아냅니다.",
+      "est_start": 61.711,
+      "est_end": 65.814,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1999"
+      },
+      "subject": "추출관에서 나온 흙 더미와 시추 장비",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 19,
+      "beat": "solution_number",
+      "text": "남쪽이 1.5 mm 솟고 북쪽이 12 mm 내려앉았죠.",
+      "est_start": 65.814,
+      "est_end": 69.404,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1.5"
+      },
+      "subject": "기초 남북 가장자리의 수준 측량 눈금",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 20,
+      "beat": "solution_number",
+      "text": "2000년 2월 21일, 41개 구멍으로 본공사에 들어갑니다.",
+      "est_start": 69.404,
+      "est_end": 73.848,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "2000"
+      },
+      "subject": "일렬로 늘어선 추출공 헤드",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 21,
+      "beat": "solution_number",
+      "text": "목표는 똑바로 세우기가 아닙니다. 딱 0.5도, 1838년으로 되돌리기.",
+      "est_start": 73.848,
+      "est_end": 78.805,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "0.5"
+      },
+      "subject": "수직선과 나란히 놓인 기울어진 탑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 22,
+      "beat": "present_link",
+      "text": "2001년 1월 마지막 납괴가 내려오고, 12월 15일 탑이 열립니다.",
+      "est_start": 78.805,
+      "est_end": 83.762,
+      "subject": "크레인에 들려 올라가는 납괴 더미",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 23,
+      "beat": "present_link",
+      "text": "지금도 273계단을 오르고, 기단을 두른 카티노를 볼 수 있죠.",
+      "est_start": 83.762,
+      "est_end": 88.036,
+      "subject": "탑 기단을 둘러싼 카티노 통로",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 24,
+      "beat": "present_link",
+      "text": "2026년 8월 4일 규모 4.3 지진 때도 센서가 안전을 확인했죠.",
+      "est_start": 88.036,
+      "est_end": 92.651,
+      "subject": "탑 벽면에 부착된 계측 센서와 케이블",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 25,
+      "beat": "ending_echo",
+      "text": "파비아의 시민탑은 무너졌고, 피사의 사탑은 기울어 선 채 남았습니다.",
+      "est_start": 92.651,
+      "est_end": 97.437,
+      "subject": "두오모 광장에 기울어 선 피사의 사탑",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    }
+  ]
+}

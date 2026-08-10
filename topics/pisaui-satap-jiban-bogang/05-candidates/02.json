@@ -1,0 +1,317 @@
+{
+  "run_id": "20260810-pisaui-satap-jiban-bogang",
+  "topic": "피사의 사탑 지반 보강",
+  "total_duration": 95.896,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "beat": "hook_fact",
+      "text": "1990년 1월 7일, 피사의 사탑이 문을 닫습니다.",
+      "est_start": 0.0,
+      "est_end": 3.59,
+      "subject": "출입이 통제된 피사의 사탑과 닫힌 철문",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 2,
+      "beat": "hook_twist",
+      "text": "폐쇄를 부른 건 피사가 아닙니다.",
+      "est_start": 3.59,
+      "est_end": 5.812,
+      "subject": "텅 빈 두오모 광장에 홀로 선 사탑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 3,
+      "beat": "hook_twist",
+      "text": "다른 도시에서 무너진 탑이었죠.",
+      "est_start": 5.812,
+      "est_end": 8.034,
+      "subject": "낯선 도시의 사각형 벽돌 탑 실루엣",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 4,
+      "beat": "context",
+      "text": "1989년 3월 17일 오전 8시 55분,",
+      "est_start": 8.034,
+      "est_end": 10.94,
+      "subject": "8시 55분에 멈춘 낡은 벽시계",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 5,
+      "beat": "context",
+      "text": "파비아 시민탑이 예고 없이 무너집니다. 4명이 숨졌죠.",
+      "est_start": 10.94,
+      "est_end": 14.701,
+      "subject": "벽돌 잔해가 쌓인 텅 빈 광장",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 6,
+      "beat": "context",
+      "text": "이탈리아는 피사도 같은 길을 갈까 두려웠습니다.",
+      "est_start": 14.701,
+      "est_end": 18.12,
+      "subject": "사탑 아래 모여 도면을 펼친 전문가들",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 7,
+      "beat": "context_number",
+      "text": "탑의 기초는 무른 지반에 겨우 3m 깊이입니다.",
+      "est_start": 18.12,
+      "est_end": 21.368,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "3"
+      },
+      "subject": "지반 단면 모형에 얕게 박힌 탑 기초",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 8,
+      "beat": "context_number",
+      "text": "1993년 안전율은 1.07, 기운 것 자체가 더 기울던 상태였죠.",
+      "est_start": 21.368,
+      "est_end": 25.812,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1993"
+      },
+      "subject": "기울어진 탑과 수직선을 그은 계측 도면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 9,
+      "beat": "failed_solution",
+      "text": "가장 쉬운 방법은 기초를 직접 손보는 겁니다.",
+      "est_start": 25.812,
+      "est_end": 28.889,
+      "subject": "탑 기단 앞에 놓인 곡괭이와 삽",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 10,
+      "beat": "failed_solution",
+      "text": "1838년, 탑 둘레를 파 기단을 드러냈습니다.",
+      "est_start": 28.889,
+      "est_end": 32.137,
+      "subject": "탑 둘레를 원형으로 파낸 도랑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 11,
+      "beat": "failure_reason",
+      "text": "남쪽은 지하수면 아래. 물이 밀려들었죠.",
+      "est_start": 32.137,
+      "est_end": 34.872,
+      "subject": "도랑 바닥에 차오른 지하수",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 12,
+      "beat": "failure_reason",
+      "text": "기울기는 0.25도 넘게 늘어난 걸로 추정됩니다.",
+      "est_start": 34.872,
+      "est_end": 38.291,
+      "subject": "각도 눈금이 적힌 낡은 측량 도면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 13,
+      "beat": "failed_solution",
+      "text": "그럼 기초를 시멘트로 굳히면 되지 않냐고요?",
+      "est_start": 38.291,
+      "est_end": 41.368,
+      "subject": "그라우트 통에 연결된 주입 호스",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 14,
+      "beat": "failure_reason",
+      "text": "1930년대 중반 그라우팅에 탑은 남쪽으로 10mm 급이동했죠.",
+      "est_start": 41.368,
+      "est_end": 46.154,
+      "subject": "기초 석조에 뚫린 주입 구멍들",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 15,
+      "beat": "dilemma_peak",
+      "text": "1995년 앵커 시도마저 실패. 환장할 노릇이죠.",
+      "est_start": 46.154,
+      "est_end": 49.573,
+      "subject": "지반에 박다 만 강철 앵커와 굳은 장비",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 16,
+      "beat": "turning_point",
+      "text": "그래서 발상을 뒤집습니다.",
+      "est_start": 49.573,
+      "est_end": 51.453,
+      "subject": "기초 북쪽을 가리키는 손과 단면 스케치",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 17,
+      "beat": "solution_step",
+      "text": "기운 남쪽을 받치는 게 아니라, 멀쩡한 북쪽을 주저앉힙니다.",
+      "est_start": 51.453,
+      "est_end": 55.556,
+      "subject": "북쪽 기초 아래를 표시한 단면 다이어그램",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 18,
+      "beat": "solution_step",
+      "text": "북쪽 기초 아래 흙을 조금씩 뽑아내는 공법이죠.",
+      "est_start": 55.556,
+      "est_end": 58.804,
+      "subject": "비스듬히 박힌 토사 추출 케이싱 관",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 19,
+      "beat": "solution_step",
+      "text": "임계선이 있어요. 북쪽 가장자리에서 반경의 절반 안쪽에서만 파야 하죠.",
+      "est_start": 58.804,
+      "est_end": 63.761,
+      "subject": "기초 평면도에 붉게 그어진 임계선",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 20,
+      "beat": "solution_number",
+      "text": "1999년 2월 9일, 12개 구멍으로 시험 추출이 시작됩니다.",
+      "est_start": 63.761,
+      "est_end": 68.205,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1999"
+      },
+      "subject": "케이싱 12개가 늘어선 북쪽 작업장",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 21,
+      "beat": "solution_number",
+      "text": "빼낸 흙은 7㎥. 남쪽이 1.5mm 솟아 임계선 바깥임이 확인됐죠.",
+      "est_start": 68.205,
+      "est_end": 72.649,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "7"
+      },
+      "subject": "추출한 흙을 담은 통과 계측 다이얼",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 22,
+      "beat": "solution_number",
+      "text": "2000년 2월 21일, 41개 구멍으로 본공사에 들어갑니다.",
+      "est_start": 72.649,
+      "est_end": 77.093,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "2000"
+      },
+      "subject": "기초 북쪽에 줄지어 늘어선 추출공 현장",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 23,
+      "beat": "solution_number",
+      "text": "목표는 똑바로 세우기가 아니라 딱 0.5도, 1838년의 기울기였습니다.",
+      "est_start": 77.093,
+      "est_end": 82.221,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "0.5"
+      },
+      "subject": "0.5도 눈금에 맞춰진 각도계",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 24,
+      "beat": "present_link",
+      "text": "지금 탑엔 상시 센서가 붙어 데이터가 피사대학교로 갑니다.",
+      "est_start": 82.221,
+      "est_end": 86.324,
+      "subject": "탑 벽면에 부착된 계측 센서",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 25,
+      "beat": "present_link",
+      "text": "2026년 8월 4일 규모 4.3 지진 때도 안전은 데이터로 확인됐죠.",
+      "est_start": 86.324,
+      "est_end": 91.11,
+      "subject": "지진 파형이 흐르는 관측 모니터 화면",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 26,
+      "beat": "ending_echo",
+      "text": "1990년 닫혔던 문은 2001년 12월 15일 다시 열렸습니다.",
+      "est_start": 91.11,
+      "est_end": 95.896,
+      "subject": "다시 열린 사탑 출입문으로 들어서는 관람객",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    }
+  ]
+}
