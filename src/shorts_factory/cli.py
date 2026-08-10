@@ -26,6 +26,26 @@ from .stages.topic import TopicStageError, run_topic_stage
 log = logging.getLogger("shorts_factory")
 
 
+def _force_utf8_streams() -> None:
+    """stdout/stderr를 UTF-8로 고정한다.
+
+    Windows 콘솔의 기본 인코딩은 cp949(한국어 로캘)라, 요약문에 흔한 em dash나
+    일부 한글이 섞이면 print가 UnicodeEncodeError로 죽는다. 실제로 첫 실전
+    package 실행이 모든 산출물을 쓴 뒤 마지막 요약 출력에서 이걸로 넘어갔다.
+    파이프라인 출력은 전부 한국어라 이건 예외가 아니라 기본값이다.
+
+    errors="replace": 인코딩 하나 때문에 완료된 단계의 결과 보고를 잃지 않는다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:  # pytest capsys 등 교체된 스트림
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # 이미 detach된 스트림
+            pass
+
+
 def _setup_logging(verbose: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -213,6 +233,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_streams()  # basicConfig가 sys.stderr를 붙들기 전에
     args = parse_args(argv)
     _setup_logging(args.verbose)
     paths = Paths(args.root.resolve()) if args.root else Paths.from_env()

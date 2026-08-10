@@ -1,9 +1,12 @@
 """CLI 인자 파싱. 전역 옵션은 서브커맨드 앞뒤 어느 쪽에 와도 먹혀야 한다."""
 
+import io
+import sys
 from pathlib import Path
 
 import pytest
 
+from shorts_factory.cli import _force_utf8_streams
 from shorts_factory.cli import parse_args as parse
 from shorts_factory.config import DEFAULT_MAX_RETRIES
 
@@ -59,3 +62,34 @@ def test_research_requires_slug():
 
 def test_only_flag():
     assert parse(["research", "--slug", "a", "--only", "02-verify"]).only == "02-verify"
+
+
+#: 실제로 요약문을 깨뜨린 문자들. em dash는 [0b] 요약, 나머지는 전 단계 공통이다.
+KOREAN_SUMMARY = "[0b] 통과 — 피사의 사탑 지반 보강 (사실 92건)"
+
+
+def test_stdout_is_reconfigured_to_utf8(monkeypatch):
+    """cp949 콘솔에서도 한국어 요약을 출력할 수 있어야 한다.
+
+    첫 실전 package 실행이 모든 산출물을 쓴 뒤 이 지점에서 UnicodeEncodeError로
+    죽었다. Windows 한국어 로캘의 기본 stdout이 cp949다.
+    """
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp949"))
+
+    _force_utf8_streams()
+    print(KOREAN_SUMMARY)
+    sys.stdout.flush()
+
+    assert raw.getvalue().decode("utf-8").strip() == KOREAN_SUMMARY
+
+
+def test_force_utf8_tolerates_streams_without_reconfigure(monkeypatch):
+    """pytest capsys처럼 reconfigure가 없는 스트림에서도 죽으면 안 된다."""
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+
+    _force_utf8_streams()  # 예외가 나지 않는 것이 전부다
+
+    print(KOREAN_SUMMARY)
+    assert sys.stdout.getvalue().strip() == KOREAN_SUMMARY
