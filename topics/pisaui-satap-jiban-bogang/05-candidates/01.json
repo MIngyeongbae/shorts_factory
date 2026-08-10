@@ -1,0 +1,331 @@
+{
+  "run_id": "20260810-pisaui-satap-jiban-bogang",
+  "topic": "피사의 사탑 지반 보강",
+  "total_duration": 101.542,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "beat": "hook_fact",
+      "text": "1990년 1월 7일, 피사의 사탑이 폐쇄됩니다.",
+      "est_start": 0.0,
+      "est_end": 3.419,
+      "subject": "철제 바리케이드로 막힌 피사의 사탑 입구",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 2,
+      "beat": "hook_twist",
+      "text": "그런데 방아쇠를 당긴 건 피사가 아니었습니다.",
+      "est_start": 3.419,
+      "est_end": 6.667,
+      "subject": "텅 빈 두오모 광장의 피사의 사탑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 3,
+      "beat": "hook_fact",
+      "text": "1989년 3월 17일 아침 8시 55분.",
+      "est_start": 6.667,
+      "est_end": 9.573,
+      "subject": "이른 아침 이탈리아 도시 광장의 시계탑",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 4,
+      "beat": "hook_fact",
+      "text": "파비아의 78m 시민탑이 예고 없이 주저앉습니다.",
+      "est_start": 9.573,
+      "est_end": 13.163,
+      "subject": "돌더미가 쌓인 무너진 탑의 잔해 더미",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 5,
+      "beat": "context",
+      "text": "4명이 숨졌고, 잔해는 8,000㎥. 멀쩡해 보이던 탑이었죠.",
+      "est_start": 13.163,
+      "est_end": 17.266,
+      "subject": "잔해를 치우는 구조 인력과 붉은 벽돌 파편",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 6,
+      "beat": "context_number",
+      "text": "피사는 그때 이미 5도 34분 07초 기울어 있었습니다.",
+      "est_start": 17.266,
+      "est_end": 21.198,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "5"
+      },
+      "subject": "수직선과 대비되는 기울어진 탑의 측면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 7,
+      "beat": "context",
+      "text": "땅이 하중에 눌려 주저앉는 문제가 아니었습니다.",
+      "est_start": 21.198,
+      "est_end": 24.617,
+      "subject": "연약한 회색 점토 지층 단면",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 8,
+      "beat": "context",
+      "text": "기운 것 자체가 더 기울게 만드는 경사 불안정.",
+      "est_start": 24.617,
+      "est_end": 27.694,
+      "subject": "폼 러버 위에 비스듬히 선 원통형 모형",
+      "camera": "pan_right",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 9,
+      "beat": "context_number",
+      "text": "쓰러지지 않을 안전율은 1.07. 여유가 없었죠.",
+      "est_start": 27.694,
+      "est_end": 30.942,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1.07"
+      },
+      "subject": "계산 수치가 적힌 공학 도면과 자",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 10,
+      "beat": "failed_solution",
+      "text": "가장 쉬운 방법은 기초를 파서 손보는 겁니다.",
+      "est_start": 30.942,
+      "est_end": 34.019,
+      "subject": "탑 둘레를 둘러 판 원형 통로 카티노",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 11,
+      "beat": "failure_reason",
+      "text": "1838년에 해봤습니다. 남쪽에서 지하수가 밀려들었죠.",
+      "est_start": 34.019,
+      "est_end": 38.122,
+      "subject": "물이 고인 굴착 통로 바닥",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 12,
+      "beat": "failure_reason",
+      "text": "기울기는 0.25도 넘게 늘었다는 분석입니다.",
+      "est_start": 38.122,
+      "est_end": 41.37,
+      "subject": "기울기 기록이 그려진 오래된 계측 그래프",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 13,
+      "beat": "failed_solution",
+      "text": "그럼 기초를 시멘트로 굳히면 되지 않냐고요?",
+      "est_start": 41.37,
+      "est_end": 44.447,
+      "subject": "기초 석조에 뚫린 주입 구멍들",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 14,
+      "beat": "failure_reason",
+      "text": "1930년대 중반, 주입하자 탑이 남쪽으로 10mm 튀었습니다.",
+      "est_start": 44.447,
+      "est_end": 49.062,
+      "subject": "그라우트 주입 호스와 압력 게이지",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 15,
+      "beat": "failed_solution",
+      "text": "1995년엔 액체질소로 땅을 얼려 앵커를 박으려 했습니다.",
+      "est_start": 49.062,
+      "est_end": 53.336,
+      "subject": "하얀 냉기가 피어오르는 동결 배관",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 16,
+      "beat": "failure_reason",
+      "text": "언 물이 부풀었다 녹으면서 오히려 더 내려앉았죠.",
+      "est_start": 53.336,
+      "est_end": 56.755,
+      "subject": "녹아 물이 고인 지반 표면",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 17,
+      "beat": "failure_reason",
+      "text": "납덩이를 900톤까지 쌓아 겨우 붙잡았습니다.",
+      "est_start": 56.755,
+      "est_end": 60.174,
+      "subject": "기초 북쪽에 쌓인 회색 납괴 더미",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 18,
+      "beat": "dilemma_peak",
+      "text": "손대는 족족 더 기웁니다. 환장할 노릇이죠.",
+      "est_start": 60.174,
+      "est_end": 63.08,
+      "subject": "철제 케이블에 묶인 기울어진 탑",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 19,
+      "beat": "turning_point",
+      "text": "그래서 발상을 뒤집습니다.",
+      "est_start": 63.08,
+      "est_end": 64.96,
+      "subject": "기초 북쪽 아래로 비스듬히 박힌 드릴 파이프",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 20,
+      "beat": "solution_step",
+      "text": "남쪽을 건드리지 않고, 북쪽 흙만 조금씩 빼냅니다.",
+      "est_start": 64.96,
+      "est_end": 68.379,
+      "subject": "기초 북쪽에 늘어선 추출용 케이싱 구멍",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 21,
+      "beat": "solution_step",
+      "text": "북쪽이 내려앉으면 탑은 북으로 되돌아 눕죠.",
+      "est_start": 68.379,
+      "est_end": 71.456,
+      "subject": "북쪽으로 침하하는 기초 단면 모식도",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 22,
+      "beat": "solution_number",
+      "text": "1999년 2월 9일, 구멍 12개로 7㎥만 시험 추출.",
+      "est_start": 71.456,
+      "est_end": 75.217,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1999"
+      },
+      "subject": "흙이 담긴 추출 용기와 시추 장비",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 23,
+      "beat": "solution_number",
+      "text": "2000년 2월 21일 본공사. 0.5m 간격 41개 구멍.",
+      "est_start": 75.217,
+      "est_end": 79.149,
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "2000"
+      },
+      "subject": "기초 둘레에 일정 간격으로 배치된 시추공",
+      "camera": "static",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 24,
+      "beat": "solution_step",
+      "text": "기초 북쪽에서 반경 절반 지점, 그 임계선을 절대 넘지 않았습니다.",
+      "est_start": 79.149,
+      "est_end": 83.593,
+      "subject": "기초 아래 표시된 임계선 경계",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 25,
+      "beat": "solution_step",
+      "text": "목표는 똑바로 세우기가 아니었습니다. 딱 0.5도.",
+      "est_start": 83.593,
+      "est_end": 87.012,
+      "subject": "각도기가 놓인 탑 단면 설계도",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 26,
+      "beat": "solution_step",
+      "text": "1838년의 그 기울기로 되돌리는 것. 그게 전부였죠.",
+      "est_start": 87.012,
+      "est_end": 90.773,
+      "subject": "제자리에 놓인 마지막 납괴와 콘크리트 링",
+      "camera": "tilt_down",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 27,
+      "beat": "present_link",
+      "text": "탑은 2001년 12월 15일 다시 열렸고, 273개 계단을 오를 수 있습니다.",
+      "est_start": 90.773,
+      "est_end": 96.243,
+      "subject": "탑 내부의 나선형 대리석 계단",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    },
+    {
+      "scene_id": 28,
+      "beat": "ending_echo",
+      "text": "기초를 감싼 카티노는 지금도 그 자리에 있습니다. 파비아가 남긴 경고와 함께.",
+      "est_start": 96.243,
+      "est_end": 101.542,
+      "subject": "탑 기단을 둘러싼 원형 통로 카티노의 현재 모습",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "notes": ""
+    }
+  ]
+}
