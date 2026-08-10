@@ -29,8 +29,20 @@ from .scenes import (
     SCENES_SCHEMA,
     validate_scenes,
 )
+from .visual_rules import (
+    BEAT_RULES,
+    FRAMINGS,
+    OVERLAYS,
+    PROMPTS_SCHEMA,
+    RULE_GAPS,
+)
 
 __all__ = [
+    "BEAT_RULES",
+    "FRAMINGS",
+    "OVERLAYS",
+    "PROMPTS_SCHEMA",
+    "RULE_GAPS",
     "FACTSHEET_SCHEMA",
     "MIN_NUMBERS",
     "schema_errors",
