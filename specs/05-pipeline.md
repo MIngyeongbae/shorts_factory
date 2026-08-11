@@ -32,7 +32,7 @@ topics/backlog.md
       [5]→[6]은 TTS 없이 진행할 수 있다
   → [6. imagegen]   → images/{scene_id}.jpg  (Nano Banana 2가 JPEG만 준다 — ADR-0021)
   → [7. motion]     → clips/{scene_id}.mp4  (이미지→비디오 or Ken Burns)
-  → [8. overlay]    → 대형 텍스트·라벨·파티클 합성 (레이어 B)
+  → [8. overlay]    → 대형 텍스트·파티클 합성 (레이어 B). clips/를 덮어쓰지 않는다
   → [9. assemble]   → timeline.mp4       (FFmpeg: 디졸브 + 자막 번인)
   → [10. mix]       → final.mp4          (TTS + SFX + BGM, 스펙 04)
   → [11. report]    → report.md          (실패 씬, 재시도 이력, 소요 시간/비용)
@@ -70,6 +70,7 @@ topics/backlog.md
 | `prompts.json` | [5] | **씬별 이미지 지시.** 시간 정보를 담지 않는다 | [6] `prompt`·`negative_prompt`·`style`, [8] `overlays` |
 | `timing.json` | [3] | **[3]의 실행 기록.** 엔진 메타·배속·원속 길이·오디오 길이·경고. 계약이 아니라 기록이라 길이 초과로 멈출 때도 남는다 | [11] 리포트, 사람 |
 | `images.json` | [6] | **[6]의 실행 기록.** 프로바이더·앵커 수·씬별 상태/재시도/폴백. 계약이 아니라 기록이다 | [11] 리포트, 사람 |
+| `clips.json` | [7] | **[7]의 실행 기록.** 씬별 모션 분기·적용 카메라·역방향 여부·재시도. 계약이 아니라 기록이다 | [11] 리포트, 사람 |
 | `subtitles.ass` | [9] | 자막 파일. `ass` 필터의 입력이라 파일로 존재해야 한다 | [9] 번인 |
 
 - 씬의 시각을 읽는 곳은 `scenes.timed.json` **하나뿐이다.** 같은 숫자를 두 파일이 들고 있으면 갈라지고, 갈라진 쪽을 읽은 단계만 싱크가 어긋난다
@@ -108,7 +109,8 @@ topics/backlog.md
 - **[1x. backfill-scale]**: `subject_scale`이 없는 옛 `06-script.json`에만 쓴다 (ADR-0018). 세션에 `subject`만 보여주고 `wide`/`close`/`diagram` 판정을 받아 그 필드 하나만 끼운다. **대본을 바꾸지 않는다** — 쓰기 전에 나머지 필드를 전부 대조하고 하나라도 다르면 파일을 쓰지 않고 실패한다. 전 씬에 값이 있으면 세션을 부르지 않는다. 새 토픽은 `[1]`이 직접 채우므로 이 단계를 타지 않는다.
 - **[5. prompt]**: 구도는 `(beat × subject_scale)` 표에서만 나온다 (스펙 03, ADR-0018). 다른 씬을 가리키는 구도(`@prev`/`@hook`)는 가리키는 씬의 `subject_scale`이 같을 때만 잇고, 다르면 스케일별 기본값으로 떨어진다. 오버레이는 전부 레이어 B다 — 베이스 이미지는 전 씬 클린이고 2-pass 어노테이션 경로가 없다 (ADR-0019).
 - **[6. imagegen]**: 씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로 폴백하고 리포트에 기록. 편당 베이스 호출 = 씬 수 (2-pass 없음, ADR-0019).
-- **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초.
+- **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용, 파라미터는 스펙 03의 "카메라 워크 파라미터" 표). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초. **클립의 로컬 0초가 씬의 `start`이고 0.6초는 전부 꼬리다** (ADR-0024) — 겹침을 앞뒤로 나누지 않는다. 같은 이미지가 두 씬에 걸리면([6] 폴백) 2회차부터 스펙 03의 역방향 워크를 쓴다. 판정은 이미지 파일 내용으로 하며 `images.json`을 읽지 않는다 (ADR-0024).
+- **[8. overlay]**: `prompts.json`의 `overlays`(전부 레이어 B, ADR-0019)를 `[7]`의 클립 위에 합성한다. **`clips/`를 덮어쓰지 않는다** (ADR-0024) — 별도 디렉터리에 전 씬을 내고, 오버레이가 없는 씬은 그대로 통과시켜 항상 전 씬이 갖춰지게 한다. `kling` 클립은 편당 과금 산출물이라 오버레이를 고치려고 다시 살 수 없다. 디렉터리 이름은 이 단계를 구현할 때 정한다.
 - **[9. assemble]**: 자막은 **scenes.timed.json** 기준 ASS 생성 후 번인 (ADR-0020 — 씬의 `text`·`start`·`end`를 읽는 곳은 이 파일 하나다). 전환 규칙(스펙 03)이 비트에 걸려 있어 같은 파일의 `beat`을 함께 본다. 싱크 오차 ±200ms 이내 검증.
 
 ## 실패 정책

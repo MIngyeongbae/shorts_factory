@@ -34,14 +34,23 @@ class FakeFFmpeg:
     def last(self) -> list[str]:
         return self.calls[-1]["cmd"]
 
-    def graph_of(self, cmd: Sequence[str]) -> str:
-        """명령에서 `-filter_complex` 값을 꺼낸다."""
+    def option_of(self, cmd: Sequence[str], name: str) -> str:
+        """명령에서 옵션 하나의 값을 꺼낸다."""
         args = list(cmd)
-        return args[args.index("-filter_complex") + 1]
+        return args[args.index(name) + 1]
+
+    def graph_of(self, cmd: Sequence[str]) -> str:
+        """명령에서 `-filter_complex` 값을 꺼낸다 (`[9]`의 그래프)."""
+        return self.option_of(cmd, "-filter_complex")
 
     @property
     def graph(self) -> str:
         return self.graph_of(self.last)
+
+    @property
+    def vf(self) -> str:
+        """`[7]`은 입력이 하나라 `-vf`를 쓴다."""
+        return self.option_of(self.last, "-vf")
 
     def __call__(
         self, cmd: Sequence[str], **kwargs: Any
@@ -67,8 +76,8 @@ def write_fake_clips(
     """`[7. motion]`이 놓을 자리에 클립 파일을 만든다 (specs/05 `clips/{scene_id}.mp4`).
 
     길이도 화면도 없는 껍데기다. `[9]`가 클립에서 읽는 것은 **존재 여부**뿐이고,
-    길이는 계약(씬 길이 + 0.6초)으로 알고 있다 — 실측 확인은 ffprobe가 필요하고
-    그건 `[7]` 구현 시점의 일이다.
+    길이는 계약(씬 길이 + 0.6초)으로 알고 있다. `[7]`이 생긴 뒤에도 `[9]` 테스트는
+    이 껍데기를 쓴다 — 두 단계를 파일 규약 하나로만 묶어 두려는 것이다.
     """
     clips_dir.mkdir(parents=True, exist_ok=True)
     paths = []

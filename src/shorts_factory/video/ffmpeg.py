@@ -104,7 +104,8 @@ def clip_filter(
     return (
         f"[{index}:v]"
         f"trim=end={length:.3f},setpts=PTS-STARTPTS,"
-        f"scale={width}:{height},setsar=1,fps={fps},format={PIXEL_FORMAT}"
+        f"scale={width}:{height},setsar=1,fps={fps},settb=1/{fps},"
+        f"format={PIXEL_FORMAT}"
         f"[{label}]"
     )
 
@@ -149,7 +150,12 @@ def build_filter_graph(
                 f":offset={segment.start:.3f}[{merged}]"
             )
         elif segment.transition_in == HARD_CUT:
-            steps.append(f"[{accumulator}][c{index}]concat=n=2:v=1:a=0[{merged}]")
+            # concat은 출력 타임베이스를 AV_TIME_BASE(1/1000000)로 바꾼다. 그대로 두면
+            # 그 뒤 첫 xfade가 "timebase do not match"로 설정에 실패한다 — 실물
+            # 6씬(피사, 3번이 하드컷) 첫 실행에서 드러났다. 격자를 즉시 되돌린다.
+            steps.append(
+                f"[{accumulator}][c{index}]concat=n=2:v=1:a=0,settb=1/{fps}[{merged}]"
+            )
         else:
             raise FFmpegError(
                 f"scenes/{segment.scene_id}: 알 수 없는 전환 '{segment.transition_in}'"

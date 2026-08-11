@@ -8,6 +8,7 @@
     python run.py backfill-visual-goal --slug SLUG # 확정 대본에 visual_goal만 채움 (ADR-0022)
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.jpg
+    python run.py motion    --slug SLUG           # [2부] 이미지+씬 계약 → clips/{scene_id}.mp4
     python run.py assemble  --slug SLUG           # [2부] 클립+씬 계약 → timeline.mp4
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
@@ -41,6 +42,11 @@ from .stages.imagegen import (
     StyleAnchorsMissing,
     run_imagegen_stage,
 )
+from .stages.motion import (
+    MotionStageError,
+    run_motion_stage,
+)
+from .stages.motion import resolve_run_id as resolve_motion_run_id
 from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
@@ -254,6 +260,27 @@ def _cmd_imagegen(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_motion(args, paths: Paths) -> int:
+    """[7] 베이스 이미지 + 씬 계약 → 씬마다 클립 하나.
+
+    과금이 없는 단계다(로컬 인코딩). `kling` 씬은 i2v 경로가 아직 없어 kenburns로
+    강등되며, 그 사실은 요약과 경고에 나온다 — 조용히 넘어가지 않는다.
+    """
+    run_id = resolve_motion_run_id(paths, run_id=args.run_id, slug=args.slug)
+    try:
+        result = run_motion_stage(
+            run_id, paths=paths, force=args.force, ffmpeg=args.ffmpeg,
+        )
+    except MotionStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 8
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
 def _cmd_assemble(args, paths: Paths) -> int:
     """[9] 클립 + 씬 계약 → 자막이 박힌 timeline.mp4.
 
@@ -389,6 +416,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="스타일 앵커 0장이어도 진행한다 (ADR-0005 룩 일관성 수단 없이 과금)",
     )
     p_imagegen.set_defaults(func=_cmd_imagegen)
+
+    p_motion = sub.add_parser(
+        "motion", parents=[common],
+        help="[7] 이미지+씬 계약 → clips/{scene_id}.mp4 (2부, Ken Burns)",
+    )
+    p_motion.add_argument("--slug", default=None, help="run_id를 대본에서 읽는다")
+    p_motion.add_argument("--run-id", default=None)
+    p_motion.add_argument(
+        "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_motion.set_defaults(func=_cmd_motion)
 
     p_assemble = sub.add_parser(
         "assemble", parents=[common],

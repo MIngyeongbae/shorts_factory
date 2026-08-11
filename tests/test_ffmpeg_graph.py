@@ -65,6 +65,7 @@ def test_clip_is_trimmed_and_normalised():
     assert f"scale={WIDTH}:{HEIGHT}" in step
     assert "setsar=1" in step
     assert f"fps={FPS}" in step
+    assert f"settb=1/{FPS}" in step
     assert f"format={PIXEL_FORMAT}" in step
 
 
@@ -83,6 +84,18 @@ def test_hard_cut_uses_concat_not_a_short_xfade(three_scenes):
 
     assert "concat=n=2:v=1:a=0" in graph
     assert graph.count("xfade") == 1
+
+
+def test_concat_restores_the_frame_timebase(three_scenes):
+    """`concat`은 출력 타임베이스를 1/1000000으로 바꾼다.
+
+    그대로 두면 하드컷 **뒤에 오는 첫 xfade**가 "timebase do not match"로 설정에
+    실패한다. 실물 6씬(피사, 3번이 하드컷) 첫 실행에서 드러난 자리다 — 그래프
+    문자열만 보던 동안에는 보이지 않았다.
+    """
+    graph = graph_of(three_scenes)
+
+    assert f"concat=n=2:v=1:a=0,settb=1/{FPS}" in graph
 
 
 def test_offsets_are_scene_starts_not_a_running_sum():

@@ -12,10 +12,11 @@ ElevenLabs 키가 없어도 `[9]`는 개발된다. `[3]`의 산출물 형태가
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from conftest import HOOVER, PISA, load_script  # noqa: F401  (테스트가 재수출로 쓴다)
 from shorts_factory.config import Paths, write_text
+from shorts_factory.imagegen.fake import solid_png
 from shorts_factory.jsonio import dump_json
 from shorts_factory.schemas.timed_scenes import build_timed_scenes
 from shorts_factory.video.fake import write_fake_clips
@@ -49,3 +50,32 @@ def install_run(
 
 def clips_dir(paths: Paths, run_id: str) -> Path:
     return paths.run_dir(run_id) / "clips"
+
+
+def install_images(
+    paths: Paths,
+    run_id: str,
+    scene_ids: Sequence[int],
+    *,
+    suffix: str = ".png",
+    copies: Mapping[int, int] | None = None,
+) -> dict[int, Path]:
+    """`[7]`의 입력 — `images/{scene_id}{suffix}`. 씬마다 **다른 바이트**다.
+
+    `[6]`의 페이크와 같은 방식으로 색을 씬 번호에서 뽑는다. 바이트가 다르다는 사실이
+    `[7]`의 중복 판정(ADR-0024)을 검사할 수 있게 하는 전제라, 여기서 굳혀 둔다.
+
+    `copies`는 `{받는 씬: 베끼는 씬}`이다 — `[6]`이 폴백으로 인접 씬 그림을 복사한
+    상황을 만든다 (specs/05 `[6]`).
+    """
+    copies = copies or {}
+    images_dir = paths.run_dir(run_id) / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    written: dict[int, Path] = {}
+    for scene_id in scene_ids:
+        source = copies.get(scene_id, scene_id)
+        path = images_dir / f"{scene_id}{suffix}"
+        path.write_bytes(solid_png(9, 16, (source * 7 % 256, source * 13 % 256, 40)))
+        written[scene_id] = path
+    return written
