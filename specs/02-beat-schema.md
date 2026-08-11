@@ -35,6 +35,7 @@
     "value": "발상"
   },
   "subject": "성벽 축조 현장",
+  "subject_scale": "wide",
   "camera": "slow_zoom_in",
   "motion": "kenburns",
   "notes": ""
@@ -50,6 +51,12 @@
   필드명은 `start`/`end`다. 추정(`est_*`)과 실측(`start`/`end`)은 파일 단위로 분리된다.
 - `emphasis`: 화면 강조 요소. `type`은 `03-visual-rules.md`의 오버레이 타입 enum. 숫자 비트는 필수, 그 외 옵션.
 - `subject`: 이미지 프롬프트 생성의 핵심 피사체 (한국어).
+- `subject_scale`: `wide` | `close` | `diagram`. `subject`를 화면에 담는 크기다.
+  `beat`와 함께 구도를 결정한다 (`03-visual-rules.md`, ADR-0018). **연출이 아니라 피사체
+  서술이므로 `[1. script]`가 `subject`와 함께 쓴다** (ADR-0014).
+  - `wide`: 대상 전체·부지·전경 (기본값 성격)
+  - `close`: 표면·끝단·접합면·계측기 등 근접 디테일
+  - `diagram`: 단면도·평면도·도해·일러스트·기록 노트
 - `camera`: `slow_zoom_in` | `slow_zoom_out` | `tilt_down` | `tilt_up` | `pan_left` | `pan_right` | `static` 만 허용. 복합 카메라 워크 금지 (AI 영상 왜곡 방지).
 - `motion`: `kenburns`(기본) | `kling`. `kling`은 유체 모션(물·비·안개·불)이 서사상 필요한 씬에만, 편당 최대 10씬 (ADR-0006).
 

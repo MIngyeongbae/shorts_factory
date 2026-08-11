@@ -10,6 +10,7 @@
       "est_start": 0.0,
       "est_end": 4.6,
       "subject": "한양도성 성벽 전경",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -20,11 +21,8 @@
       "text": "그런데 이건 인부의 낙서가 아닙니다.",
       "est_start": 4.6,
       "est_end": 8.4,
-      "emphasis": {
-        "type": "red_x",
-        "value": "낙서"
-      },
       "subject": "각자성석 클로즈업",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -36,6 +34,7 @@
       "est_start": 8.4,
       "est_end": 12.6,
       "subject": "성벽 축조 현장 조감",
+      "subject_scale": "wide",
       "camera": "pan_right",
       "motion": "kenburns",
       "notes": ""
@@ -51,6 +50,7 @@
         "value": "11만"
       },
       "subject": "축조 인부 행렬 조감",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -61,11 +61,8 @@
       "text": "가장 쉬운 방법은 감독관을 붙이는 겁니다.",
       "est_start": 17.0,
       "est_end": 21.4,
-      "emphasis": {
-        "type": "red_label_box",
-        "value": "감독관"
-      },
       "subject": "성벽 앞 감독관",
+      "subject_scale": "wide",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -77,6 +74,7 @@
       "est_start": 21.4,
       "est_end": 26.0,
       "subject": "끝없이 이어지는 성벽 능선",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -88,6 +86,7 @@
       "est_start": 26.0,
       "est_end": 30.8,
       "subject": "포상 장면 미디엄 샷",
+      "subject_scale": "wide",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -98,11 +97,8 @@
       "text": "무너진 뒤엔 누가 쌓았는지 알 수가 없었습니다.",
       "est_start": 30.8,
       "est_end": 35.4,
-      "emphasis": {
-        "type": "red_x",
-        "value": "무너진 구간"
-      },
       "subject": "무너진 성벽 잔해",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -113,11 +109,8 @@
       "text": "환장할 노릇이죠.",
       "est_start": 35.4,
       "est_end": 37.2,
-      "emphasis": {
-        "type": "red_x_large",
-        "value": "성벽 전체"
-      },
       "subject": "붕괴된 성벽 와이드 뷰",
+      "subject_scale": "wide",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -133,6 +126,7 @@
         "value": "발상"
       },
       "subject": "각자성석 정면 대칭 구도",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -144,6 +138,7 @@
       "est_start": 39.4,
       "est_end": 44.0,
       "subject": "성돌에 글자를 새기는 손",
+      "subject_scale": "close",
       "camera": "tilt_down",
       "motion": "kenburns",
       "notes": ""
@@ -159,6 +154,7 @@
         "value": "97"
       },
       "subject": "구간으로 분할된 성벽 단면",
+      "subject_scale": "diagram",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -170,6 +166,7 @@
       "est_start": 48.6,
       "est_end": 53.4,
       "subject": "각자성석 글자 클로즈업",
+      "subject_scale": "close",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -180,11 +177,8 @@
       "text": "지금도 낙산 구간에서 그 돌을 볼 수 있습니다.",
       "est_start": 53.4,
       "est_end": 58.0,
-      "emphasis": {
-        "type": "place_label",
-        "value": "낙산 구간"
-      },
       "subject": "안개 낀 낙산 성벽 현재 모습",
+      "subject_scale": "wide",
       "camera": "slow_zoom_out",
       "motion": "kling",
       "notes": "안개 유체 모션이 서사상 필요한 씬 (ADR-0006)"
@@ -196,6 +190,7 @@
       "est_start": 58.0,
       "est_end": 63.2,
       "subject": "한양도성 성벽 전경",
+      "subject_scale": "wide",
       "camera": "slow_zoom_out",
       "motion": "kenburns",
       "notes": ""

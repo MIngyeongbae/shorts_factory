@@ -8,8 +8,8 @@
 확인 대상:
 - ADR-0017 경계 — 입력은 06-script.json 하나, 읽기 전용, 산출물은 runs/{run_id}/ 아래
 - ADR-0001 — 연출은 룰 테이블에서만 나온다 (룰에 없는 값이 오면 멈춘다)
-- ADR-0002 — 레이어 A/B 분리
-- ADR-0006 — kling 씬에는 클린 이미지
+- ADR-0018 — 구도는 (beat × subject_scale)에서 나오고, 스케일이 다르면 구도를 잇지 않는다
+- ADR-0019 — 레이어 A 폐기. 베이스 이미지는 전 씬 클린이다
 """
 
 import json
@@ -19,11 +19,12 @@ import pytest
 
 from shorts_factory.config import write_text
 from shorts_factory.jsonio import dump_json
-from shorts_factory.schemas.visual_rules import schema_errors
+from shorts_factory.schemas.visual_rules import FRAMING_TABLE, schema_errors
 from shorts_factory.stages.prompt import (
     PROMPTS_FILE,
     SCRIPT_FILE,
     PromptStageError,
+    build_prompts,
     run_prompt_stage,
 )
 
@@ -187,90 +188,116 @@ def test_state_records_the_stage(paths, install):
 
 
 def test_hook_twist_holds_the_previous_framing(paths, install):
-    """스펙 03 '전경 유지' — 구도만 잇는다. 피사체는 씬 계약이 정한 것을 쓴다."""
+    """스펙 03 '전경 유지' — 앞 씬과 스케일이 같을 때만 구도를 잇는다 (ADR-0018).
+
+    피사 3번 씬이 이 경우다: 2번(hook_fact, wide) → 3번(hook_twist, wide).
+    """
     script = install(PISA)
     scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
-    twist = next(s for s in scenes if s["beat"] == "hook_twist")
+    twist = next(
+        s for s in scenes
+        if s["beat"] == "hook_twist" and s["framing_source"] == "prev_scene"
+    )
     previous = scenes[twist["scene_id"] - 2]
 
     assert twist["framing"] == previous["framing"]
-    assert twist["framing_source"] == "prev_scene"
+    assert twist["subject_scale"] == previous["subject_scale"]
     assert twist["framing_reuse_of"] == previous["scene_id"]
     assert script["scenes"][twist["scene_id"] - 1]["subject"] in twist["prompt"]
 
 
-def test_ending_echo_reuses_the_hook_framing(paths, install):
+def test_framing_is_not_inherited_across_a_different_scale(paths, install):
+    """후버댐 2번 씬 — 1번이 diagram, 2번이 wide다. 이으면 단면 구도를 전경에 쓴다."""
+    install(HOOVER)
+    scenes = run_prompt_stage(HOOVER, paths=paths).prompts["scenes"]
+    first, second = scenes[0], scenes[1]
+
+    assert first["subject_scale"] != second["subject_scale"]
+    assert second["framing_source"] == "scale_fallback"
+    assert second["framing"] != first["framing"]
+    assert "framing_reuse_of" not in second
+
+
+def test_ending_echo_reuses_the_hook_framing_when_the_scale_matches(paths, install):
     install(PISA)
     scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
     hook = next(s for s in scenes if s["beat"] == "hook_fact")
     echo = next(s for s in scenes if s["beat"] == "ending_echo")
 
+    assert echo["subject_scale"] == hook["subject_scale"]
     assert echo["framing"] == hook["framing"]
     assert echo["framing_source"] == "hook_echo"
     assert echo["framing_reuse_of"] == hook["scene_id"]
 
 
-def test_turning_point_x_is_composited_not_baked(paths, install):
-    """'X → 사라짐'은 시간 변화라 정지 이미지에 못 담는다. 레이어 B로 간다."""
+@pytest.mark.parametrize("slug", REAL_SLUGS)
+def test_no_scene_asks_for_a_baked_annotation(paths, install, slug):
+    """ADR-0019 — 레이어 A 폐기. 모든 베이스 이미지는 클린이다."""
+    install(slug)
+    result = run_prompt_stage(slug, paths=paths)
+
+    for entry in result.prompts["scenes"]:
+        assert "annotation_prompt" not in entry
+        assert all(o["layer"] == "B" for o in entry["overlays"])
+
+
+@pytest.mark.parametrize("slug", REAL_SLUGS)
+def test_base_image_never_carries_subtitles_or_particles(paths, install, slug):
+    install(slug)
+    result = run_prompt_stage(slug, paths=paths)
+    for entry in result.prompts["scenes"]:
+        assert "burned-in subtitles or caption bars" in entry["negative_prompt"]
+        assert "sparkle particle overlay" in entry["negative_prompt"]
+
+
+def test_turning_point_has_no_overlay(paths, install):
+    """ADR-0019 — '빨간 크레용 X → 사라짐'은 룰 테이블에서 사라졌다."""
     install(PISA)
     scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
     turning = next(s for s in scenes if s["beat"] == "turning_point")
-
-    assert turning["overlays"] == [
-        {"type": "red_crayon_x_fadeout", "layer": "B", "value": None}
-    ]
-    assert turning["annotation_prompt"] is None
-    assert "red crayon X mark" in turning["negative_prompt"]
+    assert turning["overlays"] == []
 
 
-def test_kenburns_scene_with_layer_a_gets_a_second_pass(paths, install):
+def test_kling_scene_needs_no_special_handling(paths, install):
+    """ADR-0006의 클린 입력 조항은 대상이 사라졌다 — 전 씬이 이미 클린이다.
+
+    motion 말고는 아무것도 달라지지 않아야 한다. 예전에는 레이어 A가 B로 옮겨가고
+    어노테이션 2-pass가 빠지면서 씬 항목이 통째로 바뀌었다.
+    """
     install(PISA)
-    scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
-    context = next(s for s in scenes if s["beat"] == "context")
-
-    assert context["motion"] == "kenburns"
-    assert context["annotation_prompt"]
-    assert [o["layer"] for o in context["overlays"]] == ["A"]
-
-
-def test_kling_scene_gets_a_clean_image(paths, install):
-    """ADR-0006: kling 입력은 어노테이션 없는 클린 이미지, 어노테이션은 클립 위로."""
+    before = run_prompt_stage(PISA, paths=paths).prompts["scenes"][3]
 
     def make_kling(script):
-        script["scenes"][3]["motion"] = "kling"  # context 씬 (빨간 측정선)
+        script["scenes"][3]["motion"] = "kling"
 
     install(PISA, mutate=make_kling)
-    scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
-    kling = scenes[3]
+    after = run_prompt_stage(PISA, paths=paths, force=True).prompts["scenes"][3]
 
-    assert kling["motion"] == "kling"
-    assert kling["annotation_prompt"] is None
-    assert kling["overlays"] == [
-        {
-            "type": "red_measure_line",
-            "layer": "B",
-            "value": None,
-            "layer_note": "kling_clean_input",
-        }
-    ]
-    assert "red measurement lines or outlined areas" in kling["negative_prompt"]
+    assert before["motion"] == "kenburns"
+    assert after["motion"] == "kling"
+    assert {k: v for k, v in before.items() if k != "motion"} == {
+        k: v for k, v in after.items() if k != "motion"
+    }
 
 
-def test_unknown_emphasis_type_stops_the_stage(paths, install):
-    """스펙 03에 없는 오버레이 타입이 오면 연출을 지어내지 않고 멈춘다 (ADR-0001)."""
+def test_unknown_emphasis_type_never_reaches_the_prompt(paths, install):
+    """스펙 03에 없는 오버레이 타입은 씬 계약 단계에서 걸린다 (ADR-0019로 enum이 생겼다)."""
 
     def odd_emphasis(script):
         script["scenes"][0]["emphasis"] = {"type": "blue_circle", "value": "?"}
 
     script = install(PISA, mutate=odd_emphasis)
-    with pytest.raises(PromptStageError, match="blue_circle"):
+    with pytest.raises(PromptStageError, match="씬 계약"):
         run_prompt_stage(PISA, paths=paths)
+    assert not (paths.run_dir(script["run_id"]) / PROMPTS_FILE).exists()
 
-    # specs/05 실패 정책: 실패는 run 디렉터리에 기록하고 종료한다
-    state = json.loads(
-        (paths.run_dir(script["run_id"]) / "state.json").read_text(encoding="utf-8")
-    )
-    assert state["stages"]["5-prompt"]["status"] == "failed"
+
+def test_stage_still_refuses_to_invent_an_overlay(paths, install):
+    """계약을 우회해 들어와도 연출을 지어내지 않는다 (ADR-0001). 계약 검사 뒤의 이중 방어다."""
+    script = real_script(PISA)
+    script["scenes"][0]["emphasis"] = {"type": "blue_circle", "value": "?"}
+    with pytest.raises(PromptStageError, match="blue_circle"):
+        build_prompts(script, source_script="x")
 
 
 def test_camera_off_the_rule_default_warns_but_proceeds(paths, install):
@@ -293,30 +320,41 @@ def test_missing_style_anchors_warn(paths, install):
     assert any("style_anchors" in w for w in result.warnings)
 
 
-# --- 룰 공백 보고 -------------------------------------------------------------
+# --- 구도가 피사체를 따라간다 (ADR-0018) -------------------------------------
 
 
-def test_rule_gaps_only_list_beats_this_script_actually_uses(paths, install):
-    install(PISA)
-    prompts = run_prompt_stage(PISA, paths=paths).prompts
-    beats = {s["beat"] for s in prompts["scenes"]}
-    codes = {gap["code"] for gap in prompts["rule_gaps"]}
+@pytest.mark.parametrize("slug", REAL_SLUGS)
+def test_framing_comes_from_the_scale_the_script_declared(paths, install, slug):
+    """구도는 (beat × subject_scale) 표에서만 나온다. 씬의 스케일과 어긋날 수 없다."""
+    install(slug)
+    result = run_prompt_stage(slug, paths=paths)
 
-    assert "turning_point_overlay_temporal" in codes
-    assert all(gap["scene_ids"] for gap in prompts["rule_gaps"])
-    if "hook_twist" not in beats:  # 방어: 픽스처가 바뀌어도 뜻이 유지되도록
-        assert "hook_twist_framing_choice" not in codes
+    for entry in result.prompts["scenes"]:
+        expected = FRAMING_TABLE[entry["beat"]][entry["subject_scale"]]
+        if entry["framing_source"] == "beat_rule":
+            assert entry["framing"] == expected
+        else:
+            # 참조를 푼 경우에도 표가 참조를 지시한 칸이어야 한다
+            assert expected in ("@prev", "@hook")
 
 
-def test_hoover_hits_more_framing_conflicts_than_pisa(paths, install):
-    """스펙 03 구도 열은 한국 건축 3편 실측 편향이 있다. 단면·내부 소재에서 더 부딪힌다."""
+def test_close_and_diagram_subjects_no_longer_get_a_drone_shot(paths, install):
+    """이 축을 도입한 이유다 — 후버댐 1번 '콘크리트 단면 속 강철 파이프'가 대표 사례."""
+    install(HOOVER)
+    scenes = run_prompt_stage(HOOVER, paths=paths).prompts["scenes"]
 
-    def conflicts(slug):
-        install(slug)
-        prompts = run_prompt_stage(slug, paths=paths).prompts
-        found = [
-            gap for gap in prompts["rule_gaps"] if gap["code"] == "framing_subject_conflict"
-        ]
-        return found[0]["scene_ids"] if found else []
+    wide_only = {"drone_wide", "aerial_diorama", "problem_wide", "present_wide"}
+    for entry in scenes:
+        if entry["subject_scale"] in ("close", "diagram"):
+            assert entry["framing"] not in wide_only
 
-    assert len(conflicts(HOOVER)) > len(conflicts(PISA))
+    assert scenes[0]["subject_scale"] == "close"
+    assert scenes[0]["framing"] == "subject_closeup"
+
+
+@pytest.mark.parametrize("slug", REAL_SLUGS)
+def test_every_scale_actually_gets_used(paths, install, slug):
+    """ADR-0018 되돌릴 조건의 관측 지점 — 한 값으로 쏠리면 축이 판별력이 없다."""
+    install(slug)
+    result = run_prompt_stage(slug, paths=paths)
+    assert set(result.scale_counts) == {"wide", "close", "diagram"}

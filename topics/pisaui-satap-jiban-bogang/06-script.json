@@ -10,6 +10,7 @@
       "est_start": 0.0,
       "est_end": 4.444,
       "subject": "이탈리아 도시 광장의 오래된 벽돌 종탑",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -21,6 +22,7 @@
       "est_start": 4.444,
       "est_end": 7.35,
       "subject": "출입 통제선이 쳐진 텅 빈 광장",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -32,6 +34,7 @@
       "est_start": 7.35,
       "est_end": 11.111,
       "subject": "피사 두오모 광장에 기울어 선 사탑",
+      "subject_scale": "wide",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -43,6 +46,7 @@
       "est_start": 11.111,
       "est_end": 15.043,
       "subject": "닫힌 철문과 관광객 출입 금지 표지판",
+      "subject_scale": "close",
       "camera": "pan_right",
       "motion": "kenburns",
       "notes": ""
@@ -58,6 +62,7 @@
         "value": "1993"
       },
       "subject": "기울어진 탑에 겹쳐진 각도 눈금",
+      "subject_scale": "wide",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -73,6 +78,7 @@
         "value": "3"
       },
       "subject": "얕게 박힌 탑 기초와 지층 단면도",
+      "subject_scale": "diagram",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -84,6 +90,7 @@
       "est_start": 23.078,
       "est_end": 25.813,
       "subject": "탑 밑동의 석조 기초 확대 모습",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -95,6 +102,7 @@
       "est_start": 25.813,
       "est_end": 29.745,
       "subject": "석조 구멍으로 들어가는 그라우트 호스",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -106,6 +114,7 @@
       "est_start": 29.745,
       "est_end": 32.822,
       "subject": "탑 남쪽 면에 붙은 변위 계측기",
+      "subject_scale": "close",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -117,6 +126,7 @@
       "est_start": 32.822,
       "est_end": 36.241,
       "subject": "탑 둘레 지중 앵커 배치 도해",
+      "subject_scale": "diagram",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -128,6 +138,7 @@
       "est_start": 36.241,
       "est_end": 39.66,
       "subject": "서리 낀 액체질소 배관과 언 흙",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -139,6 +150,7 @@
       "est_start": 39.66,
       "est_end": 43.763,
       "subject": "얼었다 녹아 갈라진 흙 표면",
+      "subject_scale": "close",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -150,6 +162,7 @@
       "est_start": 43.763,
       "est_end": 48.378,
       "subject": "경사계 바늘과 기울기 기록 그래프",
+      "subject_scale": "diagram",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -161,6 +174,7 @@
       "est_start": 48.378,
       "est_end": 50.258,
       "subject": "탑 북쪽 지반을 가리키는 설계 도면",
+      "subject_scale": "diagram",
       "camera": "slow_zoom_in",
       "motion": "kenburns",
       "notes": ""
@@ -172,6 +186,7 @@
       "est_start": 50.258,
       "est_end": 54.702,
       "subject": "탑 남쪽 기초 아래 젖은 점토층",
+      "subject_scale": "close",
       "camera": "tilt_down",
       "motion": "kenburns",
       "notes": ""
@@ -183,6 +198,7 @@
       "est_start": 54.702,
       "est_end": 57.779,
       "subject": "북쪽 기초 아래로 비스듬히 들어간 추출관",
+      "subject_scale": "close",
       "camera": "tilt_down",
       "motion": "kenburns",
       "notes": ""
@@ -194,6 +210,7 @@
       "est_start": 57.779,
       "est_end": 61.711,
       "subject": "기초 평면도에 그어진 임계선",
+      "subject_scale": "diagram",
       "camera": "tilt_down",
       "motion": "kenburns",
       "notes": ""
@@ -209,6 +226,7 @@
         "value": "1999"
       },
       "subject": "추출관에서 나온 흙 더미와 시추 장비",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -224,6 +242,7 @@
         "value": "1.5"
       },
       "subject": "기초 남북 가장자리의 수준 측량 눈금",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -239,6 +258,7 @@
         "value": "2000"
       },
       "subject": "일렬로 늘어선 추출공 헤드",
+      "subject_scale": "close",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -254,6 +274,7 @@
         "value": "0.5"
       },
       "subject": "수직선과 나란히 놓인 기울어진 탑",
+      "subject_scale": "wide",
       "camera": "static",
       "motion": "kenburns",
       "notes": ""
@@ -265,6 +286,7 @@
       "est_start": 78.805,
       "est_end": 83.762,
       "subject": "크레인에 들려 올라가는 납괴 더미",
+      "subject_scale": "close",
       "camera": "slow_zoom_out",
       "motion": "kenburns",
       "notes": ""
@@ -276,6 +298,7 @@
       "est_start": 83.762,
       "est_end": 88.036,
       "subject": "탑 기단을 둘러싼 카티노 통로",
+      "subject_scale": "wide",
       "camera": "slow_zoom_out",
       "motion": "kenburns",
       "notes": ""
@@ -287,6 +310,7 @@
       "est_start": 88.036,
       "est_end": 92.651,
       "subject": "탑 벽면에 부착된 계측 센서와 케이블",
+      "subject_scale": "close",
       "camera": "slow_zoom_out",
       "motion": "kenburns",
       "notes": ""
@@ -298,6 +322,7 @@
       "est_start": 92.651,
       "est_end": 97.437,
       "subject": "두오모 광장에 기울어 선 피사의 사탑",
+      "subject_scale": "wide",
       "camera": "slow_zoom_out",
       "motion": "kenburns",
       "notes": ""

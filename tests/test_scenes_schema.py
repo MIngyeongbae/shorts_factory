@@ -39,6 +39,7 @@ def test_spec_inline_example_scene_is_valid():
         "est_end": 45.8,
         "emphasis": {"type": "big_red_text", "value": "발상"},
         "subject": "성벽 축조 현장",
+        "subject_scale": "wide",
         "camera": "slow_zoom_in",
         "motion": "kenburns",
         "notes": "",
@@ -132,7 +133,7 @@ def test_number_beat_requires_emphasis(beat):
 def test_non_number_beat_may_omit_emphasis():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
-    del scene["emphasis"]
+    scene.pop("emphasis", None)
     errors, _ = validate_scenes(data)
     assert errors == []
 
@@ -165,12 +166,10 @@ def test_duration_mismatch_is_warning_not_error():
     assert any("total_duration" in w for w in warnings)
 
 
-def test_emphasis_type_is_not_yet_an_enum():
-    """specs/02는 emphasis.type을 specs/03의 오버레이 enum이라고 하지만 그 enum이 없다.
-
-    스펙 공백을 고정해 둔다. specs/03에 enum이 추가되면 이 테스트가 뒤집혀야 한다.
-    """
+def test_emphasis_type_is_an_enum_from_spec_03():
+    """specs/02의 emphasis.type = specs/03의 오버레이 타입 enum (ADR-0019로 그 표가 생겼다)."""
     data = load_fixture("scenes_pass.json")
-    data["scenes"][1]["emphasis"]["type"] = "아직_정의되지_않은_오버레이"
+    scene = next(s for s in data["scenes"] if "emphasis" in s)
+    scene["emphasis"]["type"] = "red_crayon_x"  # ADR-0019로 폐기된 타입
     errors, _ = validate_scenes(data)
-    assert errors == []
+    assert any("emphasis" in e for e in errors)

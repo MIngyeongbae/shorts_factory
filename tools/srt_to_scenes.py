@@ -65,10 +65,19 @@ CAMERA = {
 CONTEXT_CAMERAS = ("pan_right", "tilt_down", "pan_left", "tilt_up", "pan_right", "tilt_down")
 SOLUTION_STEP_CAMERA = "tilt_down"
 
+#: SUBJECTS와 1:1. specs/03의 구도 축 (ADR-0018). 실물의 잘린 면은 `close`고
+#: `diagram`은 도면·도해·일러스트일 때만 쓴다 (specs/03).
+SUBJECT_SCALES = (
+    "wide", "wide", "wide", "wide", "wide", "wide", "wide", "wide", "wide", "wide",
+    "close", "close", "wide", "wide", "close", "wide", "wide", "wide", "wide", "wide",
+    "wide", "wide", "close", "wide", "wide", "wide", "wide", "wide",
+)
+
 #: scene_id → (오버레이 타입, 값). 숫자 비트는 필수, 그 외는 옵션 (specs/02).
+#: 타입은 specs/03의 오버레이 타입 enum뿐이다 — 빨간 X 계열은 ADR-0019로 폐기됐다.
 EMPHASIS = {
-    1: ("big_red_text", "500년"), 2: ("red_x", "경치"), 10: ("red_x", "준설"),
-    13: ("red_x_large", "묘목"), 18: ("big_red_text", "4km"), 24: ("big_red_text", "500년"),
+    1: ("big_red_text", "500년"), 18: ("big_red_text", "4km"),
+    24: ("big_red_text", "500년"),
 }
 #: 유체 모션(물·비·안개·불)이 서사상 필요한 씬만 kling (ADR-0006)
 KLING = {8: "비·흙모래 유체 모션이 서사상 필요한 씬 (ADR-0006)"}
@@ -92,9 +101,10 @@ def parse_srt(path: Path) -> list[tuple[float, float, str]]:
 
 
 def build(cues: list[tuple[float, float, str]]) -> dict:
-    if not len(cues) == len(BEATS) == len(SUBJECTS):
+    if not len(cues) == len(BEATS) == len(SUBJECTS) == len(SUBJECT_SCALES):
         raise SystemExit(
-            f"태깅 테이블과 자막 줄 수가 다르다: 큐 {len(cues)} / 비트 {len(BEATS)} / 피사체 {len(SUBJECTS)}"
+            f"태깅 테이블과 자막 줄 수가 다르다: 큐 {len(cues)} / 비트 {len(BEATS)} / "
+            f"피사체 {len(SUBJECTS)} / 스케일 {len(SUBJECT_SCALES)}"
         )
 
     scenes, context_seen = [], 0
@@ -114,6 +124,7 @@ def build(cues: list[tuple[float, float, str]]) -> dict:
             kind, value = EMPHASIS[index]
             scene["emphasis"] = {"type": kind, "value": value}
         scene["subject"] = SUBJECTS[index - 1]
+        scene["subject_scale"] = SUBJECT_SCALES[index - 1]
         scene["camera"] = camera
         scene["motion"] = "kling" if index in KLING else "kenburns"
         scene["notes"] = KLING.get(index, "")

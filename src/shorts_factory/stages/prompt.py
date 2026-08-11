@@ -43,19 +43,14 @@ from ..schemas.visual_rules import (
     BASE_STYLE,
     BEAT_RULES,
     COMPOSITION,
-    ECHO_HOOK,
     FRAMINGS,
     GLOBAL_OVERLAYS,
-    HOOK_TWIST_FALLBACK,
-    INHERIT_PREV,
     OVERLAYS,
     RESOLUTION,
-    RULE_GAPS,
     STYLE_ANCHOR_DIR,
-    build_annotation,
     build_negative,
     build_prompt,
-    framing_conflicts,
+    resolve_framing,
     schema_errors,
 )
 
@@ -89,11 +84,12 @@ class PromptResult:
         return len(self.prompts["scenes"]) if self.prompts else 0
 
     @property
-    def annotation_count(self) -> int:
-        """레이어 A 2-pass 편집이 붙는 씬 수 (= 추가 이미지 호출 수, ADR-0005 비용)."""
-        if not self.prompts:
-            return 0
-        return sum(1 for s in self.prompts["scenes"] if s["annotation_prompt"])
+    def scale_counts(self) -> dict[str, int]:
+        """스케일별 씬 수. ADR-0018의 되돌릴 조건("한 값으로 90% 이상 쏠림") 관측용."""
+        counts: dict[str, int] = {}
+        for scene in self.prompts["scenes"] if self.prompts else []:
+            counts[scene["subject_scale"]] = counts.get(scene["subject_scale"], 0) + 1
+        return counts
 
     @property
     def overlay_count(self) -> int:
@@ -107,9 +103,11 @@ class PromptResult:
     @property
     def summary(self) -> str:
         tail = " (스킵)" if self.skipped else ""
+        scales = " / ".join(
+            f"{scale} {count}" for scale, count in sorted(self.scale_counts.items())
+        )
         return (
-            f"[5] {self.topic} — {self.scene_count}씬 / "
-            f"레이어A 어노테이션 {self.annotation_count}씬 / "
+            f"[5] {self.topic} — {self.scene_count}씬 ({scales}) / "
             f"레이어B 오버레이 {self.overlay_count}건 → {PROMPTS_FILE}{tail}"
         )
 
@@ -123,34 +121,14 @@ def _load_json(path: Path, what: str) -> dict[str, Any]:
         raise PromptStageError(f"{what}을(를) 읽을 수 없다: {path} — {exc}") from exc
 
 
-def _resolve_framing(
-    beat: str,
-    prev: tuple[str, int] | None,
-    hook: tuple[str, int] | None,
-) -> tuple[str, str, int | None]:
-    """(구도 토큰, 출처, 참조 씬) — 씬을 가로지르는 구도 참조를 푼다.
-
-    스펙 03의 구도 열에는 다른 씬을 가리키는 값이 둘 있다.
-    - hook_twist `전경 유지` → 앞 씬 구도를 잇는다 (이미지가 아니라 구도만)
-    - ending_echo `훅과 동일/유사 구도 재사용` → 첫 hook_fact 씬 구도를 다시 쓴다
-    """
-    token = BEAT_RULES[beat].framing
-    if token == INHERIT_PREV:
-        if prev is None:
-            return HOOK_TWIST_FALLBACK, "beat_rule", None
-        return prev[0], "prev_scene", prev[1]
-    if token == ECHO_HOOK:
-        reference = hook or prev
-        if reference is None:
-            return HOOK_TWIST_FALLBACK, "beat_rule", None
-        return reference[0], "hook_echo", reference[1]
-    return token, "beat_rule", None
-
-
 def _scene_overlays(
     scene: dict[str, Any], beat: str, sid: int
 ) -> list[dict[str, Any]]:
-    """비트 룰 오버레이 + 씬의 emphasis. 레이어는 ADR-0002/0006이 정한다."""
+    """비트 룰 오버레이 + 씬의 emphasis.
+
+    레이어 A가 폐기돼(ADR-0019) 나오는 항목은 전부 레이어 B다 — `[8. overlay]`가
+    합성한다. 베이스 이미지에는 아무것도 그리지 않는다.
+    """
     names = list(BEAT_RULES[beat].overlays)
 
     emphasis = scene.get("emphasis")
@@ -169,20 +147,10 @@ def _scene_overlays(
             # 숫자 비트가 아닌데 emphasis가 달린 경우 (specs/02 "그 외 옵션").
             names.append(etype)
 
-    items: list[dict[str, Any]] = []
-    for name in names:
-        overlay = OVERLAYS[name]
-        item: dict[str, Any] = {
-            "type": name,
-            "layer": overlay.layer,
-            "value": value_of.get(name),
-        }
-        if overlay.layer == "A" and scene["motion"] == "kling":
-            # ADR-0006: kling 씬에는 클린 이미지를 넣고 어노테이션은 클립 위에 얹는다
-            item["layer"] = "B"
-            item["layer_note"] = "kling_clean_input"
-        items.append(item)
-    return items
+    return [
+        {"type": name, "layer": OVERLAYS[name].layer, "value": value_of.get(name)}
+        for name in names
+    ]
 
 
 def build_prompts(
@@ -192,10 +160,10 @@ def build_prompts(
     scenes: list[dict[str, Any]] = script["scenes"]
     warnings: list[str] = []
     out_scenes: list[dict[str, Any]] = []
-    framing_tokens: list[str] = []
 
-    prev: tuple[str, int] | None = None
-    hook: tuple[str, int] | None = None
+    #: (구도 토큰, subject_scale, scene_id) — 스케일이 같을 때만 구도를 잇는다 (ADR-0018)
+    prev: tuple[str, str, int] | None = None
+    hook: tuple[str, str, int] | None = None
     missing_values: dict[str, list[int]] = {}
 
     for scene in scenes:
@@ -206,13 +174,12 @@ def build_prompts(
                 f"씬 {sid}: 스펙 03 룰 테이블에 없는 비트 '{beat}'"
             )
         rule = BEAT_RULES[beat]
+        scale = scene["subject_scale"]
 
-        token, source, reference = _resolve_framing(beat, prev, hook)
-        framing_tokens.append(token)
+        token, source, reference = resolve_framing(beat, scale, prev=prev, hook=hook)
 
         overlays = _scene_overlays(scene, beat, sid)
         overlay_names = tuple(item["type"] for item in overlays)
-        layer_a = tuple(item["type"] for item in overlays if item["layer"] == "A")
         for item in overlays:
             if OVERLAYS[item["type"]].needs_value and item["value"] is None:
                 missing_values.setdefault(item["type"], []).append(sid)
@@ -226,36 +193,27 @@ def build_prompts(
         entry: dict[str, Any] = {
             "scene_id": sid,
             "beat": beat,
+            "subject_scale": scale,
             "camera": scene["camera"],
             "motion": scene["motion"],
             "framing": token,
             "framing_source": source,
             "prompt": build_prompt(FRAMINGS[token].shot, scene["subject"]),
             "negative_prompt": build_negative(overlay_names),
-            # ADR-0006: kenburns만 2-pass 어노테이션. kling 씬은 위에서 레이어 A가
-            # 전부 B로 옮겨가므로 layer_a가 비고 자연히 None이 된다.
-            "annotation_prompt": build_annotation(layer_a, scene["subject"]),
             "overlays": overlays,
         }
         if reference is not None:
             entry["framing_reuse_of"] = reference
         out_scenes.append(entry)
 
-        prev = (token, sid)
+        prev = (token, scale, sid)
         if hook is None and beat == "hook_fact":
-            hook = (token, sid)
+            hook = (token, scale, sid)
 
     for overlay_type, ids in sorted(missing_values.items()):
         warnings.append(
             f"레이어 B 텍스트 오버레이 '{overlay_type}'에 넣을 값이 없다 "
             f"(씬 {', '.join(str(i) for i in ids)}). 계약에 출처가 없어 value=null로 뒀다"
-        )
-
-    conflicts = framing_conflicts(scenes, framing_tokens)
-    if conflicts:
-        warnings.append(
-            f"스펙 03 구도 룰과 피사체가 부딪히는 씬 {len(conflicts)}개 "
-            f"(씬 {', '.join(str(i) for i in conflicts)}). 룰대로 두고 프롬프트는 바꾸지 않았다"
         )
 
     document = {
@@ -271,40 +229,8 @@ def build_prompts(
             "global_overlays": [dict(o) for o in GLOBAL_OVERLAYS],
         },
         "scenes": out_scenes,
-        "rule_gaps": _rule_gaps(scenes, conflicts),
     }
     return document, warnings
-
-
-def _rule_gaps(
-    scenes: list[dict[str, Any]], conflicts: list[int]
-) -> list[dict[str, Any]]:
-    """이 대본에서 실제로 마주친 '스펙 03이 결정을 남겨 둔 자리'만 싣는다."""
-    gaps: list[dict[str, Any]] = []
-    for gap in RULE_GAPS:
-        ids = [s["scene_id"] for s in scenes if s["beat"] in gap.beats]
-        if ids:
-            gaps.append(
-                {
-                    "code": gap.code,
-                    "scene_ids": ids,
-                    "issue": gap.issue,
-                    "resolution": gap.resolution,
-                }
-            )
-    if conflicts:
-        gaps.append(
-            {
-                "code": "framing_subject_conflict",
-                "scene_ids": conflicts,
-                "issue": "스펙 03의 구도 열은 한국 건축 3편 실측에서 나와 드론 뷰·조감 "
-                         "디오라마로 기운다. 이 씬들은 피사체가 근접·내부·도해인데 룰이 "
-                         "야외 광각/조감을 지시한다",
-                "resolution": "룰대로 광각/조감을 지시했다. 프롬프트는 바꾸지 않았다 — "
-                              "메우려면 스펙 03 구도 열에 근접·도해 케이스 행이 필요하다",
-            }
-        )
-    return gaps
 
 
 def _anchor_warning(paths: Paths) -> str | None:
@@ -384,7 +310,6 @@ def run_prompt_stage(
         output=prompts_path.relative_to(paths.root).as_posix(),
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
-        rule_gaps=[gap["code"] for gap in document["rule_gaps"]],
         warnings=warnings,
     )
 

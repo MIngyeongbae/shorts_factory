@@ -1,21 +1,22 @@
 """비트 → 시각 연출 룰 테이블과 이미지 프롬프트 조립. specs/03-visual-rules.md.
 
 `[5. prompt]`가 쓰는 유일한 판단 근거다. ADR-0001에 따라 여기 없는 연출은 만들어 내지
-않는다 — 스펙 03이 택일이나 조건부로 남겨 둔 자리는 임의로 메우는 대신 `rule_gaps`에
-어떤 자리를 무엇으로 채웠는지 적어 내보낸다.
+않는다.
 
 ## 이 모듈이 스펙 03에서 그대로 옮겨온 것
 
 - 베이스 스타일 3줄 (`BASE_STYLE`, `COMPOSITION`, 우하단 파티클 = `GLOBAL_OVERLAYS`)
-- 비트별 룰 테이블 12행 (`BEAT_RULES`: 구도 / 오버레이 / 카메라 기본값)
-- 텍스트 2계층 원칙 → 오버레이 타입마다 `layer`가 붙는다 (ADR-0002)
-- 모션별 어노테이션 규칙 → `kenburns`는 2-pass 편집, `kling`은 클린 이미지 (ADR-0006)
+- 구도 표 `(beat × subject_scale) → 토큰` 36칸 (`FRAMING_TABLE`, ADR-0018)
+- 구도 토큰 → 샷 21행 (`FRAMINGS`)
+- 비트별 오버레이·카메라 기본값 12행 (`BEAT_RULES`)
+- 오버레이 타입 enum 2행 (`OVERLAYS`, ADR-0019)
 
 ## 이 모듈이 다루지 않는 것
 
 - 전환 규칙·자막 스타일: 스펙 03에 있지만 `[9. assemble]` 소관이다
 - 카메라 값 결정: `camera`는 이미 씬 계약에 들어 있다 (ADR-0014에서 `[1]`이 채운다).
   여기서는 비트 기본값과 어긋나는지 **검사만** 한다
+- 레이어 A 어노테이션: 폐기됐다 (ADR-0019). 베이스 이미지는 전 씬 클린이다
 """
 
 from __future__ import annotations
@@ -62,7 +63,12 @@ GLOBAL_NEGATIVES: tuple[str, ...] = (
     "sparkle particle overlay",
 )
 
-# --- 구도 (specs/03 룰 테이블 '구도' 열) --------------------------------------
+# --- 피사체 스케일 (specs/02, ADR-0018) --------------------------------------
+
+#: 씬 계약의 `subject_scale`. 구도 표의 열이다.
+SUBJECT_SCALES: tuple[str, ...] = ("wide", "close", "diagram")
+
+# --- 구도 토큰 → 샷 (specs/03 "구도 토큰 → 샷" 21행) -------------------------
 
 
 @dataclass(frozen=True)
@@ -71,38 +77,47 @@ class Framing:
 
     token: str
     shot: str
-    #: 야외 광각/조감을 전제하는 구도인가. 프롬프트를 바꾸지 않고 경고 판정에만 쓴다.
-    wide_exterior: bool = False
 
 
 FRAMINGS: dict[str, Framing] = {
     f.token: f
     for f in (
-        # hook_fact "드론 뷰/광각 전경"
-        Framing("drone_wide", "aerial drone establishing shot, wide view of the site",
-                wide_exterior=True),
-        # hook_twist 두 번째 선택지 "피사체 클로즈업"
+        # wide 계열
+        Framing("drone_wide", "aerial drone establishing shot, wide view of the site"),
+        Framing("aerial_diorama", "bird's-eye diorama view of the scene"),
+        Framing("attempt_medium", "medium shot of the attempted solution"),
+        Framing("solution_medium", "medium shot of the working solution"),
+        Framing("failure_result_wide", "wide shot that shows the failure outcome itself"),
+        Framing("problem_wide", "wide view of the whole problem situation"),
+        Framing(
+            "frontal_symmetric",
+            "frontal view of the key subject, symmetrical composition",
+        ),
+        Framing("present_wide", "present-day photoreal wide shot"),
+        # close 계열
         Framing("subject_closeup", "close-up of the main subject"),
-        # context / context_number "조감 디오라마"
-        Framing("aerial_diorama", "bird's-eye diorama view of the scene",
-                wide_exterior=True),
-        # failed_solution "해법 대상 미디엄 샷"
-        Framing("medium_shot", "medium shot of the attempted solution"),
-        # failure_reason "실패 결과 묘사 (무너짐, 넘침 등)"
-        Framing("failure_result", "shot that shows the failure outcome itself"),
-        # dilemma_peak "문제 상황 와이드 뷰"
-        Framing("problem_wide", "wide view of the whole problem situation",
-                wide_exterior=True),
-        # turning_point "핵심 피사체 정면, 대칭 구도"
-        Framing("frontal_symmetric",
-                "frontal view of the key subject, symmetrical composition"),
-        # solution_step "단면(cross-section) 컷"
-        Framing("cross_section", "cross-section cutaway, cut plane facing the camera"),
-        # solution_number "해결책 디테일 클로즈업"
         Framing("detail_closeup", "tight detail close-up of the solution"),
-        # present_link "현재 실사풍 전경"
-        Framing("present_photoreal_wide", "present-day photoreal wide shot",
-                wide_exterior=True),
+        Framing("failure_closeup", "tight close-up of the point where it failed"),
+        Framing("problem_closeup", "tight close-up of the problem spot"),
+        Framing(
+            "frontal_closeup",
+            "frontal close-up of the key subject, symmetrical composition",
+        ),
+        Framing("present_closeup", "present-day photoreal close-up"),
+        # diagram 계열
+        Framing(
+            "section_diagram",
+            "cutaway sectional diagram, cut plane facing the camera",
+        ),
+        Framing("solution_diagram", "explanatory diagram of the attempted solution"),
+        Framing("failure_diagram", "explanatory diagram of why it failed"),
+        Framing("problem_diagram", "explanatory diagram of the problem"),
+        Framing(
+            "frontal_diagram",
+            "frontal explanatory diagram of the key subject, symmetrical layout",
+        ),
+        Framing("cross_section", "cross-section cutaway, cut plane facing the camera"),
+        Framing("present_section", "present-day photoreal shot of a cut/exposed face"),
     )
 }
 
@@ -111,71 +126,104 @@ INHERIT_PREV = "@prev"
 #: 구도가 훅 씬에서 온다는 표시 (ending_echo "훅과 동일/유사 구도 재사용").
 ECHO_HOOK = "@hook"
 
-# --- 오버레이 (specs/03 룰 테이블 '오버레이' 열 + ADR-0002 2계층) ------------
+#: 참조(`@prev`/`@hook`)가 성립하지 않을 때 쓰는 값. specs/03 "참조가 성립하지 않는 경우".
+#: 가리킬 씬이 없거나, 있어도 subject_scale이 달라 구도를 이을 수 없을 때다.
+REFERENCE_FALLBACK: dict[str, str] = {
+    INHERIT_PREV: "drone_wide",
+    ECHO_HOOK: "present_wide",
+}
+
+# --- 구도 표 (specs/03 "비트 × 스케일 → 구도 토큰" 12행 × 3열) ---------------
+
+FRAMING_TABLE: dict[str, dict[str, str]] = {
+    "hook_fact": {
+        "wide": "drone_wide",
+        "close": "subject_closeup",
+        "diagram": "section_diagram",
+    },
+    "hook_twist": {
+        "wide": INHERIT_PREV,
+        "close": "subject_closeup",
+        "diagram": "section_diagram",
+    },
+    "context": {
+        "wide": "aerial_diorama",
+        "close": "subject_closeup",
+        "diagram": "section_diagram",
+    },
+    "context_number": {
+        "wide": "aerial_diorama",
+        "close": "subject_closeup",
+        "diagram": "section_diagram",
+    },
+    "failed_solution": {
+        "wide": "attempt_medium",
+        "close": "detail_closeup",
+        "diagram": "solution_diagram",
+    },
+    "failure_reason": {
+        "wide": "failure_result_wide",
+        "close": "failure_closeup",
+        "diagram": "failure_diagram",
+    },
+    "dilemma_peak": {
+        "wide": "problem_wide",
+        "close": "problem_closeup",
+        "diagram": "problem_diagram",
+    },
+    "turning_point": {
+        "wide": "frontal_symmetric",
+        "close": "frontal_closeup",
+        "diagram": "frontal_diagram",
+    },
+    "solution_step": {
+        "wide": "solution_medium",
+        "close": "detail_closeup",
+        "diagram": "cross_section",
+    },
+    "solution_number": {
+        "wide": "solution_medium",
+        "close": "detail_closeup",
+        "diagram": "cross_section",
+    },
+    "present_link": {
+        "wide": "present_wide",
+        "close": "present_closeup",
+        "diagram": "present_section",
+    },
+    "ending_echo": {
+        "wide": ECHO_HOOK,
+        "close": "subject_closeup",
+        "diagram": "section_diagram",
+    },
+}
+
+# --- 오버레이 (specs/03 "오버레이 타입 enum", ADR-0002 2계층, ADR-0019) ------
 
 
 @dataclass(frozen=True)
 class Overlay:
     """오버레이 타입 하나.
 
-    `layer`는 ADR-0002가 정한 두 계층이다.
-    - A: 이미지 생성 단계에서 그린다. 분위기용이라 글자 정확도를 요구하지 않는다
-    - B: 후처리 합성. 시청자가 읽어야 하는 텍스트가 들어가는 것은 전부 여기다
+    `layer`는 ADR-0002가 정한 두 계층이다. ADR-0019로 레이어 A가 폐기돼 지금은 B뿐이다 —
+    베이스 이미지는 전 씬 클린이고, 화면에 얹히는 것은 전부 후처리 합성이다.
     """
 
     type: str
     layer: str
-    #: 레이어 A 2-pass 편집 지시문. `{subject}`가 씬 피사체로 치환된다.
-    annotation: str | None
-    #: 베이스(클린) 이미지에서 배제할 문구. 레이어 A든 B든 베이스에는 없어야 한다
-    #: (ADR-0005 "클린 베이스 생성 → 편집 2-pass", ADR-0006 "클린 이미지를 Kling에 입력").
+    #: 베이스(클린) 이미지에서 배제할 문구.
     negative: str
-    #: emphasis.value 같은 표시할 문자열이 필요한가. 레이어 B 텍스트 오버레이만 참이다.
+    #: emphasis.value 같은 표시할 문자열이 필요한가.
     needs_value: bool = False
 
 
 OVERLAYS: dict[str, Overlay] = {
     o.type: o
     for o in (
-        # hook_twist / failure_reason "빨간 크레용 X"
-        Overlay(
-            "red_crayon_x", "A",
-            "a big hand-drawn red crayon X scrawled over {subject}",
-            "red crayon X mark",
-        ),
-        # context "빨간 측정선/영역 표시"
-        Overlay(
-            "red_measure_line", "A",
-            "thin red measurement lines and a red outlined area marking {subject}",
-            "red measurement lines or outlined areas",
-        ),
         # context_number / solution_number "대형 빨간 숫자 텍스트 (후처리 합성)"
-        Overlay("big_red_text", "B", None, "large red number text", needs_value=True),
-        # failed_solution "빨간 라벨 박스 (지도핀 스타일)"
-        Overlay(
-            "red_label_box", "A",
-            "a red map-pin style label box pointing at {subject}",
-            "red label boxes or map pins",
-        ),
-        # dilemma_peak "빨간 X 대형"
-        Overlay(
-            "red_x_large", "A",
-            "an oversized red X drawn across the whole frame",
-            "large red X mark",
-        ),
-        # turning_point "빨간 크레용 X → 사라짐". 시간 변화라 정지 이미지에 담을 수 없어
-        # 레이어 B로 올린다 (rule_gaps: turning_point_overlay_temporal).
-        Overlay("red_crayon_x_fadeout", "B", None, "red crayon X mark"),
-        # solution_step "빨간 치수선/화살표"
-        Overlay(
-            "red_dimension_arrow", "A",
-            "red dimension lines and arrows annotating {subject}",
-            "red dimension lines or arrows",
-        ),
-        # hook_fact "장소명 라벨" / present_link "장소명 라벨 박스".
-        # ADR-0002가 "장소명 라벨"을 레이어 B로 못 박았다.
-        Overlay("place_label", "B", None, "place-name label", needs_value=True),
-        Overlay("place_label_box", "B", None, "place-name label box", needs_value=True),
+        Overlay("big_red_text", "B", "large red number text", needs_value=True),
+        # 전 씬 공통. 씬 항목으로는 붙지 않지만 emphasis.type enum에는 들어간다.
+        Overlay("sparkle_particles", "B", "sparkle particle overlay"),
     )
 }
 
@@ -183,124 +231,54 @@ OVERLAYS: dict[str, Overlay] = {
 #: 곧 위 레지스트리의 키다. 계약에 없는 타입이 오면 지어내지 않고 오류로 돌린다.
 OVERLAY_TYPES = tuple(OVERLAYS)
 
-# --- 비트 룰 테이블 (specs/03 "비트별 룰" 12행) ------------------------------
+# --- 비트별 오버레이·카메라 (specs/03 "비트별 오버레이·카메라" 12행) ---------
 
 
 @dataclass(frozen=True)
 class BeatRule:
-    framing: str
     overlays: tuple[str, ...]
     #: '카메라 기본값' 열. 여러 개면 스펙이 "pan 또는 tilt"처럼 폭을 준 것이다.
     cameras: tuple[str, ...]
 
 
 BEAT_RULES: dict[str, BeatRule] = {
-    "hook_fact": BeatRule("drone_wide", (), ("slow_zoom_in",)),
-    "hook_twist": BeatRule(INHERIT_PREV, ("red_crayon_x",), ("static",)),
-    "context": BeatRule(
-        "aerial_diorama", ("red_measure_line",),
-        ("pan_left", "pan_right", "tilt_down", "tilt_up"),
-    ),
-    "context_number": BeatRule("aerial_diorama", ("big_red_text",), ("slow_zoom_in",)),
-    "failed_solution": BeatRule("medium_shot", ("red_label_box",), ("static",)),
-    "failure_reason": BeatRule("failure_result", ("red_crayon_x",), ("slow_zoom_in",)),
-    "dilemma_peak": BeatRule("problem_wide", ("red_x_large",), ("static",)),
-    "turning_point": BeatRule(
-        "frontal_symmetric", ("red_crayon_x_fadeout",), ("slow_zoom_in",)
-    ),
-    "solution_step": BeatRule(
-        "cross_section", ("red_dimension_arrow",), ("tilt_down", "slow_zoom_in")
-    ),
-    "solution_number": BeatRule("detail_closeup", ("big_red_text",), ("static",)),
-    "present_link": BeatRule(
-        "present_photoreal_wide", ("place_label_box",), ("slow_zoom_out",)
-    ),
-    "ending_echo": BeatRule(ECHO_HOOK, (), ("slow_zoom_out",)),
+    "hook_fact": BeatRule((), ("slow_zoom_in",)),
+    "hook_twist": BeatRule((), ("static",)),
+    "context": BeatRule((), ("pan_left", "pan_right", "tilt_down", "tilt_up")),
+    "context_number": BeatRule(("big_red_text",), ("slow_zoom_in",)),
+    "failed_solution": BeatRule((), ("static",)),
+    "failure_reason": BeatRule((), ("slow_zoom_in",)),
+    "dilemma_peak": BeatRule((), ("static",)),
+    "turning_point": BeatRule((), ("slow_zoom_in",)),
+    "solution_step": BeatRule((), ("tilt_down", "slow_zoom_in")),
+    "solution_number": BeatRule(("big_red_text",), ("static",)),
+    "present_link": BeatRule((), ("slow_zoom_out",)),
+    "ending_echo": BeatRule((), ("slow_zoom_out",)),
 }
 
-#: hook_twist가 첫 씬이라 이어받을 앞 씬이 없을 때 쓰는 두 번째 선택지.
-HOOK_TWIST_FALLBACK = "subject_closeup"
 
-# --- 스펙 03이 결정을 남겨 둔 자리 -------------------------------------------
+def resolve_framing(
+    beat: str,
+    scale: str,
+    *,
+    prev: tuple[str, str, int] | None = None,
+    hook: tuple[str, str, int] | None = None,
+) -> tuple[str, str, int | None]:
+    """`(구도 토큰, 출처, 참조 씬 id)`. specs/03 "비트 × 스케일 → 구도 토큰".
 
-
-@dataclass(frozen=True)
-class RuleGap:
-    """룰 테이블만으로 값이 정해지지 않아 이 모듈이 한 번 더 고른 자리.
-
-    스펙에 없는 연출을 만든 것이 아니라, 스펙이 준 선택지 중 하나를 고르거나
-    물리적으로 불가능한 조합을 피한 기록이다. 산출물에 그대로 실어 보내
-    ADR/스펙 수정의 입력이 되게 한다 (CLAUDE.md 원칙 3의 "룰 테이블에 추가하는 PR").
+    `prev`/`hook`은 `(구도 토큰, subject_scale, scene_id)`다. 스펙 03이 참조를 푸는 순서를
+    그대로 따른다 — 가리키는 씬의 스케일이 **같을 때만** 구도를 잇고, 다르거나 가리킬 씬이
+    없으면 `REFERENCE_FALLBACK`을 쓴다. 스케일이 다른 씬의 구도를 그대로 이으면 애초에
+    이 축을 도입한 이유(ADR-0018)가 무너진다.
     """
-
-    code: str
-    beats: tuple[str, ...]
-    issue: str
-    resolution: str
-
-
-RULE_GAPS: tuple[RuleGap, ...] = (
-    RuleGap(
-        "hook_fact_overlay_choice", ("hook_fact",),
-        "오버레이가 '없음 또는 장소명 라벨' 택일인데 고르는 기준이 없다. "
-        "라벨에 넣을 장소명의 출처도 06-script.json 계약에 없다",
-        "'없음'을 쓴다. 다른 선택지는 계약에 없는 텍스트를 지어내야 성립한다",
-    ),
-    RuleGap(
-        "hook_twist_framing_choice", ("hook_twist",),
-        "구도가 '전경 유지 or 피사체 클로즈업' 택일인데 고르는 기준이 없다",
-        "'전경 유지'를 앞 씬 구도 상속으로 읽어 적용한다 "
-        "(앞 씬이 없으면 피사체 클로즈업). 이미지 재사용이 아니라 구도만 잇는다 — "
-        "hook_twist의 subject는 앞 씬과 다른 대상이다",
-    ),
-    RuleGap(
-        "context_number_framing_choice", ("context_number",),
-        "구도가 '조감 or 대상 클로즈업' 택일인데 고르는 기준이 없다",
-        "먼저 적힌 '조감 디오라마'를 쓴다",
-    ),
-    RuleGap(
-        "solution_step_cross_section_conditional", ("solution_step",),
-        "구도가 '단면 컷 우선 고려'로 조건부인데 언제 다른 컷을 쓰는지가 없다",
-        "항상 단면 컷을 쓴다",
-    ),
-    RuleGap(
-        "turning_point_overlay_temporal", ("turning_point",),
-        "'빨간 크레용 X → 사라짐'은 시간에 따른 변화라 정지 이미지(레이어 A)에 담을 수 없다",
-        "레이어 B(후처리 오버레이)로 올린다. 베이스 이미지에는 X를 넣지 않는다",
-    ),
-    RuleGap(
-        "failed_solution_label_text", ("failed_solution",),
-        "'빨간 라벨 박스(지도핀 스타일)'에 들어갈 문구의 출처가 계약에 없다",
-        "레이어 A로 둔다. ADR-0002가 레이어 A의 글자 정확도를 요구하지 않으므로 "
-        "문구 없이 성립한다",
-    ),
-    RuleGap(
-        "present_link_place_label_text", ("present_link",),
-        "'장소명 라벨 박스'는 ADR-0002상 레이어 B인데, 넣을 장소명의 출처가 계약에 없다",
-        "레이어 B 항목으로 싣되 value는 null로 둔다. [8. overlay]가 채울 출처가 필요하다",
-    ),
-)
-
-#: 야외 광각/조감 구도와 어울리지 않는 피사체를 걸러내는 조언용 키워드.
-#: 스펙 03의 구도 열은 한국 건축 3편 실측에서 나와 드론 뷰·조감 디오라마로 기운다.
-#: **프롬프트를 바꾸지 않는다** — 룰과 피사체가 부딪히는 씬을 경고로 세어 보고할 뿐이다.
-CLOSE_SUBJECT_KEYWORDS: tuple[str, ...] = (
-    "단면", "내부", "도면", "평면도", "클로즈업", "확대",
-    "표면", "끝단", "접합면", "눈금", "센서", "일러스트", "노트",
-)
-
-
-def framing_conflicts(scenes: list[dict[str, Any]], framings: list[str]) -> list[int]:
-    """구도가 야외 광각인데 피사체는 근접·내부·도해인 씬의 scene_id 목록."""
-    hits = []
-    for scene, token in zip(scenes, framings):
-        framing = FRAMINGS.get(token)
-        if framing is None or not framing.wide_exterior:
-            continue
-        subject = scene.get("subject", "")
-        if any(word in subject for word in CLOSE_SUBJECT_KEYWORDS):
-            hits.append(scene["scene_id"])
-    return hits
+    token = FRAMING_TABLE[beat][scale]
+    reference = {INHERIT_PREV: prev, ECHO_HOOK: hook}.get(token)
+    if token not in REFERENCE_FALLBACK:
+        return token, "beat_rule", None
+    if reference is not None and reference[1] == scale:
+        source = "prev_scene" if token == INHERIT_PREV else "hook_echo"
+        return reference[0], source, reference[2]
+    return REFERENCE_FALLBACK[token], "scale_fallback", None
 
 
 # --- 프롬프트 조립 -----------------------------------------------------------
@@ -325,33 +303,17 @@ def build_prompt(shot: str, subject: str) -> str:
 
 
 def build_negative(overlay_types: tuple[str, ...]) -> str:
-    """베이스 이미지에서 배제할 것 = 전 씬 공통 + 이 씬에 붙는 오버레이 전부."""
+    """베이스 이미지에서 배제할 것 = 전 씬 공통 + 이 씬에 붙는 오버레이 전부.
+
+    레이어 A가 없어져(ADR-0019) 베이스에 그려야 할 오버레이는 하나도 없다. 씬에 붙는
+    오버레이는 전부 레이어 B이므로 여기서는 **전부 배제 대상**이다.
+    """
     items = list(GLOBAL_NEGATIVES)
     for name in overlay_types:
         negative = OVERLAYS[name].negative
         if negative not in items:
             items.append(negative)
     return "Do not include: " + "; ".join(items) + "."
-
-
-def build_annotation(overlay_types: tuple[str, ...], subject: str) -> str | None:
-    """레이어 A 어노테이션 2-pass 편집 지시 (ADR-0005). 없으면 None."""
-    fragments = [
-        OVERLAYS[name].annotation.format(subject=subject)
-        for name in overlay_types
-        if OVERLAYS[name].annotation
-    ]
-    if not fragments:
-        return None
-    return "\n".join(
-        (
-            "Edit the given image. Keep the existing composition, subject and "
-            "lighting unchanged.",
-            "Add: " + "; ".join(fragments) + ".",
-            "Hand-drawn red annotation look, as if scrawled on top of the render. "
-            "Any lettering inside the annotation does not need to be legible.",
-        )
-    )
 
 
 # --- prompts.json 스키마 -----------------------------------------------------
@@ -364,7 +326,6 @@ OVERLAY_ITEM_SCHEMA: dict[str, Any] = {
         "type": {"enum": list(OVERLAY_TYPES)},
         "layer": {"enum": ["A", "B"]},
         "value": {"type": ["string", "null"]},
-        "layer_note": {"type": "string"},
     },
 }
 
@@ -373,27 +334,29 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
     "required": [
         "scene_id",
         "beat",
+        "subject_scale",
         "camera",
         "motion",
         "framing",
         "framing_source",
         "prompt",
         "negative_prompt",
-        "annotation_prompt",
         "overlays",
     ],
     "additionalProperties": False,
     "properties": {
         "scene_id": {"type": "integer", "minimum": 1},
         "beat": {"type": "string", "minLength": 1},
+        "subject_scale": {"enum": list(SUBJECT_SCALES)},
         "camera": {"type": "string", "minLength": 1},
         "motion": {"type": "string", "minLength": 1},
         "framing": {"enum": list(FRAMINGS)},
-        "framing_source": {"enum": ["beat_rule", "prev_scene", "hook_echo"]},
+        "framing_source": {
+            "enum": ["beat_rule", "prev_scene", "hook_echo", "scale_fallback"]
+        },
         "framing_reuse_of": {"type": "integer", "minimum": 1},
         "prompt": {"type": "string", "minLength": 1},
         "negative_prompt": {"type": "string", "minLength": 1},
-        "annotation_prompt": {"type": ["string", "null"]},
         "overlays": {"type": "array", "items": OVERLAY_ITEM_SCHEMA},
     },
 }
@@ -402,7 +365,7 @@ PROMPTS_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "prompts.json ([5. prompt] 산출물)",
     "type": "object",
-    "required": ["run_id", "topic", "source_script", "style", "scenes", "rule_gaps"],
+    "required": ["run_id", "topic", "source_script", "style", "scenes"],
     "additionalProperties": False,
     "properties": {
         "run_id": {"type": "string", "minLength": 1},
@@ -429,20 +392,6 @@ PROMPTS_SCHEMA: dict[str, Any] = {
             },
         },
         "scenes": {"type": "array", "minItems": 1, "items": PROMPT_SCENE_SCHEMA},
-        "rule_gaps": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["code", "scene_ids", "issue", "resolution"],
-                "additionalProperties": False,
-                "properties": {
-                    "code": {"type": "string", "minLength": 1},
-                    "scene_ids": {"type": "array", "items": {"type": "integer"}},
-                    "issue": {"type": "string", "minLength": 1},
-                    "resolution": {"type": "string", "minLength": 1},
-                },
-            },
-        },
     },
 }
 

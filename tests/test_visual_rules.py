@@ -1,6 +1,6 @@
 """스펙 03 시각 룰 테이블 (ADR-0001: 연출은 룰에서만 나온다).
 
-여기서 지키는 것은 하나다 — **룰 테이블이 스펙 02·03과 ADR-0002/0005/0006에서
+여기서 지키는 것은 하나다 — **룰 테이블이 스펙 02·03과 ADR-0002/0018/0019에서
 기계적으로 유도 가능한 형태를 유지하는가.** 프롬프트 문구의 미학은 시험 대상이 아니다.
 """
 
@@ -10,18 +10,21 @@ from shorts_factory.schemas.scenes import BEATS, CAMERAS, NUMBER_BEATS
 from shorts_factory.schemas.visual_rules import (
     BEAT_RULES,
     ECHO_HOOK,
+    FRAMING_TABLE,
     FRAMINGS,
     GLOBAL_NEGATIVES,
-    HOOK_TWIST_FALLBACK,
     INHERIT_PREV,
     OVERLAYS,
-    build_annotation,
+    REFERENCE_FALLBACK,
+    SUBJECT_SCALES,
     build_negative,
     build_prompt,
-    framing_conflicts,
+    resolve_framing,
 )
 
 CROSS_SCENE = (INHERIT_PREV, ECHO_HOOK)
+
+CELLS = [(beat, scale) for beat in BEATS for scale in SUBJECT_SCALES]
 
 
 # --- 스펙 02 ↔ 스펙 03 정합 --------------------------------------------------
@@ -30,12 +33,28 @@ CROSS_SCENE = (INHERIT_PREV, ECHO_HOOK)
 def test_every_beat_has_a_visual_rule():
     """스펙 02의 비트 12개와 스펙 03 룰 테이블 12행이 1:1이어야 한다."""
     assert set(BEAT_RULES) == set(BEATS)
+    assert set(FRAMING_TABLE) == set(BEATS)
 
 
 @pytest.mark.parametrize("beat", BEATS)
-def test_rule_framing_resolves(beat):
-    framing = BEAT_RULES[beat].framing
-    assert framing in FRAMINGS or framing in CROSS_SCENE
+def test_framing_table_covers_every_scale(beat):
+    """구도 표는 (beat × subject_scale) 전 칸이 채워져 있어야 한다 (ADR-0018).
+
+    한 칸이라도 비면 그 조합의 대본이 왔을 때 [5]가 값을 정하지 못한다.
+    """
+    assert set(FRAMING_TABLE[beat]) == set(SUBJECT_SCALES)
+
+
+@pytest.mark.parametrize("beat,scale", CELLS)
+def test_every_cell_resolves_to_a_real_framing(beat, scale):
+    token = FRAMING_TABLE[beat][scale]
+    assert token in FRAMINGS or token in CROSS_SCENE
+
+
+@pytest.mark.parametrize("token", sorted(CROSS_SCENE))
+def test_cross_scene_reference_has_a_real_fallback(token):
+    """참조가 성립하지 않을 때 쓸 값이 실재해야 한다 (specs/03)."""
+    assert REFERENCE_FALLBACK[token] in FRAMINGS
 
 
 @pytest.mark.parametrize("beat", BEATS)
@@ -51,17 +70,72 @@ def test_rule_cameras_are_spec02_values(beat):
     assert BEAT_RULES[beat].cameras
 
 
-def test_cross_scene_fallback_is_a_real_framing():
-    assert HOOK_TWIST_FALLBACK in FRAMINGS
-
-
 @pytest.mark.parametrize("beat", NUMBER_BEATS)
 def test_number_beats_carry_big_red_text(beat):
     """스펙 03: 숫자 비트의 오버레이는 대형 빨간 숫자 텍스트다."""
     assert "big_red_text" in BEAT_RULES[beat].overlays
 
 
-# --- ADR-0002 텍스트 2계층 ---------------------------------------------------
+# --- 구도 참조 풀기 (ADR-0018) -----------------------------------------------
+
+
+def test_plain_cell_comes_straight_from_the_beat_rule():
+    token, source, reference = resolve_framing("hook_fact", "diagram")
+    assert (token, source, reference) == ("section_diagram", "beat_rule", None)
+
+
+def test_inherits_previous_framing_when_the_scale_matches():
+    token, source, reference = resolve_framing(
+        "hook_twist", "wide", prev=("aerial_diorama", "wide", 4)
+    )
+    assert (token, source, reference) == ("aerial_diorama", "prev_scene", 4)
+
+
+def test_does_not_inherit_across_a_different_scale():
+    """후버댐 2번 씬이 이 경우다 — 1번이 diagram, 2번이 wide.
+
+    스케일이 다른 씬의 구도를 그대로 이으면 이 축을 도입한 이유가 무너진다.
+    """
+    token, source, reference = resolve_framing(
+        "hook_twist", "wide", prev=("section_diagram", "diagram", 1)
+    )
+    assert (token, source, reference) == ("drone_wide", "scale_fallback", None)
+
+
+def test_falls_back_when_there_is_no_scene_to_point_at():
+    token, source, _ = resolve_framing("hook_twist", "wide", prev=None)
+    assert (token, source) == ("drone_wide", "scale_fallback")
+
+    token, source, _ = resolve_framing("ending_echo", "wide", hook=None)
+    assert (token, source) == ("present_wide", "scale_fallback")
+
+
+def test_echo_reuses_the_hook_framing():
+    token, source, reference = resolve_framing(
+        "ending_echo", "wide", hook=("drone_wide", "wide", 1)
+    )
+    assert (token, source, reference) == ("drone_wide", "hook_echo", 1)
+
+
+@pytest.mark.parametrize("scale", ["close", "diagram"])
+def test_non_wide_cells_never_reference_another_scene(scale):
+    """참조는 wide 열에만 있다. 사람이 승인한 표가 그렇다."""
+    for beat in BEATS:
+        assert FRAMING_TABLE[beat][scale] not in CROSS_SCENE
+
+
+# --- 오버레이 (ADR-0002 2계층, ADR-0019 레이어 A 폐기) -----------------------
+
+
+def test_layer_a_is_not_used_at_all():
+    """ADR-0019 — 빨간 어노테이션을 전부 버렸다. 남는 것은 후처리 합성뿐이다."""
+    assert {overlay.layer for overlay in OVERLAYS.values()} == {"B"}
+
+
+def test_no_beat_asks_for_a_red_annotation():
+    for beat in BEATS:
+        for name in BEAT_RULES[beat].overlays:
+            assert OVERLAYS[name].layer == "B"
 
 
 @pytest.mark.parametrize("name", sorted(OVERLAYS))
@@ -73,16 +147,12 @@ def test_text_overlays_live_in_layer_b(name):
 
 
 @pytest.mark.parametrize("name", sorted(OVERLAYS))
-def test_only_layer_a_has_annotation_instructions(name):
-    """레이어 A만 이미지 편집 지시를 갖는다. 레이어 B는 [8]이 얹는다."""
-    overlay = OVERLAYS[name]
-    assert (overlay.annotation is not None) == (overlay.layer == "A")
-
-
-@pytest.mark.parametrize("name", sorted(OVERLAYS))
 def test_every_overlay_can_be_excluded_from_the_base_image(name):
-    """베이스는 클린 이미지다 (ADR-0005·0006). 배제 문구가 없으면 그걸 보장 못 한다."""
+    """베이스는 클린 이미지다 (ADR-0005·0019). 배제 문구가 없으면 그걸 보장 못 한다."""
     assert OVERLAYS[name].negative
+
+
+# --- 프롬프트 조립 -----------------------------------------------------------
 
 
 def test_prompt_forbids_rendering_the_korean_subject_as_text():
@@ -99,36 +169,5 @@ def test_negative_always_excludes_subtitles_and_particles():
 
 
 def test_negative_excludes_this_scene_overlays_too():
-    negative = build_negative(("big_red_text", "red_crayon_x"))
+    negative = build_negative(("big_red_text",))
     assert OVERLAYS["big_red_text"].negative in negative
-    assert OVERLAYS["red_crayon_x"].negative in negative
-
-
-# --- 어노테이션 2-pass (ADR-0005) --------------------------------------------
-
-
-def test_annotation_targets_the_scene_subject():
-    text = build_annotation(("red_crayon_x",), "파비아의 시민탑")
-    assert "파비아의 시민탑" in text
-    assert "does not need to be legible" in text  # 레이어 A는 글자 정확도를 안 본다
-
-
-def test_no_annotation_pass_without_layer_a_overlays():
-    assert build_annotation((), "무언가") is None
-    assert build_annotation(("big_red_text",), "무언가") is None
-
-
-# --- 편향 검출 (조언용) ------------------------------------------------------
-
-
-def test_wide_framing_with_close_subject_is_flagged():
-    scenes = [
-        {"scene_id": 1, "subject": "콘크리트 단면 속에 박힌 강철 파이프"},
-        {"scene_id": 2, "subject": "협곡을 가득 메운 거대한 콘크리트 댐"},
-    ]
-    assert framing_conflicts(scenes, ["drone_wide", "drone_wide"]) == [1]
-
-
-def test_close_framing_is_never_flagged():
-    scenes = [{"scene_id": 1, "subject": "콘크리트 단면 속에 박힌 강철 파이프"}]
-    assert framing_conflicts(scenes, ["detail_closeup"]) == []

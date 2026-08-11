@@ -119,8 +119,10 @@ def test_all_motion_is_kenburns(prepared):
 def test_timestamps_are_derived_from_char_count():
     """산술은 세션이 아니라 코드가 한다."""
     raw = [
-        {"beat": "hook_fact", "text": "열두 글자짜리 문장.", "subject": "피사체"},
-        {"beat": "ending_echo", "text": "또 다른 문장입니다.", "subject": "피사체"},
+        {"beat": "hook_fact", "text": "열두 글자짜리 문장.", "subject": "피사체",
+         "subject_scale": "wide"},
+        {"beat": "ending_echo", "text": "또 다른 문장입니다.", "subject": "피사체",
+         "subject_scale": "wide"},
     ]
     doc = build_scenes(raw, run_id="r", topic="t")
     first, second = doc["scenes"]
@@ -133,20 +135,39 @@ def test_timestamps_are_derived_from_char_count():
 def test_session_supplied_timestamps_are_ignored():
     """세션이 타임스탬프를 넣어 보내도 스키마에 새지 않는다."""
     raw = [{"beat": "hook_fact", "text": "문장.", "subject": "피사체",
-            "est_start": 999.0, "camera": "dolly_zoom"}]
+            "subject_scale": "wide", "est_start": 999.0, "camera": "dolly_zoom"}]
     doc = build_scenes(raw, run_id="r", topic="t")
     assert doc["scenes"][0]["est_start"] == 0.0
     assert doc["scenes"][0]["camera"] == "slow_zoom_in"
 
 
+@pytest.mark.parametrize("scale", [None, "", "medium", "WIDE"])
+def test_unknown_subject_scale_is_rejected(scale):
+    """ADR-0018 — 구도가 이 값에 걸려 있다. 없다고 wide로 때우지 않는다."""
+    scene = {"beat": "hook_fact", "text": "문장.", "subject": "피사체"}
+    if scale is not None:
+        scene["subject_scale"] = scale
+    with pytest.raises(ScriptStageError, match="subject_scale"):
+        build_scenes([scene], run_id="r", topic="t")
+
+
+def test_subject_scale_reaches_the_scene_contract():
+    raw = [{"beat": "hook_fact", "text": "문장.", "subject": "댐 단면 일러스트",
+            "subject_scale": "diagram"}]
+    doc = build_scenes(raw, run_id="r", topic="t")
+    assert doc["scenes"][0]["subject_scale"] == "diagram"
+
+
 def test_unknown_beat_is_rejected():
-    raw = [{"beat": "hook", "text": "문장.", "subject": "피사체"}]
+    raw = [{"beat": "hook", "text": "문장.", "subject": "피사체",
+            "subject_scale": "wide"}]
     with pytest.raises(ScriptStageError, match="비트 테이블"):
         build_scenes(raw, run_id="r", topic="t")
 
 
 def test_number_beat_without_number_is_rejected():
-    raw = [{"beat": "solution_number", "text": "숫자가 없는 문장.", "subject": "피사체"}]
+    raw = [{"beat": "solution_number", "text": "숫자가 없는 문장.", "subject": "피사체",
+            "subject_scale": "wide"}]
     with pytest.raises(ScriptStageError, match="숫자가 없다"):
         build_scenes(raw, run_id="r", topic="t")
 

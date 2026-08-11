@@ -4,6 +4,7 @@
     python run.py research  --slug SLUG [--only 01-research]
     python run.py script    --slug SLUG           # 팩트시트 → 대본 후보
     python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
+    python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
@@ -22,6 +23,7 @@ from pathlib import Path
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
+from .stages.backfill_scale import BackfillStageError, run_backfill_scale_stage
 from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
@@ -150,6 +152,21 @@ def _cmd_validate(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_backfill_scale(args, paths: Paths) -> int:
+    """[1x] 확정된 대본에 subject_scale만 채운다 (ADR-0018 일회성 마이그레이션).
+
+    run_id는 대본에 적혀 있지만 이 단계는 run 상태를 남기지 않는다 — 대본 파일 하나를
+    제자리에서 고치는 마이그레이션이라 재실행 판단은 필드 유무로 충분하다.
+    """
+    run_id, _ = find_run_for_slug(paths, args.slug)
+    client = _make_client(args, paths.run_dir(run_id) / "logs")
+    result = run_backfill_scale_stage(
+        args.slug, llm=client, paths=paths, force=args.force,
+    )
+    print(result.summary)
+    return 0
+
+
 def _cmd_prompt(args, paths: Paths) -> int:
     """[5] 씬 계약 → 씬별 이미지 프롬프트.
 
@@ -160,8 +177,6 @@ def _cmd_prompt(args, paths: Paths) -> int:
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
-    for gap in result.prompts["rule_gaps"]:
-        print(f"  룰 공백 [{gap['code']}] 씬 {len(gap['scene_ids'])}개: {gap['issue']}")
     return 0
 
 
@@ -250,6 +265,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--run-id", default=None)
     p_validate.set_defaults(func=_cmd_validate)
 
+    p_backfill = sub.add_parser(
+        "backfill-scale", parents=[common],
+        help="[1x] 확정 대본에 subject_scale만 채운다 (ADR-0018 마이그레이션)",
+    )
+    p_backfill.add_argument("--slug", required=True)
+    p_backfill.set_defaults(func=_cmd_backfill_scale)
+
     p_prompt = sub.add_parser("prompt", parents=[common],
                               help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
     p_prompt.add_argument("--slug", required=True)
@@ -298,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args, paths)
     except (
         TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError,
-        PromptStageError,
+        PromptStageError, BackfillStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1

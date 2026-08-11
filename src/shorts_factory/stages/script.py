@@ -5,11 +5,12 @@ specs/05-pipeline.md:
 
 ## 역할 분담 (ADR-0001, ADR-0003)
 
-헤드리스 세션은 `beat`·`text`·`subject` 셋만 출력한다. 나머지는 코드가 룰 테이블로 채운다.
+헤드리스 세션은 `beat`·`text`·`subject`·`subject_scale` 넷만 출력한다. 나머지는 코드가
+룰 테이블로 채운다.
 
 | 필드 | 정하는 주체 | 근거 |
 |---|---|---|
-| `text`, `beat`, `subject` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만" |
+| `text`, `beat`, `subject`, `subject_scale` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만". `subject_scale`은 연출이 아니라 피사체 서술이라 같은 자리다 (ADR-0018) |
 | `est_start`/`est_end` | 코드 (글자 수 ÷ 명목 속도) | 산술을 LLM에 맡기지 않는다 |
 | `camera` | 코드 (specs/03 비트별 기본값) | CLAUDE.md 원칙 3 |
 | `emphasis` | 코드 (숫자 비트 → 대형 빨간 숫자) | specs/03 오버레이 룰 |
@@ -40,6 +41,7 @@ from ..llm.base import LLMClient
 from ..runstate import RunState
 from ..schemas.grounding import extract_values, validate_grounding
 from ..schemas.scenes import validate_scenes
+from ..schemas.visual_rules import SUBJECT_SCALES
 from ..schemas.script_rules import core_chars, validate_script
 from .research import find_run_for_slug
 
@@ -156,10 +158,18 @@ def build_scenes(
         beat = str(item.get("beat", "")).strip()
         text = str(item.get("text", "")).strip()
         subject = str(item.get("subject", "")).strip()
+        scale = str(item.get("subject_scale", "")).strip()
         if beat not in CAMERA_BY_BEAT:
             raise ScriptStageError(f"{index}번째 씬의 beat가 비트 테이블에 없다: {beat!r}")
         if not text or not subject:
             raise ScriptStageError(f"{index}번째 씬에 text 또는 subject가 비어 있다")
+        # ADR-0018 — 구도가 이 값에 걸려 있다. 없으면 wide로 때우지 않는다:
+        # 조용히 채우면 스펙 03 구도 표의 close/diagram 열이 영영 안 쓰인다.
+        if scale not in SUBJECT_SCALES:
+            raise ScriptStageError(
+                f"{index}번째 씬의 subject_scale이 {'/'.join(SUBJECT_SCALES)} 중에 없다: "
+                f"{scale!r}"
+            )
 
         # 자막 줄 길이에 비례해 시간을 나눈다. TTS 이후 실측으로 갱신된다 (specs/05).
         span = round(len(core_chars(text)) / NOMINAL_SPEED, 3)
@@ -182,6 +192,7 @@ def build_scenes(
             scene["emphasis"] = {"type": NUMBER_EMPHASIS_TYPE, "value": numbers[0][0]}
 
         scene["subject"] = subject
+        scene["subject_scale"] = scale
         scene["camera"] = CAMERA_BY_BEAT[beat]
         scene["motion"] = DEFAULT_MOTION
         scene["notes"] = ""

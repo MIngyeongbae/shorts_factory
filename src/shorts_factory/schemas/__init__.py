@@ -37,18 +37,24 @@ from .timed_scenes import (
 )
 from .visual_rules import (
     BEAT_RULES,
+    FRAMING_TABLE,
     FRAMINGS,
+    OVERLAY_TYPES,
     OVERLAYS,
     PROMPTS_SCHEMA,
-    RULE_GAPS,
+    SUBJECT_SCALES,
+    resolve_framing,
 )
 
 __all__ = [
     "BEAT_RULES",
+    "FRAMING_TABLE",
     "FRAMINGS",
+    "OVERLAY_TYPES",
     "OVERLAYS",
     "PROMPTS_SCHEMA",
-    "RULE_GAPS",
+    "SUBJECT_SCALES",
+    "resolve_framing",
     "FACTSHEET_SCHEMA",
     "MIN_NUMBERS",
     "schema_errors",

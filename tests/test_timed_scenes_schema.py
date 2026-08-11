@@ -25,11 +25,13 @@ def timed(**overrides):
                 {
                     "scene_id": 1, "beat": "hook_fact", "text": "가.",
                     "est_start": 0.0, "est_end": 2.0, "subject": "가",
+                    "subject_scale": "wide",
                     "camera": "static", "motion": "kenburns", "notes": "",
                 },
                 {
                     "scene_id": 2, "beat": "ending_echo", "text": "나.",
                     "est_start": 2.0, "est_end": 4.0, "subject": "나",
+                    "subject_scale": "close",
                     "camera": "static", "motion": "kenburns", "notes": "",
                 },
             ],

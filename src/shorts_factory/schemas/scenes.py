@@ -20,6 +20,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from .visual_rules import OVERLAY_TYPES, SUBJECT_SCALES
+
 #: specs/02-beat-schema.md 비트 타입 테이블
 BEATS = (
     "hook_fact",
@@ -67,6 +69,7 @@ SCENE_SCHEMA: dict[str, Any] = {
         "est_start",
         "est_end",
         "subject",
+        "subject_scale",
         "camera",
         "motion",
     ],
@@ -82,14 +85,16 @@ SCENE_SCHEMA: dict[str, Any] = {
             "required": ["type", "value"],
             "additionalProperties": False,
             "properties": {
-                # specs/02는 이 값을 "specs/03의 오버레이 타입 enum"이라고 하지만
-                # specs/03에는 아직 enum이 없다(오버레이 열이 한국어 산문이다).
-                # 스펙에 enum이 확정되기 전에는 지어내지 않고 문자열로 둔다.
-                "type": {"type": "string", "minLength": 1},
+                # specs/02 — "specs/03의 오버레이 타입 enum". 그 표가 ADR-0019로
+                # 생겼으므로 문자열이 아니라 enum으로 조인다.
+                "type": {"enum": list(OVERLAY_TYPES)},
                 "value": {"type": "string", "minLength": 1},
             },
         },
         "subject": {"type": "string", "minLength": 1},
+        # specs/02 + ADR-0018 — beat와 함께 구도를 결정한다. 연출이 아니라 피사체 서술이라
+        # [1. script]가 subject와 함께 쓴다.
+        "subject_scale": {"enum": list(SUBJECT_SCALES)},
         "camera": {"enum": list(CAMERAS)},
         "motion": {"enum": list(MOTIONS)},
         "notes": {"type": "string"},

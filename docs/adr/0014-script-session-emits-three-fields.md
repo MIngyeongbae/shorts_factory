@@ -1,6 +1,11 @@
-# ADR-0014: 대본 세션은 beat·text·subject 세 필드만 출력한다
+# ADR-0014: 대본 세션은 beat·text·subject 네 필드만 출력한다
 
-- 상태: 승인
+> ADR-0018로 `subject_scale`이 추가돼 **네 필드**가 됐다. 아래 본문의 "세 필드"는
+> `beat`·`text`·`subject`·`subject_scale`로 읽는다. 결정의 근거(산술을 LLM에 맡기지 않는다,
+> 룰 테이블을 우회하지 않는다)는 그대로 유효하다 — `subject_scale`은 연출이 아니라
+> 피사체 서술이라 `subject`와 같은 자리다.
+
+- 상태: 승인 (ADR-0018로 일부 갱신)
 - 날짜: 2026-08-10
 - 관련 스펙: specs/01-script-template.md, specs/02-beat-schema.md, specs/03-visual-rules.md, specs/05-pipeline.md
 
@@ -26,7 +31,7 @@
 
 | 필드 | 주체 | 방법 |
 |---|---|---|
-| `text`·`beat`·`subject` | 세션 | 창의적 판단 (ADR-0001) |
+| `text`·`beat`·`subject`·`subject_scale` | 세션 | 창의적 판단 (ADR-0001) — `subject_scale`은 ADR-0018 |
 | `scene_id` | 코드 | 배열 순서 |
 | `est_start`·`est_end` | 코드 | 줄의 글자 수 ÷ 명목 발화 속도 5.85자/초 |
 | `camera` | 코드 | 스펙 03 비트별 기본값 |
@@ -51,7 +56,8 @@
 - `[1. script]`의 세션 출력 계약은 `{"scenes": [{"beat", "text", "subject"}]}` 하나다
 - `motion`이 항상 `kenburns`라 `kling`은 이 단계에서 선택되지 않는다. 유체 모션 판단은
   이미지가 나온 뒤 `[7. motion]`에서 하는 편이 근거가 많다 (ADR-0006의 씬당 상한은 유지)
-- 스펙 03에 비트별 오버레이 enum이 아직 없어(슬라이스 1에서 확인) `emphasis.type`은 숫자
-  비트의 `big_red_text` 하나만 쓴다. 나머지 비트의 오버레이는 채우지 않는다
+- `emphasis.type`은 숫자 비트의 `big_red_text` 하나만 쓴다. 나머지 비트의 오버레이는
+  채우지 않는다 — 작성 시점에는 스펙 03에 오버레이 enum이 없어서였고(슬라이스 1에서 확인),
+  ADR-0019로 enum이 생긴 지금은 씬별 오버레이가 `big_red_text` 하나뿐이라 결과가 같다
 - 되돌릴 조건: 실측 TTS 길이가 추정과 씬당 ±1.5초를 넘게 벌어지면(스펙 05) 명목 속도를
   고정 상수가 아니라 비트별·문장부호별 가중으로 바꾸는 안을 재검토

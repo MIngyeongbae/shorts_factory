@@ -1,30 +1,160 @@
 {
   "scenes": [
-    {"beat": "hook_fact", "text": "한양도성 성벽엔 사람 이름이 새겨진 돌이 박혀 있습니다.", "subject": "성벽에 박힌 각자성석 클로즈업"},
-    {"beat": "hook_twist", "text": "그런데 이건 낙서가 아닙니다. 나라에서 시켜 새긴 겁니다.", "subject": "돌에 새겨진 글자 확대"},
-    {"beat": "context_number", "text": "1396년, 태조는 한양 둘레 18.6km 성벽 공사를 시작합니다.", "subject": "축조 시작 현장 조감"},
-    {"beat": "context", "text": "농사철을 피해야 했으니 공사에 쓸 시간은 길지 않았죠.", "subject": "논밭 옆의 성벽 공사 현장"},
-    {"beat": "context_number", "text": "그래서 전국에서 백성 11만 명을 한꺼번에 불러올렸습니다.", "subject": "산길을 오르는 백성 행렬"},
-    {"beat": "context", "text": "문제는 공사가 끝나면 이들이 전부 고향으로 흩어진다는 겁니다.", "subject": "흩어지는 인부들"},
-    {"beat": "failed_solution", "text": "가장 쉬운 방법은 구간마다 감독관을 붙이는 겁니다.", "subject": "성벽 앞에 선 감독관"},
-    {"beat": "failure_reason", "text": "눈을 부릅뜨고 지켜보게 하면 부실을 잡을 수 있으니까요.", "subject": "구간을 감시하는 감독관"},
-    {"beat": "failure_reason", "text": "그런데 18.6km에 흩어진 현장을 몇십 명이 다 볼 수는 없어요.", "subject": "끝없이 이어지는 성벽 능선"},
-    {"beat": "failed_solution", "text": "그럼 잘 쌓은 사람에게 상을 주면 되지 않냐고요?", "subject": "포상을 받는 인부"},
-    {"beat": "failure_reason", "text": "부실은 쌓을 때 바로 드러나지 않는다는 게 문제입니다.", "subject": "멀쩡해 보이는 성벽"},
-    {"beat": "failure_reason", "text": "멀쩡해 보이다가 몇 년 뒤 장맛비에야 무너지거든요.", "subject": "장맛비에 무너진 성벽"},
-    {"beat": "dilemma_peak", "text": "그때쯤이면 책임자는 이미 사라지고 없죠. 환장할 노릇입니다.", "subject": "텅 빈 공사 현장"},
-    {"beat": "turning_point", "text": "그래서 발상을 뒤집습니다.", "subject": "각자성석 정면 대칭 구도"},
-    {"beat": "solution_step", "text": "감시를 늘리는 대신 돌에 책임을 새기기로 한 겁니다.", "subject": "성돌에 글자를 새기는 손"},
-    {"beat": "solution_number", "text": "18.6km 성벽을 97개 구간으로 나눴습니다.", "subject": "구간으로 나뉜 성벽 단면"},
-    {"beat": "solution_step", "text": "그리고 구간마다 천자문 순서로 번호를 붙였죠.", "subject": "천자문이 새겨진 성돌"},
-    {"beat": "solution_step", "text": "그다음 그 구간을 맡은 고을 이름을 돌에 적었습니다.", "subject": "고을 이름이 새겨진 성돌"},
-    {"beat": "solution_step", "text": "어느 도 어느 고을이 어디까지 쌓았는지 남긴 겁니다.", "subject": "구간 경계 표시"},
-    {"beat": "solution_step", "text": "무너지면 그 고을 사람들이 다시 올라와 쌓아야 했고,", "subject": "성벽을 다시 쌓는 인부들"},
-    {"beat": "solution_step", "text": "구간을 맡았던 책임자도 함께 벌을 받았습니다.", "subject": "문책받는 관리"},
-    {"beat": "solution_step", "text": "말 그대로 돌에 도장을 찍어둔 셈이죠.", "subject": "도장처럼 새겨진 글자"},
-    {"beat": "present_link", "text": "지금도 흥인지문 옆이나 낙산 구간에 올라가 보면,", "subject": "현재의 흥인지문 옆 성벽"},
-    {"beat": "present_link", "text": "발밑에서 그 돌을 어렵지 않게 만날 수 있습니다.", "subject": "발밑의 각자성석"},
-    {"beat": "present_link", "text": "1396년에 새겨진 이름이 아직 그 자리에 남아 있죠.", "subject": "글자가 남은 성돌 클로즈업"},
-    {"beat": "ending_echo", "text": "이름을 새긴 성벽은 그렇게 만들어졌습니다.", "subject": "한양도성 성벽 전경"}
+    {
+      "beat": "hook_fact",
+      "text": "한양도성 성벽엔 사람 이름이 새겨진 돌이 박혀 있습니다.",
+      "subject": "성벽에 박힌 각자성석 클로즈업",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "hook_twist",
+      "text": "그런데 이건 낙서가 아닙니다. 나라에서 시켜 새긴 겁니다.",
+      "subject": "돌에 새겨진 글자 확대",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "context_number",
+      "text": "1396년, 태조는 한양 둘레 18.6km 성벽 공사를 시작합니다.",
+      "subject": "축조 시작 현장 조감",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "context",
+      "text": "농사철을 피해야 했으니 공사에 쓸 시간은 길지 않았죠.",
+      "subject": "논밭 옆의 성벽 공사 현장",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "context_number",
+      "text": "그래서 전국에서 백성 11만 명을 한꺼번에 불러올렸습니다.",
+      "subject": "산길을 오르는 백성 행렬",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "context",
+      "text": "문제는 공사가 끝나면 이들이 전부 고향으로 흩어진다는 겁니다.",
+      "subject": "흩어지는 인부들",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failed_solution",
+      "text": "가장 쉬운 방법은 구간마다 감독관을 붙이는 겁니다.",
+      "subject": "성벽 앞에 선 감독관",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failure_reason",
+      "text": "눈을 부릅뜨고 지켜보게 하면 부실을 잡을 수 있으니까요.",
+      "subject": "구간을 감시하는 감독관",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failure_reason",
+      "text": "그런데 18.6km에 흩어진 현장을 몇십 명이 다 볼 수는 없어요.",
+      "subject": "끝없이 이어지는 성벽 능선",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failed_solution",
+      "text": "그럼 잘 쌓은 사람에게 상을 주면 되지 않냐고요?",
+      "subject": "포상을 받는 인부",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failure_reason",
+      "text": "부실은 쌓을 때 바로 드러나지 않는다는 게 문제입니다.",
+      "subject": "멀쩡해 보이는 성벽",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "failure_reason",
+      "text": "멀쩡해 보이다가 몇 년 뒤 장맛비에야 무너지거든요.",
+      "subject": "장맛비에 무너진 성벽",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "dilemma_peak",
+      "text": "그때쯤이면 책임자는 이미 사라지고 없죠. 환장할 노릇입니다.",
+      "subject": "텅 빈 공사 현장",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "turning_point",
+      "text": "그래서 발상을 뒤집습니다.",
+      "subject": "각자성석 정면 대칭 구도",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "solution_step",
+      "text": "감시를 늘리는 대신 돌에 책임을 새기기로 한 겁니다.",
+      "subject": "성돌에 글자를 새기는 손",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "solution_number",
+      "text": "18.6km 성벽을 97개 구간으로 나눴습니다.",
+      "subject": "구간으로 나뉜 성벽 단면",
+      "subject_scale": "diagram"
+    },
+    {
+      "beat": "solution_step",
+      "text": "그리고 구간마다 천자문 순서로 번호를 붙였죠.",
+      "subject": "천자문이 새겨진 성돌",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "solution_step",
+      "text": "그다음 그 구간을 맡은 고을 이름을 돌에 적었습니다.",
+      "subject": "고을 이름이 새겨진 성돌",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "solution_step",
+      "text": "어느 도 어느 고을이 어디까지 쌓았는지 남긴 겁니다.",
+      "subject": "구간 경계 표시",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "solution_step",
+      "text": "무너지면 그 고을 사람들이 다시 올라와 쌓아야 했고,",
+      "subject": "성벽을 다시 쌓는 인부들",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "solution_step",
+      "text": "구간을 맡았던 책임자도 함께 벌을 받았습니다.",
+      "subject": "문책받는 관리",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "solution_step",
+      "text": "말 그대로 돌에 도장을 찍어둔 셈이죠.",
+      "subject": "도장처럼 새겨진 글자",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "present_link",
+      "text": "지금도 흥인지문 옆이나 낙산 구간에 올라가 보면,",
+      "subject": "현재의 흥인지문 옆 성벽",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "present_link",
+      "text": "발밑에서 그 돌을 어렵지 않게 만날 수 있습니다.",
+      "subject": "발밑의 각자성석",
+      "subject_scale": "wide"
+    },
+    {
+      "beat": "present_link",
+      "text": "1396년에 새겨진 이름이 아직 그 자리에 남아 있죠.",
+      "subject": "글자가 남은 성돌 클로즈업",
+      "subject_scale": "close"
+    },
+    {
+      "beat": "ending_echo",
+      "text": "이름을 새긴 성벽은 그렇게 만들어졌습니다.",
+      "subject": "한양도성 성벽 전경",
+      "subject_scale": "wide"
+    }
   ]
 }
