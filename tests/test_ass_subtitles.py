@@ -24,9 +24,8 @@ from shorts_factory.video.subtitles import (
     SubtitleError,
     ass_timestamp,
     build_ass,
+    check_overflow,
     escape_text,
-    fit_font_size,
-    overflow_warning,
     parse_ass,
     parse_timestamp,
     style_line,
@@ -80,50 +79,42 @@ def test_text_without_spaces_is_split_in_the_middle():
     assert lines == ["가" * 15, "가" * 15]
 
 
-def test_line_within_the_limit_raises_no_warning():
-    assert overflow_warning(1, ["열여덟자짜리한줄입니다"]) is None
+def test_line_within_the_limit_passes_quietly():
+    check_overflow(1, ["스물두자까지들어가는한줄입니다"])
 
 
-def test_line_over_the_limit_reports_the_spec_conflict():
-    """스펙 03(18자×2줄)과 스펙 01(줄당 최대 43자)이 40자 줄에서 충돌한다."""
-    warning = overflow_warning(7, ["가" * 22, "나" * 20])
-    assert warning is not None
-    assert "22자" in warning and "충돌" in warning
+def test_line_over_the_limit_fails_instead_of_shrinking():
+    """22자×2줄을 넘긴 큐는 스펙 01의 43자를 넘겼다는 뜻이라 1부 문제다."""
+    with pytest.raises(SubtitleError, match="1부에서 고쳐야"):
+        check_overflow(7, ["가" * 24, "나" * 20])
 
 
 # --- 가로 폭 -----------------------------------------------------------------
 
 
-def test_font_size_is_derived_from_the_eighteen_character_rule():
-    """폰트 크기를 따로 고르지 않는다. 18자가 가로 폭에 들어가는 크기가 그 규칙이다."""
+def test_the_three_subtitle_values_fit_together():
+    """40px·22자·2줄은 한 벌이다. 22자가 안전폭 안에 들어가야 이 조합이 성립한다."""
     assert FONT_SIZE * MAX_LINE_CHARS <= TEXT_WIDTH
-    assert (FONT_SIZE + 1) * MAX_LINE_CHARS > TEXT_WIDTH
 
 
-def test_lines_within_the_limit_keep_the_default_size():
-    assert fit_font_size(["가" * MAX_LINE_CHARS]) == FONT_SIZE
+def test_the_longest_cue_spec_01_allows_still_fits_two_lines():
+    """스펙 01의 상한(줄당 43자)이 스펙 03의 22자×2줄 안에 들어간다.
 
-
-def test_overlong_line_is_shrunk_to_stay_on_screen():
-    """WrapStyle 2라 libass가 접어 주지 않는다 — 줄이지 않으면 화면 밖에서 잘린다."""
-    lines = ["가" * 22, "나" * 20]
-    assert fit_font_size(lines) * 22 <= TEXT_WIDTH
+    이게 성립하는 동안에는 폰트 축소 경로가 필요 없다. 깨지면 두 스펙이 다시 충돌한다.
+    """
+    assert 43 <= MAX_LINE_CHARS * MAX_LINES
 
 
 def test_every_real_cue_fits_the_frame_width():
     for slug in (PISA, HOOVER):
         for cue in parse_ass(build_ass(timed_document(slug)["scenes"])[0]):
-            size = cue.font_size or FONT_SIZE
-            assert size * max(len(line) for line in cue.lines) <= TEXT_WIDTH
+            assert FONT_SIZE * max(len(line) for line in cue.lines) <= TEXT_WIDTH
 
 
-def test_shrunk_cue_carries_an_override_tag():
-    document, _ = build_ass([scene(1, "가" * 20 + " " + "나" * 20, 0.0, 4.0)])
-    cue = parse_ass(document)[0]
-
-    assert r"{\fs" in document
-    assert cue.font_size is not None and cue.font_size < FONT_SIZE
-    assert cue.text == "가" * 20 + " " + "나" * 20, "오버라이드가 본문을 먹지 않는다"
+def test_no_cue_carries_a_font_override():
+    """모든 큐가 같은 크기로 나온다 — 큐마다 글자 크기가 달라지지 않는다."""
+    for slug in (PISA, HOOVER):
+        assert r"{\fs" not in build_ass(timed_document(slug)["scenes"])[0]
 
 
 def test_empty_text_is_refused():
@@ -232,13 +223,12 @@ def test_two_line_cues_use_the_ass_line_break():
     assert LINE_BREAK in dialogue
 
 
-def test_long_scenes_are_reported_as_warnings_not_failures():
-    """실물 대본에 40자 줄이 있다. 막지 않고 어느 씬인지 알린다."""
-    document, warnings = build_ass(timed_document(PISA)["scenes"])
-
-    assert document
-    assert warnings, "40자 줄은 18자 상한을 지킬 방법이 없다"
-    assert all(f"상한 {MAX_LINE_CHARS}자" in w for w in warnings)
+def test_real_scripts_produce_no_subtitle_warnings():
+    """40px·22자로 정한 뒤 실물 대본 2편의 자막 경고가 0건이 됐다 (이전엔 피사 8·후버 1)."""
+    for slug in (PISA, HOOVER):
+        document, warnings = build_ass(timed_document(slug)["scenes"])
+        assert document
+        assert warnings == []
 
 
 def test_braces_cannot_open_an_override_block():

@@ -353,13 +353,13 @@ def test_repository_font_is_handed_to_libass(pisa):
     assert "fontsdir=" in ffmpeg.graph
 
 
-def test_long_lines_are_reported_but_do_not_stop_the_stage(pisa):
-    """스펙 03(18자)과 스펙 01(43자)이 충돌하는 씬. 막지 않고 알린다."""
+def test_the_real_script_raises_no_subtitle_warning(pisa):
+    """피사는 예전 18자 상한에서 8씬이 경고를 냈다. 22자로 정한 뒤 0건이다."""
     paths, run_id, _document = pisa
     result = run(paths, run_id)
 
     assert result.passed
-    assert any("상한 18자" in w for w in result.warnings)
+    assert not any("상한" in w for w in result.warnings)
 
 
 # --- CLI ---------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
     - 위치: 하단 중앙, 세로 기준 화면 72~82% 지점
     - 폰트: 굵은 고딕 (Pretendard Bold 계열), 흰색 + 검정 외곽선 3px
-    - 1줄 최대 18자, 2줄 초과 금지
+    - 폰트 크기 40px 고정, 1줄 최대 22자, 2줄 초과 금지
 
 자막은 **후처리 합성**이다 (ADR-0002). 정확해야 하는 한국어를 이미지 생성에 맡기지
 않는다. 큐 1개 = 씬 1개다 (ADR-0013) — 씬을 다시 묶거나 쪼개지 않는다.
@@ -11,17 +11,16 @@
 그대로 쓰고, ASS의 시간 해상도(1/100초)만큼만 반올림한다 — 최대 5ms이므로 specs/00의
 ±200ms 안이다.
 
-## 스펙 두 줄이 충돌하는 지점
+## 세 값은 함께 정해졌다
 
-"1줄 최대 18자"와 "2줄 초과 금지"는 34자를 넘는 줄에서 동시에 만족될 수 없다. 그런데
-specs/01은 자막 줄당 **최대 43자**를 허용하고(실측 43·41자), 실물 대본 2편에도 40자
-줄이 있다. 둘 중 하나는 반드시 깨진다.
+`40px` · `1줄 22자` · `2줄`은 서로 맞물린 한 벌이다. 40px에서 22자는 880px이라 가로
+안전폭 960px 안에 들어가고, specs/01이 허용하는 **가장 긴 큐(43자)도 22+21로 두 줄에
+들어간다.** 그래서 정상 범위의 큐는 폰트를 줄일 일이 없다 — 큐별 폰트 축소 경로를
+두지 않는다.
 
-여기서는 **줄 수(2줄)를 지키고, 넘친 줄은 그 큐의 폰트를 줄여 화면 안에 넣는다.**
-3줄이 되면 자막 블록이 72~82% 밴드를 넘어 피사체 영역을 침범하고, 폰트를 그대로 두면
-글자가 화면 밖으로 나가 잘린다 — 둘 다 화면이 깨지는데 후자는 소리 없이 깨진다.
-어느 쪽을 깰지는 룰 테이블이 정할 일이므로 씬마다 경고를 남긴다 (실물 대본 기준
-피사 8/25씬, 후버댐 1/27씬).
+22자 × 2줄에 안 들어가는 큐는 specs/01의 43자를 넘겼다는 뜻이므로 **실패로 올린다**
+(`check_overflow`). 자막 단계가 글자를 작게 만들어 삼키면 상류 위반이 화면에서만
+티가 나고 기록에는 남지 않는다.
 """
 
 from __future__ import annotations
@@ -55,20 +54,18 @@ SHADOW = 0
 ALIGNMENT = 2
 MARGIN_LR = 60
 
-#: specs/03 자막 규칙
-MAX_LINE_CHARS = 18
+#: specs/03 자막 규칙. **세 값은 함께 정해졌다** — 스펙 03이 유일한 출처이므로
+#: 여기서 역산하거나 재해석하지 않는다. 40px에서 22자는 880px이고, 스펙 01이 허용하는
+#: 가장 긴 큐(43자)도 22+21로 두 줄에 들어간다. 그래서 큐별 폰트 축소 경로가 없다.
+MAX_LINE_CHARS = 22
 MAX_LINES = 2
+FONT_SIZE = 40
 
 #: 자막이 쓸 수 있는 가로 폭(px)
 TEXT_WIDTH = PLAY_RES_X - 2 * MARGIN_LR
 
 #: 한글 한 글자의 가로 advance ÷ 폰트 크기. 한글은 전각이라 1.0이다 (숫자·라틴은 더 좁다).
 GLYPH_WIDTH_RATIO = 1.0
-
-#: 폰트 크기는 **specs/03의 "1줄 최대 18자"에서 역산한다.** 18자가 가로 폭에 딱 들어가는
-#: 크기가 곧 그 규칙이 뜻하는 크기다. 규칙 쪽 숫자(18자·좌우 여백)를 고치면 여기가
-#: 따라온다 — 폰트 크기를 따로 고르지 않는다.
-FONT_SIZE = int(TEXT_WIDTH / MAX_LINE_CHARS / GLYPH_WIDTH_RATIO)
 
 #: specs/03 "위치: 하단 중앙, 세로 기준 화면 72~82% 지점"
 BAND = (0.72, 0.82)
@@ -131,36 +128,20 @@ def wrap_text(
     return [head] + wrap_text(tail, limit=limit, max_lines=max_lines - 1)
 
 
-def fit_font_size(lines: Sequence[str], *, size: int = FONT_SIZE) -> int:
-    """이 큐가 가로 폭 안에 들어가는 폰트 크기.
+def check_overflow(scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS) -> None:
+    """`limit`자를 넘긴 줄이 있으면 실패시킨다.
 
-    `MAX_LINE_CHARS`자 이하면 기본 크기 그대로다. 넘으면 넘은 만큼 줄인다 — 줄이지
-    않으면 글자가 화면 밖으로 나가 잘린다(WrapStyle 2라 libass가 대신 접어 주지도
-    않고, 접어 준다면 이번엔 3줄이 되어 `MAX_LINES`가 깨진다).
-
-    **스펙이 정한 처리가 아니다.** 스펙 03의 두 줄("1줄 최대 18자" / "2줄 초과 금지")과
-    스펙 01의 "줄당 최대 43자"가 동시에 성립할 수 없어서 생긴 자리이고, 셋 중 무엇을
-    깰지는 룰 테이블이 정할 일이다. 여기서는 **화면 밖으로 나가지 않는 것**을 최우선으로
-    두고 그 사실을 씬별 경고로 올린다.
+    **폰트를 줄여 삼키지 않는다.** 22자 × 2줄에 안 들어가는 큐는 스펙 01의
+    "줄당 최대 43자"를 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가
+    글자를 작게 만들어 넘기면 상류 위반이 화면에서만 티가 나고 기록에는 안 남는다.
     """
     longest = max(len(line) for line in lines)
-    if longest <= MAX_LINE_CHARS:
-        return size
-    return int(TEXT_WIDTH / longest / GLYPH_WIDTH_RATIO)
-
-
-def overflow_warning(
-    scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS
-) -> str | None:
-    """18자를 넘긴 줄에 대한 경고. 넘지 않으면 `None`."""
-    longest = max(len(line) for line in lines)
     if longest <= limit:
-        return None
-    return (
+        return
+    raise SubtitleError(
         f"scenes/{scene_id}: 자막을 {len(lines)}줄로 나눠도 가장 긴 줄이 {longest}자다 "
-        f"(스펙 03 상한 {limit}자). 스펙 03의 '1줄 최대 {limit}자'와 "
-        f"'{MAX_LINES}줄 초과 금지'가 스펙 01의 '줄당 최대 43자'와 충돌한다 — "
-        f"줄 수를 지키고 폰트를 {FONT_SIZE}px → {fit_font_size(lines)}px로 줄였다"
+        f"(스펙 03 상한 {limit}자 × {MAX_LINES}줄). 스펙 01의 '줄당 최대 43자'를 "
+        f"넘긴 대본이라는 뜻이다 — 1부에서 고쳐야 한다"
     )
 
 
@@ -210,8 +191,6 @@ class Cue:
     start: float
     end: float
     lines: tuple[str, ...]
-    #: 이 큐에만 걸린 폰트 크기 오버라이드. 기본 크기면 `None`
-    font_size: int | None = None
 
     @property
     def text(self) -> str:
@@ -284,14 +263,9 @@ def build_ass(scenes: Sequence[dict[str, Any]]) -> tuple[str, list[str]]:
         previous_end = end
 
         lines = wrap_text(scene["text"])
-        warning = overflow_warning(scene_id, lines)
-        if warning:
-            warnings.append(warning)
+        check_overflow(scene_id, lines)
 
         text = LINE_BREAK.join(escape_text(line) for line in lines)
-        size = fit_font_size(lines)
-        if size != FONT_SIZE:
-            text = f"{{\\fs{size}}}{text}"
         events.append(
             f"Dialogue: 0,{ass_timestamp(start)},{ass_timestamp(end)},"
             f"Default,,0,0,0,,{text}"
@@ -316,13 +290,9 @@ def parse_ass(document: str) -> list[Cue]:
         if len(fields) < 10:
             raise SubtitleError(f"필드가 모자란 Dialogue 줄이다: {line!r}")
 
-        body = fields[9]
-        font_size: int | None = None
-        override = _OVERRIDE_RE.match(body)
-        if override:
-            body = body[override.end() :]
-            size = re.search(r"\\fs(\d+)", override.group(1))
-            font_size = int(size.group(1)) if size else None
+        #: 큐별 오버라이드는 더 이상 만들지 않지만(폰트 축소 경로 없음), 손으로 고친
+        #: 자막을 되읽어도 태그가 본문으로 새지 않도록 걷어내고 읽는다.
+        body = _OVERRIDE_RE.sub("", fields[9])
 
         cues.append(
             Cue(
@@ -332,7 +302,6 @@ def parse_ass(document: str) -> list[Cue]:
                     part.replace(r"\{", "{").replace(r"\}", "}")
                     for part in body.split(LINE_BREAK)
                 ),
-                font_size=font_size,
             )
         )
     return cues
