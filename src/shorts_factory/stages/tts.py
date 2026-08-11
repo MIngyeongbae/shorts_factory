@@ -28,7 +28,7 @@ specs/05-pipeline.md:
 
 - **게이트 판정.** `judgment/human.json`의 `decision: go` 확인은 2부 진입점의 몫이다
   (ADR-0017). 아직 그 진입점이 없다
-- 자막 파일(ASS) 생성. `[9. assemble]`이 `timing.json`으로 만든다
+- 자막 파일(ASS) 생성. `[9. assemble]`이 `scenes.timed.json`으로 만든다 (ADR-0020)
 - 대본 수정. 오차가 크든 길이가 넘치든 대본은 1부 것이다
 """
 
@@ -161,14 +161,20 @@ def build_timing(
     audio_duration: float,
     warnings: list[str],
 ) -> dict[str, Any]:
-    """timing.json 문서.
+    """timing.json 문서 — **이 단계의 실행 기록이다** (ADR-0020).
 
-    **모든 시각은 atempo 적용 후(최종 영상 기준)다.** 원속으로 되돌리려면 `tempo`를
-    곱하면 된다. `[9. assemble]`이 자막(ASS)을 만들 때 쓰는 것은 `cues`다.
+    하류 단계가 판단 근거로 읽는 계약이 아니다. 씬의 시각을 읽는 곳은
+    `scenes.timed.json` 하나뿐이고(ADR-0020 "값 하나의 출처는 하나"), 여기 남는 것은
+    (1) 엔진 메타, (2) 배속과 원속 길이 — 계산을 재현할 근거, (3) 경고,
+    (4) 총 길이 — **길이 초과로 멈춰 `scenes.timed.json`을 쓰지 않는 경우에도**
+    무엇이 얼마나 넘쳤는지 남기기 위한 것이다. 호출은 편당 과금이다.
 
-    스펙 05는 이 파일의 스키마를 정의하지 않는다. 여기 담은 것은 (1) `[9]`가 자막을
-    만들 수 있을 만큼의 큐, (2) 왜 이 시각이 나왔는지 되짚을 수 있는 원본 정렬,
-    (3) 다시 호출하지 않고 계산을 재현할 메타뿐이다.
+    `total_duration`은 atempo 적용 후(최종 영상 기준)다. 원속으로 되돌리려면 `tempo`를
+    곱하면 된다.
+
+    자막 큐(`cues`)는 담지 않는다. `[9. assemble]`은 전환 규칙이 비트에 걸려 있어
+    (스펙 03) 어차피 `scenes.timed.json`을 읽으며, 거기에 `text`·`start`·`end`가
+    전부 있다.
     """
     return {
         "run_id": source["run_id"],
@@ -182,15 +188,6 @@ def build_timing(
             "duration": round(audio_duration, 3),
         },
         "warnings": warnings,
-        "cues": [
-            {
-                "scene_id": scene["scene_id"],
-                "text": scene["text"],
-                "start": start,
-                "end": end,
-            }
-            for scene, (start, end) in zip(source["scenes"], boundaries)
-        ],
     }
 
 

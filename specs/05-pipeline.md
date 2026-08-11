@@ -25,9 +25,11 @@ topics/backlog.md
     L2 확신 구간 AI 전결 + 에스컬레이션, L3 AI 전결 + 샘플 감사. go 시에만 2부 진입
 
 === 2부: 영상 생산 (편당 ~$7, go 승인분만) ===
-  → [3. tts+sync]   → narration.wav + timing.json + scenes.timed.json
-                       (ElevenLabs with-timestamps 문자 정렬 → 문장 경계 실측, ADR-0004)
-  → [5. prompt]     → prompts.json       (씬별 이미지 프롬프트, 스펙 03 룰 적용)
+  ┌ [3. tts+sync]   → narration.wav + timing.json + scenes.timed.json
+  │                    (ElevenLabs with-timestamps 문자 정렬 → 문장 경계 실측, ADR-0004)
+  └ [5. prompt]     → prompts.json       (씬별 이미지 프롬프트, 스펙 03 룰 적용)
+    ↑ 둘은 선후가 없다. 각자 06-script.json만 읽는다 (ADR-0020).
+      [5]→[6]은 TTS 없이 진행할 수 있다
   → [6. imagegen]   → images/{scene_id}.png
   → [7. motion]     → clips/{scene_id}.mp4  (이미지→비디오 or Ken Burns)
   → [8. overlay]    → 대형 텍스트·라벨·파티클 합성 (레이어 B)
@@ -60,6 +62,20 @@ topics/backlog.md
 | `research.json` | [0b] | 팩트시트 사본 (스펙 06) |
 | `logs/*.json` | LLM 어댑터 | 헤드리스 세션 응답 원본 |
 
+### 2부 계약 파일 — 값 하나의 출처는 하나다 (ADR-0020)
+
+| 파일 | 생산자 | 역할 | 읽는 단계 |
+|---|---|---|---|
+| `scenes.timed.json` | [3] | **씬의 유일한 출처.** 대본 속성(`beat`·`text`·`subject`·`subject_scale`·`camera`·`motion`) + 실측 시각(`start`/`end`) | [7] 클립 길이·카메라·모션, [9] 전환·자막 |
+| `prompts.json` | [5] | **씬별 이미지 지시.** 시간 정보를 담지 않는다 | [6] `prompt`·`negative_prompt`·`style`, [8] `overlays` |
+| `timing.json` | [3] | **[3]의 실행 기록.** 엔진 메타·배속·원속 길이·오디오 길이·경고. 계약이 아니라 기록이라 길이 초과로 멈출 때도 남는다 | [11] 리포트, 사람 |
+
+- 씬의 시각을 읽는 곳은 `scenes.timed.json` **하나뿐이다.** 같은 숫자를 두 파일이 들고 있으면 갈라지고, 갈라진 쪽을 읽은 단계만 싱크가 어긋난다
+- `prompts.json`의 `beat`·`subject_scale`·`camera`·`motion`은 `06-script.json`에서 복사해 온 값이다. **고치는 곳은 `06-script.json` 하나다**
+- `prompts.json`의 `framing_reuse_of`는 **이미지를 재사용하라는 뜻이 아니다.** 구도만 같고 그 씬의 `subject`는 가리키는 씬과 다르다 — [6]이 캐시 힌트로 읽으면 안 된다
+- `prompts.json`의 `subject`는 한국어 그대로 프롬프트에 들어간다. 번역하지 않고(ADR-0001·0014), 대신 그 한국어를 화면에 글자로 그리지 말라고 명시한다 (ADR-0002)
+- 씬당 베이스 이미지는 1장 = 호출 1회다 (ADR-0019). `overlays`는 전부 레이어 B라 [6]이 아니라 [8] 소관이다
+
 - 소스 카드(`knowledge/`)는 run·토픽에 종속되지 않는 **누적 자산**이라 run 디렉터리에 두지 않는다 (ADR-0012)
 - `slug`: 음운 변화 미적용 로마자 표기, `[a-z0-9-]` 최대 60자 (ADR-0011)
 - `run_id`: `YYYYMMDD-{slug}`
@@ -90,7 +106,7 @@ topics/backlog.md
 - **[5. prompt]**: 구도는 `(beat × subject_scale)` 표에서만 나온다 (스펙 03, ADR-0018). 다른 씬을 가리키는 구도(`@prev`/`@hook`)는 가리키는 씬의 `subject_scale`이 같을 때만 잇고, 다르면 스케일별 기본값으로 떨어진다. 오버레이는 전부 레이어 B다 — 베이스 이미지는 전 씬 클린이고 2-pass 어노테이션 경로가 없다 (ADR-0019).
 - **[6. imagegen]**: 씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로 폴백하고 리포트에 기록. 편당 베이스 호출 = 씬 수 (2-pass 없음, ADR-0019).
 - **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초.
-- **[9. assemble]**: 자막은 timing.json 기준 ASS 생성 후 번인. 싱크 오차 ±200ms 이내 검증.
+- **[9. assemble]**: 자막은 **scenes.timed.json** 기준 ASS 생성 후 번인 (ADR-0020 — 씬의 `text`·`start`·`end`를 읽는 곳은 이 파일 하나다). 전환 규칙(스펙 03)이 비트에 걸려 있어 같은 파일의 `beat`을 함께 본다. 싱크 오차 ±200ms 이내 검증.
 
 ## 실패 정책
 

@@ -129,19 +129,35 @@ def test_narration_length_matches_the_scene_timeline(pisa):
     assert not any("narration.wav 길이" in w for w in result.warnings)
 
 
-def test_timing_json_carries_cues_for_the_subtitle_stage(pisa):
-    """[9. assemble]이 자막(ASS)을 만들 때 보는 파일이다 (specs/05)."""
+def test_scene_timings_are_the_single_source(pisa):
+    """[9. assemble]이 자막(ASS)을 만들 때 보는 파일이다 (ADR-0020).
+
+    씬 하나의 `text`·`start`·`end`를 여기서만 읽는다. 전환 규칙이 비트에 걸려 있어
+    (스펙 03) `[9]`는 어차피 이 파일을 연다.
+    """
     result = run(pisa)
-    timing = json.loads(result.timing_path.read_text(encoding="utf-8"))
+    timed = json.loads(result.scenes_path.read_text(encoding="utf-8"))
     source = load_script(PISA)
 
-    assert [c["scene_id"] for c in timing["cues"]] == [
+    assert [s["scene_id"] for s in timed["scenes"]] == [
         s["scene_id"] for s in source["scenes"]
     ]
-    assert [c["text"] for c in timing["cues"]] == [s["text"] for s in source["scenes"]]
-    assert timing["cues"][0]["start"] == 0.0
-    for before, after in zip(timing["cues"], timing["cues"][1:]):
-        assert after["start"] == before["end"]
+    assert [s["text"] for s in timed["scenes"]] == [s["text"] for s in source["scenes"]]
+    assert timed["scenes"][0]["start"] == 0.0
+    for before, after in zip(timed["scenes"], timed["scenes"][1:]):
+        assert after["start"] == before["end"]  # 빈틈 없이 이어진다
+
+
+def test_timing_json_is_a_record_not_a_scene_contract(pisa):
+    """ADR-0020 — 씬의 시각을 두 파일이 들고 있으면 갈라진다. cues를 담지 않는다."""
+    result = run(pisa)
+    timing = json.loads(result.timing_path.read_text(encoding="utf-8"))
+
+    assert "cues" not in timing
+    assert set(timing) == {
+        "run_id", "topic", "engine", "tempo",
+        "raw_duration", "total_duration", "audio", "warnings",
+    }
 
 
 def test_measured_timing_lands_near_the_estimate_for_a_nominal_voice(pisa):
