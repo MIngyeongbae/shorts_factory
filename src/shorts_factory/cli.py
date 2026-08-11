@@ -7,6 +7,7 @@
     python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.png
+    python run.py assemble  --slug SLUG           # [2부] 클립+씬 계약 → timeline.mp4
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
@@ -27,6 +28,11 @@ from .imagegen.fake import FakeImageClient
 from .imagegen.nano_banana import NanoBananaClient
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
+from .stages.assemble import (
+    AssembleStageError,
+    resolve_run_id,
+    run_assemble_stage,
+)
 from .stages.backfill_scale import BackfillStageError, run_backfill_scale_stage
 from .stages.imagegen import (
     ImagegenStageError,
@@ -231,6 +237,22 @@ def _cmd_imagegen(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_assemble(args, paths: Paths) -> int:
+    """[9] 클립 + 씬 계약 → 자막이 박힌 timeline.mp4.
+
+    입력이 전부 run 디렉터리에 있어서 `--run-id`만으로 돈다. `--slug`를 주면 경계면
+    파일(`06-script.json`)에서 run_id만 읽는다 (ADR-0017).
+    """
+    run_id = resolve_run_id(paths, run_id=args.run_id, slug=args.slug)
+    result = run_assemble_stage(
+        run_id, paths=paths, force=args.force, ffmpeg=args.ffmpeg,
+    )
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
 def _cmd_package(args, paths: Paths) -> int:
     topic_result = run_topic_stage(args.topic, paths=paths, force=args.force)
     print(topic_result.summary)
@@ -344,6 +366,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_imagegen.set_defaults(func=_cmd_imagegen)
 
+    p_assemble = sub.add_parser(
+        "assemble", parents=[common],
+        help="[9] 클립+씬 계약 → timeline.mp4 (2부, 디졸브+자막 번인)",
+    )
+    p_assemble.add_argument("--slug", default=None, help="run_id를 대본에서 읽는다")
+    p_assemble.add_argument("--run-id", default=None)
+    p_assemble.add_argument(
+        "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_assemble.set_defaults(func=_cmd_assemble)
+
     p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
     p_package.add_argument("--topic", default=None)
     p_package.set_defaults(func=_cmd_package)
@@ -387,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args, paths)
     except (
         TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError,
-        PromptStageError, BackfillStageError,
+        PromptStageError, BackfillStageError, AssembleStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1
