@@ -110,6 +110,9 @@ the corresponding second input link xfade timebase (1/30)
 2. **`sparkle_particles`를 실물로 판단할 수 있게 됐다.** 흰 종이 배경에서 안 보일
    가능성이 크다고 지난 세션이 적어 뒀는데, 이제 클립 위에 얹어 보면 된다
 3. `assets/fonts/Pretendard-Bold` 확보가 `[8]`·`[9]` 양쪽에 걸린다
+4. **`[3] tts`가 CLI에 배선돼 있지 않다** (2026-08-12 확인). `stages/tts.py`의
+   `run_tts_stage`와 테스트는 있는데 `cli.py`가 이 모듈을 import조차 하지 않아
+   `python run.py tts`가 없다. 진짜 편을 만들 때 `[3]`이 첫 관문이라 여기서 막힌다
 
 ### 주의
 
