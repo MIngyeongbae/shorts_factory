@@ -25,13 +25,23 @@ from .scenes import DURATION_TOLERANCE, SCENE_SCHEMA, SCENES_SCHEMA
 #: 추정 → 실측 필드명 대응 (specs/02)
 RENAMED = {"est_start": "start", "est_end": "end"}
 
+#: 이 파일에 싣지 않는 대본 필드. **`visual_goal`은 이미지 지시라 여기 올 이유가 없다**
+#: (ADR-0020·0022). `scenes.timed.json`을 읽는 곳은 `[7]`(클립 길이·카메라·모션)과
+#: `[9]`(전환·자막)뿐이고 둘 다 그림이 무엇을 설명하는지 알 필요가 없다. 그림 쪽
+#: 소비자는 `prompts.json`을 읽는다 — 같은 값이 두 파일에 있으면 갈라진다.
+DROPPED: tuple[str, ...] = ("visual_goal",)
+
 
 def _rename(schema: dict[str, Any]) -> dict[str, Any]:
     timed = copy.deepcopy(schema)
     properties = timed["properties"]
+    for name in DROPPED:
+        properties.pop(name, None)
     for old, new in RENAMED.items():
         properties[new] = properties.pop(old)
-    timed["required"] = [RENAMED.get(name, name) for name in timed["required"]]
+    timed["required"] = [
+        RENAMED.get(name, name) for name in timed["required"] if name not in DROPPED
+    ]
     return timed
 
 
@@ -121,7 +131,8 @@ def build_timed_scenes(
     """`06-script.json` + 실측 경계 → scenes.timed.json 문서.
 
     씬의 나머지 필드(beat·text·emphasis·subject·camera·motion·notes)는 그대로 옮긴다.
-    2부는 대본을 고치지 않는다 (ADR-0017).
+    2부는 대본을 고치지 않는다 (ADR-0017). `visual_goal`은 뺀다 — 이미지 지시라
+    이 파일의 소비자(`[7]`·`[9]`)가 읽을 일이 없다 (`DROPPED`).
     """
     scenes = source.get("scenes", [])
     if len(scenes) != len(boundaries):
@@ -134,12 +145,12 @@ def build_timed_scenes(
         item = {
             key: copy.deepcopy(value)
             for key, value in scene.items()
-            if key not in RENAMED
+            if key not in RENAMED and key not in DROPPED
         }
         item["start"] = start
         item["end"] = end
         # 필드 순서를 원본과 맞춘다 (start/end는 est_*가 있던 자리에).
-        order = [RENAMED.get(key, key) for key in scene]
+        order = [RENAMED.get(key, key) for key in scene if key not in DROPPED]
         timed.append({key: item[key] for key in order})
 
     return {

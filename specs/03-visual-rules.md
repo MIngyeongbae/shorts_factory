@@ -4,9 +4,27 @@
 
 ## 베이스 스타일 (전 씬 공통)
 
-- photorealistic 3D 디오라마/조감 렌더 스타일, 자연광
-- 9:16 구도, 피사체는 중앙~상단 1/3에 배치 (하단 1/3은 자막 영역으로 비움)
-- 우하단 반짝이 파티클(✦) 오버레이 — 후처리 공통 레이어
+**펜선·수채 위의 극사실 건축 렌더링** (ADR-0023). 실호출 6회로 검증한 문구 그대로 쓴다.
+
+```
+photorealistic architectural rendering on white paper, mixed media:
+the focal subject rendered with true-to-life detail, materials and lighting;
+colour laid in as controlled watercolour washes over fine graphite and
+technical-pen underdrawing, with construction and guide lines left visible;
+realism dominant over painterly looseness;
+detail and colour fall away toward the edges into bare paper
+```
+
+- 흰 종이, 작도선을 지우지 않고 남긴다, 가장자리로 갈수록 맨 종이로 사라진다
+- **사실주의가 우세하다.** 재질이 곧 설명이다 — 콘크리트 골재, 거푸집 나뭇결,
+  암반 층리가 보여야 한다. 수채 워시로 뭉개면 그 설명이 사라진다 (ADR-0022)
+- 9:16 구도, 피사체는 중앙~상단 1/3에 배치 (하단 1/3은 자막 영역으로 비움).
+  이 기법은 원래 여백으로 끝나므로 하단이 저절로 비워진다
+- **읽을 수 있는 글자·손글씨 낙서를 그리지 않는다.** 정확해야 하는 한국어는 전부
+  레이어 B다 (ADR-0002). 네거티브 프롬프트에 명시한다
+- 스타일 앵커 3장을 모든 호출에 첨부한다 (`assets/style_anchors/`, ADR-0005·0021)
+- 우하단 반짝이 파티클(✦) 오버레이 — 후처리 공통 레이어.
+  **흰 배경에서 보이는지 아직 확인하지 않았다** — `[8] overlay`에서 실물로 판단한다
 
 ## 구도
 
@@ -134,7 +152,9 @@ kling/kenburns 조항)는 적용 대상이 없다.
 ## 자막 스타일
 
 - 위치: 하단 중앙, 세로 기준 화면 72~82% 지점
-- 폰트: 굵은 고딕 (Pretendard Bold 계열), 흰색 + 검정 외곽선 3px
+- 폰트: 굵은 고딕 (Pretendard Bold 계열), **검정 + 흰색 외곽선 3px**
+  - 베이스가 흰 종이라 흰 글자는 외곽선만 남는다. ADR-0023에서 뒤집었다.
+    굵기·크기·위치는 그대로다
 - 폰트 크기 **40px 고정** (1080×1920 기준). 큐마다 크기가 달라지지 않는다
 - **1줄 최대 22자, 2줄 초과 금지**
 - 이 세 값은 함께 정해졌다. 40px에서 22자는 880px로 가로 안전폭 960px 안에 들어가고,

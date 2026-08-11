@@ -154,9 +154,15 @@ def apply_scales(
 
 
 def assert_only_scale_changed(
-    before: dict[str, Any], after: dict[str, Any]
+    before: dict[str, Any], after: dict[str, Any], *, field_name: str = ADDED_FIELD
 ) -> None:
-    """대본이 그대로인지 실제로 비교한다. 다르면 쓰지 않고 실패한다."""
+    """대본이 그대로인지 실제로 비교한다. 다르면 쓰지 않고 실패한다.
+
+    `field_name`은 백필 대상 필드다 — 승인된 대본에 필드 하나만 끼우는 마이그레이션은
+    ADR-0018(`subject_scale`)에 이어 ADR-0022(`visual_goal`)로 두 번째라 여기를 열어 뒀다.
+    이 가드가 이 계열 단계의 존재 이유다: 승인된 대본을 조용히 바꾸는 것이 낼 수 있는
+    최악의 결과이므로, 쓰기 전에 나머지 필드를 전부 대조하고 하나라도 다르면 멈춘다.
+    """
     if before.keys() != after.keys():
         raise BackfillStageError("대본 최상위 키가 달라졌다")
     for key in before:
@@ -169,11 +175,11 @@ def assert_only_scale_changed(
             f"씬 수가 {len(old_scenes)}개에서 {len(new_scenes)}개로 달라졌다"
         )
     for old, new in zip(old_scenes, new_scenes):
-        stripped = {k: v for k, v in new.items() if k != ADDED_FIELD}
-        original = {k: v for k, v in old.items() if k != ADDED_FIELD}
+        stripped = {k: v for k, v in new.items() if k != field_name}
+        original = {k: v for k, v in old.items() if k != field_name}
         if stripped != original:
             raise BackfillStageError(
-                f"씬 {old.get('scene_id')}에서 {ADDED_FIELD} 말고 다른 필드가 달라졌다"
+                f"씬 {old.get('scene_id')}에서 {field_name} 말고 다른 필드가 달라졌다"
             )
 
 

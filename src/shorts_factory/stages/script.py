@@ -5,12 +5,12 @@ specs/05-pipeline.md:
 
 ## 역할 분담 (ADR-0001, ADR-0003)
 
-헤드리스 세션은 `beat`·`text`·`subject`·`subject_scale` 넷만 출력한다. 나머지는 코드가
-룰 테이블로 채운다.
+헤드리스 세션은 `beat`·`text`·`visual_goal`·`subject`·`subject_scale` 다섯만 출력한다.
+나머지는 코드가 룰 테이블로 채운다.
 
 | 필드 | 정하는 주체 | 근거 |
 |---|---|---|
-| `text`, `beat`, `subject`, `subject_scale` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만". `subject_scale`은 연출이 아니라 피사체 서술이라 같은 자리다 (ADR-0018) |
+| `text`, `beat`, `visual_goal`, `subject`, `subject_scale` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만". `subject_scale`은 연출이 아니라 피사체 서술이라 같은 자리다 (ADR-0018). `visual_goal`은 팩트시트를 든 세션만 할 수 있는 배분 판단이다 (ADR-0022) |
 | `est_start`/`est_end` | 코드 (글자 수 ÷ 명목 속도) | 산술을 LLM에 맡기지 않는다 |
 | `camera` | 코드 (specs/03 비트별 기본값) | CLAUDE.md 원칙 3 |
 | `emphasis` | 코드 (숫자 비트 → 대형 빨간 숫자) | specs/03 오버레이 룰 |
@@ -157,12 +157,21 @@ def build_scenes(
 
         beat = str(item.get("beat", "")).strip()
         text = str(item.get("text", "")).strip()
+        visual_goal = str(item.get("visual_goal", "")).strip()
         subject = str(item.get("subject", "")).strip()
         scale = str(item.get("subject_scale", "")).strip()
         if beat not in CAMERA_BY_BEAT:
             raise ScriptStageError(f"{index}번째 씬의 beat가 비트 테이블에 없다: {beat!r}")
         if not text or not subject:
             raise ScriptStageError(f"{index}번째 씬에 text 또는 subject가 비어 있다")
+        # ADR-0022 — 비어 있으면 그 씬의 그림은 할 일이 없다는 뜻이다. 채워서 때우지
+        # 않는다: 조용히 넘기면 시간만 채우는 그림이 그대로 파이프라인을 통과한다.
+        # 본문을 되풀이하는지(겹침)는 [2. validate]가 본다 — 여기서는 유무만 본다.
+        if not visual_goal:
+            raise ScriptStageError(
+                f"{index}번째 씬에 visual_goal이 비어 있다 (ADR-0022). "
+                "그림이 무엇을 설명하는지 적어야 한다"
+            )
         # ADR-0018 — 구도가 이 값에 걸려 있다. 없으면 wide로 때우지 않는다:
         # 조용히 채우면 스펙 03 구도 표의 close/diagram 열이 영영 안 쓰인다.
         if scale not in SUBJECT_SCALES:
@@ -191,6 +200,7 @@ def build_scenes(
                 )
             scene["emphasis"] = {"type": NUMBER_EMPHASIS_TYPE, "value": numbers[0][0]}
 
+        scene["visual_goal"] = visual_goal
         scene["subject"] = subject
         scene["subject_scale"] = scale
         scene["camera"] = CAMERA_BY_BEAT[beat]

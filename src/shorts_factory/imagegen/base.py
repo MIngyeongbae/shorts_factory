@@ -30,9 +30,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-#: PNG 시그니처. specs/05가 산출물을 `images/{scene_id}.png`로 못박았으므로
-#: 어댑터가 다른 포맷을 돌려주면 그 자리에서 실패로 친다 (조용히 어긋나지 않는다).
+#: 파일 시그니처. 어댑터가 **스스로 밝힌 mime과 다른 바이트**를 돌려주면 그 자리에서
+#: 실패로 친다 — 조용히 어긋나면 `[7]`이 FFmpeg에서 터진다.
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff"
+
+#: 저장 가능한 포맷 → (시그니처, 확장자).
+#: JPEG이 여기 있는 이유는 **Nano Banana 2가 JPEG만 주기 때문이다** — `image/png`을
+#: 요청하면 400으로 거절한다 (ADR-0021, 실호출로 확인). 페이크는 stdlib로 만들 수 있는
+#: PNG를 낸다. 그래서 확장자는 프로바이더가 정한다 (`ImageClient.output_suffix`).
+IMAGE_FORMATS = {
+    "image/png": (PNG_MAGIC, ".png"),
+    "image/jpeg": (JPEG_MAGIC, ".jpg"),
+}
 
 #: 요청 지문을 만들 때 필드를 잇는 구분자. 프롬프트 본문에 나올 수 없는 제어문자라
 #: 필드 경계가 섞이지 않는다 (`"a|b"` + `"c"`와 `"a"` + `"b|c"`가 같은 지문이 되는 일).
@@ -153,11 +163,22 @@ class GeneratedImage:
     def __post_init__(self) -> None:
         if not self.data:
             raise ImageGenError("이미지 바이트가 비어 있다")
-        if not self.data.startswith(PNG_MAGIC):
+        known = IMAGE_FORMATS.get(self.mime_type)
+        if known is None:
             raise ImageGenError(
-                f"PNG가 아닌 응답이다 (mime_type={self.mime_type}). "
-                "specs/05의 산출물은 images/{scene_id}.png다"
+                f"저장할 수 없는 포맷이다: {self.mime_type} "
+                f"(가능: {', '.join(sorted(IMAGE_FORMATS))})"
             )
+        magic, _ = known
+        if not self.data.startswith(magic):
+            raise ImageGenError(
+                f"{self.mime_type}이라면서 시그니처가 다르다. 응답 본문이 이미지가 아니다"
+            )
+
+    @property
+    def suffix(self) -> str:
+        """이 바이트를 저장할 확장자."""
+        return IMAGE_FORMATS[self.mime_type][1]
 
     @property
     def meta(self) -> dict[str, Any]:
@@ -184,6 +205,10 @@ class ImageClient(ABC):
 
     #: 실행 기록에 남길 프로바이더 이름.
     name: str = "image-client"
+
+    #: 이 프로바이더가 내는 파일의 확장자. 단계가 파일명을 지을 때 쓴다.
+    #: 기본값이 `.jpg`인 이유는 실물(Nano Banana 2)이 JPEG만 주기 때문이다 (ADR-0021).
+    output_suffix: str = ".jpg"
 
     @abstractmethod
     def generate(

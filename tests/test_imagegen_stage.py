@@ -296,10 +296,11 @@ def test_no_image_at_all_is_a_stage_failure(paths, prepared):
 
 
 def test_unusable_provider_stops_without_burning_every_scene(paths, prepared):
-    """프로바이더 자체가 못 쓰는 상태다. 27씬을 각각 두 번씩 실패시킬 이유가 없다."""
+    """프로바이더 자체가 못 쓰는 상태다 (여기서는 키 없음). 27씬을 각각 두 번씩
+    실패시킬 이유가 없다. 키가 없으면 네트워크를 건드리기 전에 멈춘다 (ADR-0021)."""
     run_id = prepared()
 
-    with pytest.raises(ImagegenStageError, match="ADR"):
+    with pytest.raises(ImagegenStageError, match="GEMINI_API_KEY"):
         run_imagegen_stage(
             images=NanoBananaClient(), run_id=run_id, paths=paths,
             allow_missing_anchors=True,

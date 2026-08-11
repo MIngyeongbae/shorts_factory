@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from conftest import load_fixture
 from shorts_factory.schemas.scenes import (
+    visual_goal_overlap,
     BEATS,
     MAX_KLING_SCENES,
     SCENE_SCHEMA,
@@ -38,6 +39,7 @@ def test_spec_inline_example_scene_is_valid():
         "est_start": 44.0,
         "est_end": 45.8,
         "emphasis": {"type": "big_red_text", "value": "발상"},
+        "visual_goal": "축조 현장의 규모 — 자막이 말하지 않는 것",
         "subject": "성벽 축조 현장",
         "subject_scale": "wide",
         "camera": "slow_zoom_in",
@@ -173,3 +175,44 @@ def test_emphasis_type_is_an_enum_from_spec_03():
     scene["emphasis"]["type"] = "red_crayon_x"  # ADR-0019로 폐기된 타입
     errors, _ = validate_scenes(data)
     assert any("emphasis" in e for e in errors)
+
+
+# --- visual_goal (ADR-0022) ---------------------------------------------------
+
+
+def test_visual_goal_is_required():
+    """비어 있으면 그 씬의 그림은 할 일이 없다는 뜻이다."""
+    doc = load_fixture("scenes_pass.json")
+    del doc["scenes"][0]["visual_goal"]
+
+    errors, _ = validate_scenes(doc)
+    assert any("visual_goal" in e for e in errors)
+
+
+def test_visual_goal_that_restates_the_text_is_rejected():
+    """그림이 본문을 되풀이하면 설명을 지지 않는다 — 시간만 채운다."""
+    doc = load_fixture("scenes_pass.json")
+    doc["scenes"][0]["visual_goal"] = doc["scenes"][0]["text"]
+
+    errors, _ = validate_scenes(doc)
+    assert any("겹친다" in e for e in errors)
+
+
+def test_visual_goal_that_adds_something_passes():
+    doc = load_fixture("scenes_pass.json")
+    doc["scenes"][0]["visual_goal"] = "무너진 뒤 남은 잔해의 부피감"
+
+    errors, _ = validate_scenes(doc)
+    assert not any("겹친다" in e for e in errors)
+
+
+def test_overlap_is_measured_on_content_not_punctuation():
+    """공백·문장부호만 다른 문장은 되풀이다."""
+    text = "4명이 숨졌고 잔해는 8,000 m³였죠."
+    assert visual_goal_overlap(text, "4명이 숨졌고 잔해는 8,000 m³였다") >= 0.7
+    assert visual_goal_overlap(text, "8,000 m³가 광장을 덮는 부피감") < 0.7
+
+
+def test_empty_goal_counts_as_fully_overlapping():
+    """빈 값에 관대하면 필드가 조용히 죽는다."""
+    assert visual_goal_overlap("아무 문장.", "") == 1.0

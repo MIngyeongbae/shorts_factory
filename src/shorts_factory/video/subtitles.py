@@ -44,9 +44,10 @@ FONT_NAME = "Pretendard"
 #: 에셋을 코드 리포지토리에 포함"). 없으면 libass가 아무 폰트로 떨어져 룩이 바뀐다.
 FONTS_DIR = "assets/fonts"
 
-#: 흰색 + 검정 외곽선 3px. ASS 색은 &HAABBGGRR (알파 00 = 불투명).
-PRIMARY_COLOUR = "&H00FFFFFF"
-OUTLINE_COLOUR = "&H00000000"
+#: **검정 + 흰색 외곽선 3px** (ADR-0023). ASS 색은 &HAABBGGRR (알파 00 = 불투명).
+#: 베이스가 흰 종이라 흰 글자는 외곽선만 남는다 — 스펙 03에서 뒤집었다.
+PRIMARY_COLOUR = "&H00000000"
+OUTLINE_COLOUR = "&H00FFFFFF"
 OUTLINE = 3
 SHADOW = 0
 

@@ -198,7 +198,11 @@ def build_prompts(
             "motion": scene["motion"],
             "framing": token,
             "framing_source": source,
-            "prompt": build_prompt(FRAMINGS[token].shot, scene["subject"]),
+            "prompt": build_prompt(
+                FRAMINGS[token].shot,
+                scene["subject"],
+                scene.get("visual_goal", ""),
+            ),
             "negative_prompt": build_negative(overlay_names),
             "overlays": overlays,
         }

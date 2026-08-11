@@ -10,6 +10,7 @@ import pytest
 from conftest import PISA, load_script
 from shorts_factory.schemas.scenes import SCENE_SCHEMA
 from shorts_factory.schemas.timed_scenes import (
+    DROPPED,
     TIMED_SCENE_SCHEMA,
     build_timed_scenes,
     validate_timed_scenes,
@@ -45,12 +46,29 @@ def timed(**overrides):
 # --- 스키마 파생 --------------------------------------------------------------
 
 
-def test_timed_scene_schema_renames_only_the_time_fields():
+def test_timed_scene_schema_renames_the_time_fields_and_drops_the_image_ones():
     assert set(TIMED_SCENE_SCHEMA["properties"]) - {"start", "end"} == (
-        set(SCENE_SCHEMA["properties"]) - {"est_start", "est_end"}
+        set(SCENE_SCHEMA["properties"]) - {"est_start", "est_end"} - set(DROPPED)
     )
     assert TIMED_SCENE_SCHEMA["required"].count("start") == 1
     assert "est_start" not in TIMED_SCENE_SCHEMA["required"]
+
+
+def test_visual_goal_does_not_travel_into_the_measured_file():
+    """이미지 지시는 prompts.json 몫이다 (ADR-0020·0022).
+
+    이 파일을 읽는 곳은 [7](클립 길이·카메라·모션)과 [9](전환·자막)뿐이고 둘 다
+    그림이 무엇을 설명하는지 알 필요가 없다. 같은 값이 두 파일에 있으면 갈라진다.
+    """
+    assert "visual_goal" in SCENE_SCHEMA["properties"]
+    assert "visual_goal" not in TIMED_SCENE_SCHEMA["properties"]
+    assert "visual_goal" not in TIMED_SCENE_SCHEMA["required"]
+
+    doc = build_timed_scenes(
+        load_script(PISA),
+        [(s["est_start"], s["est_end"]) for s in load_script(PISA)["scenes"]],
+    )
+    assert all("visual_goal" not in scene for scene in doc["scenes"])
 
 
 def test_estimates_are_not_allowed_in_the_measured_file():
@@ -112,7 +130,12 @@ def test_build_keeps_every_other_field_untouched():
     doc = build_timed_scenes(source, boundaries)
 
     for before, after in zip(source["scenes"], doc["scenes"]):
-        assert {k: v for k, v in before.items() if not k.startswith("est_")} == {
+        carried = {
+            k: v
+            for k, v in before.items()
+            if not k.startswith("est_") and k not in DROPPED
+        }
+        assert carried == {
             k: v for k, v in after.items() if k not in ("start", "end")
         }
     assert doc["run_id"] == source["run_id"], "계보는 run_id로 잇는다 (ADR-0017)"

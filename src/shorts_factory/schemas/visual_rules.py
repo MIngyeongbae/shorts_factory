@@ -28,8 +28,18 @@ from jsonschema import Draft202012Validator
 
 # --- 베이스 스타일 (specs/03 "베이스 스타일 (전 씬 공통)") -------------------
 
-#: "photorealistic 3D 디오라마/조감 렌더 스타일, 자연광"
-BASE_STYLE = "photorealistic 3D diorama / aerial-render look, natural light"
+#: specs/03 "베이스 스타일" — 펜선·수채 위의 극사실 건축 렌더링 (ADR-0023).
+#: 실호출 6회로 검증한 문구다. 스펙 03이 유일한 출처이므로 여기서 고쳐 쓰지 않는다.
+#: "realism dominant"가 핵심이다 — 수채로 뭉개면 재질이 사라지고, 이 채널에서
+#: 재질은 곧 설명이다 (콘크리트 골재·거푸집 나뭇결·암반 층리, ADR-0022).
+BASE_STYLE = (
+    "photorealistic architectural rendering on white paper, mixed media: "
+    "the focal subject rendered with true-to-life detail, materials and lighting; "
+    "colour laid in as controlled watercolour washes over fine graphite and "
+    "technical-pen underdrawing, with construction and guide lines left visible; "
+    "realism dominant over painterly looseness; "
+    "detail and colour fall away toward the edges into bare paper"
+)
 
 #: "9:16 구도, 피사체는 중앙~상단 1/3에 배치 (하단 1/3은 자막 영역으로 비움)"
 COMPOSITION = (
@@ -42,7 +52,8 @@ ASPECT_RATIO = "9:16"
 #: ADR-0005 "해상도: 2K (… 4K 금지)"
 RESOLUTION = "2K"
 
-#: ADR-0005 "스타일 앵커 이미지 3~5장을 … 모든 생성 호출에 레퍼런스로 첨부"
+#: ADR-0005 "스타일 앵커 이미지 3장을 … 모든 생성 호출에 레퍼런스로 첨부"
+#: (3~5장 → 3장 고정. gemini-3.1-flash-image의 스타일 레퍼런스 상한이다 — ADR-0021)
 STYLE_ANCHOR_DIR = "assets/style_anchors"
 
 #: "우하단 반짝이 파티클(✦) 오버레이 — 후처리 공통 레이어". 씬별 룰이 아니라 전 씬 공통이라
@@ -61,6 +72,10 @@ GLOBAL_OVERLAYS: tuple[dict[str, Any], ...] = (
 GLOBAL_NEGATIVES: tuple[str, ...] = (
     "burned-in subtitles or caption bars",
     "sparkle particle overlay",
+    # 레퍼런스 앵커 일부에 필기체 텍스처가 있어 모델이 따라 그린다. 그대로 두면
+    # 한국어를 흉내 내다 깨진 글자를 만든다 — 정확해야 하는 글자는 전부 레이어 B다
+    # (ADR-0002·0023). 실호출 6회에서 이 문구로 글자가 한 자도 나오지 않았다.
+    "any legible or handwritten text, letters, numbers or annotation scribbles",
 )
 
 # --- 피사체 스케일 (specs/02, ADR-0018) --------------------------------------
@@ -284,22 +299,28 @@ def resolve_framing(
 # --- 프롬프트 조립 -----------------------------------------------------------
 
 
-def build_prompt(shot: str, subject: str) -> str:
+def build_prompt(shot: str, subject: str, visual_goal: str = "") -> str:
     """베이스(클린) 이미지 프롬프트.
 
     `subject`는 한국어 그대로 넣는다. 번역하면 `[1]`이 고른 피사체가 이 단계의
     창의적 판단으로 바뀌고(ADR-0001·0014 위반), 외부 의존도 생긴다. 대신 그 한국어가
     화면에 글자로 그려지지 않도록 못을 박는다 (ADR-0002).
+
+    `visual_goal`도 한국어 그대로 싣는다 (ADR-0022). **이 그림이 무엇을 설명해야
+    하는지를 모델에게 알려 주는 줄이다** — 피사체만 주면 모델은 그것을 그릴 뿐이고,
+    그 그림이 왜 거기 있는지는 모른다. 필드가 없는 옛 대본도 있으므로 비면 뺀다.
     """
-    return "\n".join(
-        (
-            "Subject (Korean description — depict it; "
-            f"do not write these words in the image): {subject}",
-            f"Shot: {shot}",
-            f"Style: {BASE_STYLE}",
-            f"Framing: {COMPOSITION}",
+    lines = [
+        "Subject (Korean description — depict it; "
+        f"do not write these words in the image): {subject}",
+    ]
+    if visual_goal.strip():
+        lines.append(
+            "This image must explain (Korean; depict it, do not write it): "
+            f"{visual_goal}"
         )
-    )
+    lines.extend((f"Shot: {shot}", f"Style: {BASE_STYLE}", f"Framing: {COMPOSITION}"))
+    return "\n".join(lines)
 
 
 def build_negative(overlay_types: tuple[str, ...]) -> str:

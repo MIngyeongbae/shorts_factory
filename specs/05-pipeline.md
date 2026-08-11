@@ -30,7 +30,7 @@ topics/backlog.md
   └ [5. prompt]     → prompts.json       (씬별 이미지 프롬프트, 스펙 03 룰 적용)
     ↑ 둘은 선후가 없다. 각자 06-script.json만 읽는다 (ADR-0020).
       [5]→[6]은 TTS 없이 진행할 수 있다
-  → [6. imagegen]   → images/{scene_id}.png
+  → [6. imagegen]   → images/{scene_id}.jpg  (Nano Banana 2가 JPEG만 준다 — ADR-0021)
   → [7. motion]     → clips/{scene_id}.mp4  (이미지→비디오 or Ken Burns)
   → [8. overlay]    → 대형 텍스트·라벨·파티클 합성 (레이어 B)
   → [9. assemble]   → timeline.mp4       (FFmpeg: 디졸브 + 자막 번인)

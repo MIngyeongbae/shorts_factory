@@ -68,6 +68,7 @@ SCENE_SCHEMA: dict[str, Any] = {
         "text",
         "est_start",
         "est_end",
+        "visual_goal",
         "subject",
         "subject_scale",
         "camera",
@@ -91,6 +92,9 @@ SCENE_SCHEMA: dict[str, Any] = {
                 "value": {"type": "string", "minLength": 1},
             },
         },
+        # specs/02 + ADR-0022 — 이 그림이 지는 설명. subject보다 먼저 정해진다.
+        # 그림이 시간을 채우는 것이 아니라 설명을 대신하게 하는 필드다.
+        "visual_goal": {"type": "string", "minLength": 1},
         "subject": {"type": "string", "minLength": 1},
         # specs/02 + ADR-0018 — beat와 함께 구도를 결정한다. 연출이 아니라 피사체 서술이라
         # [1. script]가 subject와 함께 쓴다.
@@ -127,6 +131,30 @@ def schema_errors(data: Any) -> list[str]:
     return errors
 
 
+#: `visual_goal`이 `text`를 되풀이했다고 볼 겹침 비율 (ADR-0022).
+#: 문자 바이그램 기준이다 — 한국어라 형태소 분석기 없이 재려면 이게 가장 단순하다.
+#: 0.7은 "본문을 살짝 바꿔 쓴 문장"은 걸고 "본문이 안 한 말"은 통과시키는 선이다.
+VISUAL_GOAL_OVERLAP_LIMIT = 0.7
+
+
+def _bigrams(text: str) -> set[str]:
+    """공백·문장부호를 뺀 문자 바이그램 집합."""
+    core = "".join(ch for ch in text if ch.isalnum())
+    return {core[i : i + 2] for i in range(len(core) - 1)}
+
+
+def visual_goal_overlap(text: str, visual_goal: str) -> float:
+    """`visual_goal`이 `text` 안에 얼마나 들어 있는가 (0~1).
+
+    **그림이 새로 지는 설명이 있는지를 재는 값이다** (ADR-0022). 1에 가까우면
+    본문이 이미 한 말을 그림 지시가 되풀이한 것이고, 그 그림은 시간만 채운다.
+    """
+    goal = _bigrams(visual_goal)
+    if not goal:
+        return 1.0
+    return len(goal & _bigrams(text)) / len(goal)
+
+
 def semantic_errors(data: dict[str, Any]) -> list[str]:
     """스펙 02의 교차 규칙 검사 (스키마로 표현 불가한 부분)."""
     errors: list[str] = []
@@ -145,6 +173,16 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
         sid = scene.get("scene_id", "?")
         start = scene.get("est_start")
         end = scene.get("est_end")
+
+        # ADR-0022 — 그림이 본문을 되풀이하면 그 씬의 그림은 하는 일이 없다.
+        # 시간만 채우는 그림을 여기서 거른다.
+        overlap = visual_goal_overlap(scene.get("text", ""), scene.get("visual_goal", ""))
+        if overlap >= VISUAL_GOAL_OVERLAP_LIMIT:
+            errors.append(
+                f"scenes/{sid}: visual_goal이 text와 {overlap:.0%} 겹친다 "
+                f"(상한 {VISUAL_GOAL_OVERLAP_LIMIT:.0%}). 그림이 본문을 되풀이하면 "
+                "설명을 지지 않는다 — 본문이 말하지 않고 넘어가는 것을 적어라 (ADR-0022)"
+            )
 
         if start >= end:
             errors.append(f"scenes/{sid}: est_start({start}) >= est_end({end})")

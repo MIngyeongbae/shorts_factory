@@ -1,7 +1,7 @@
 """[6. imagegen] — 씬별 이미지 프롬프트 → 베이스 이미지 한 장씩.
 
 specs/05-pipeline.md:
-    [6. imagegen] → images/{scene_id}.png
+    [6. imagegen] → images/{scene_id}.jpg  (확장자는 프로바이더가 정한다 — ADR-0021)
     "씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로
      폴백하고 리포트에 기록. 편당 베이스 호출 = 씬 수 (2-pass 없음, ADR-0019)."
 
@@ -73,7 +73,7 @@ IMAGES_DIR = "images"
 
 #: 이 단계의 **실행 기록**. `timing.json`이 `[3]`에 대해 갖는 역할과 같다 (ADR-0020) —
 #: 하류가 판단 근거로 읽는 계약이 아니라 무슨 일이 있었는지의 기록이고, `[11. report]`가
-#: "실패 씬, 재시도 이력"을 여기서 읽는다. `[7]`은 이 파일 없이 `images/{scene_id}.png`
+#: "실패 씬, 재시도 이력"을 여기서 읽는다. `[7]`은 이 파일 없이 `images/{scene_id}.jpg`
 #: 규약만으로 돈다.
 RECORD_FILE = "images.json"
 
@@ -276,7 +276,8 @@ def _generate_scene(
 
 
 def _apply_fallbacks(
-    records: list[dict[str, Any]], images_dir: Path, warnings: list[str]
+    records: list[dict[str, Any]], images_dir: Path, warnings: list[str],
+    *, suffix: str,
 ) -> None:
     """2회 실패한 씬을 인접 씬 이미지로 메운다 (specs/05).
 
@@ -295,8 +296,8 @@ def _apply_fallbacks(
             )
             continue
 
-        source = images_dir / f"{source_id}.png"
-        target = images_dir / f"{record['scene_id']}.png"
+        source = images_dir / f"{source_id}{suffix}"
+        target = images_dir / f"{record['scene_id']}{suffix}"
         _write_bytes(target, source.read_bytes())
         record.update(
             status=FALLBACK,
@@ -423,7 +424,8 @@ def run_imagegen_stage(
         if images.requires_style_anchors and not allow_missing_anchors:
             blocked = (
                 f"{message}. 편당 과금 호출을 그대로 태우지 않고 막는다 — "
-                "앵커 3~5장을 넣거나, 알고도 돌리려면 --allow-missing-anchors를 준다"
+                "앵커 3장을 넣거나(상한도 3장이다 — ADR-0021), "
+                "알고도 돌리려면 --allow-missing-anchors를 준다"
             )
             state.mark_blocked(STAGE, blocked)
             log.error("[%s] %s", STAGE, blocked)
@@ -461,7 +463,7 @@ def run_imagegen_stage(
             request = ImageRequest.from_prompt_scene(
                 scene, style, style_anchors=anchors, label=f"{STAGE} 씬 {scene_id}"
             )
-            image_path = images_dir / f"{scene_id}.png"
+            image_path = images_dir / f"{scene_id}{images.output_suffix}"
 
             prior = previous.get(scene_id)
             if (
@@ -487,7 +489,7 @@ def run_imagegen_stage(
         flush()
         raise ImagegenStageError(message) from exc
 
-    _apply_fallbacks(records, images_dir, warnings)
+    _apply_fallbacks(records, images_dir, warnings, suffix=images.output_suffix)
     flush()
 
     for warning in warnings:

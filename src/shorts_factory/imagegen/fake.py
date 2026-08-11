@@ -86,6 +86,8 @@ class FakeImageClient(ImageClient):
     #: 페이크는 앵커가 없어도 돈다. 앵커 0장 차단은 과금되는 실물 어댑터의 규칙이다.
     requires_style_anchors = False
     name = "fake"
+    #: stdlib로 만들 수 있는 것이 PNG다. 실물은 JPEG만 준다 (ADR-0021).
+    output_suffix = ".png"
 
     def __init__(
         self,

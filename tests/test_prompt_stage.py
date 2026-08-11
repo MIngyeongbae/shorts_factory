@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PISA, install_script, load_script
+
 from shorts_factory.config import write_text
 from shorts_factory.jsonio import dump_json
 from shorts_factory.schemas.visual_rules import FRAMING_TABLE, schema_errors
@@ -358,3 +360,26 @@ def test_every_scale_actually_gets_used(paths, install, slug):
     install(slug)
     result = run_prompt_stage(slug, paths=paths)
     assert set(result.scale_counts) == {"wide", "close", "diagram"}
+
+
+def test_prompt_tells_the_model_what_the_image_must_explain(paths):
+    """visual_goal이 프롬프트로 실린다 (ADR-0022).
+
+    피사체만 주면 모델은 그것을 그릴 뿐이고, 그 그림이 왜 거기 있는지는 모른다.
+    """
+    install_script(paths, PISA)
+    result = run_prompt_stage(PISA, paths=paths)
+    doc = json.loads(result.prompts_path.read_text(encoding="utf-8"))
+
+    script = load_script(PISA)
+    for scene, source in zip(doc["scenes"], script["scenes"]):
+        assert source["visual_goal"] in scene["prompt"]
+        assert "must explain" in scene["prompt"]
+
+
+def test_prompt_omits_the_line_when_the_field_is_absent():
+    """필드가 없던 옛 대본도 있다. 빈 지시문을 남기지 않는다."""
+    from shorts_factory.schemas.visual_rules import build_prompt
+
+    assert "must explain" not in build_prompt("shot", "피사체")
+    assert "must explain" not in build_prompt("shot", "피사체", "   ")

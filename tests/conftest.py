@@ -18,6 +18,23 @@ BACKLOG_TEMPLATE = """# 소재 백로그
 """
 
 
+#: 실제 호출이 돈을 쓰는 어댑터의 키. 테스트에서는 **항상** 지운다.
+PAID_CREDENTIALS = ("GEMINI_API_KEY", "ELEVENLABS_API_KEY", "KLING_API_KEY")
+
+
+@pytest.fixture(autouse=True)
+def _no_paid_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """개발 머신의 API 키가 테스트로 새지 않게 막는다.
+
+    실물 어댑터는 키가 없으면 호출 전에 `ProviderNotConfigured`로 멈춘다. 그래서
+    키를 지워 두면 **테스트가 실수로 과금 호출을 하는 경로 자체가 사라진다** —
+    편당 ~$2.7이 걸린 문제라 개별 테스트의 규율에 맡기지 않고 여기서 못박는다.
+    호출 경로를 검증하는 테스트는 페이크 transport를 명시적으로 주입한다.
+    """
+    for name in PAID_CREDENTIALS:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def paths(tmp_path: Path) -> Paths:
     """격리된 프로젝트 루트."""
