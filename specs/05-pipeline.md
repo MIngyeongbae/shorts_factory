@@ -69,6 +69,8 @@ topics/backlog.md
 | `scenes.timed.json` | [3] | **씬의 유일한 출처.** 대본 속성(`beat`·`text`·`subject`·`subject_scale`·`camera`·`motion`) + 실측 시각(`start`/`end`) | [7] 클립 길이·카메라·모션, [9] 전환·자막 |
 | `prompts.json` | [5] | **씬별 이미지 지시.** 시간 정보를 담지 않는다 | [6] `prompt`·`negative_prompt`·`style`, [8] `overlays` |
 | `timing.json` | [3] | **[3]의 실행 기록.** 엔진 메타·배속·원속 길이·오디오 길이·경고. 계약이 아니라 기록이라 길이 초과로 멈출 때도 남는다 | [11] 리포트, 사람 |
+| `images.json` | [6] | **[6]의 실행 기록.** 프로바이더·앵커 수·씬별 상태/재시도/폴백. 계약이 아니라 기록이다 | [11] 리포트, 사람 |
+| `subtitles.ass` | [9] | 자막 파일. `ass` 필터의 입력이라 파일로 존재해야 한다 | [9] 번인 |
 
 - 씬의 시각을 읽는 곳은 `scenes.timed.json` **하나뿐이다.** 같은 숫자를 두 파일이 들고 있으면 갈라지고, 갈라진 쪽을 읽은 단계만 싱크가 어긋난다
 - `prompts.json`의 `beat`·`subject_scale`·`camera`·`motion`은 `06-script.json`에서 복사해 온 값이다. **고치는 곳은 `06-script.json` 하나다**
@@ -91,8 +93,9 @@ topics/backlog.md
 | `topics/{slug}/judgment/human.json` | 게이트. `decision: go`일 때만 2부 진입 (스펙 07 스키마) |
 
 - **2부는 `06-script.json`을 수정하지 않는다.** 모든 2부 산출물은 `runs/{run_id}/` 아래에 쓴다
-  (`narration.wav`, `timing.json`, `scenes.timed.json`, `prompts.json`, `images/`, `clips/`,
-  `timeline.mp4`, `final.mp4`, `report.md`). `runs/*`는 `.gitignore` 대상이라 미디어가 커밋되지 않는다
+  (`narration.wav`, `timing.json`, `scenes.timed.json`, `prompts.json`, `images/`, `images.json`,
+  `clips/`, `subtitles.ass`, `timeline.mp4`, `final.mp4`, `report.md`).
+  `runs/*`는 `.gitignore` 대상이라 미디어가 커밋되지 않는다
 - 계보는 `run_id`로 잇는다. 2부 산출물은 대본과 같은 `run_id`의 run 디렉터리에 놓인다
 
 ## 단계별 규칙
