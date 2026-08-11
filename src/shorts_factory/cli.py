@@ -6,6 +6,7 @@
     python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
     python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
+    python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.png
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
@@ -21,9 +22,17 @@ import sys
 from pathlib import Path
 
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths
+from .imagegen.base import ImageClient
+from .imagegen.fake import FakeImageClient
+from .imagegen.nano_banana import NanoBananaClient
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
 from .stages.backfill_scale import BackfillStageError, run_backfill_scale_stage
+from .stages.imagegen import (
+    ImagegenStageError,
+    StyleAnchorsMissing,
+    run_imagegen_stage,
+)
 from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
@@ -180,6 +189,48 @@ def _cmd_prompt(args, paths: Paths) -> int:
     return 0
 
 
+#: `--provider` 값 → 어댑터. 기본값이 실물인 이유는 nano_banana.py에 적혀 있다 —
+#: 페이크가 기본이면 단색 PNG를 들고 "이미지를 만들었다"고 착각한 채 다음 단계로 간다.
+IMAGE_PROVIDERS = {
+    "nano-banana": NanoBananaClient,
+    "fake": FakeImageClient,
+}
+
+
+def _make_image_client(args) -> ImageClient:
+    return IMAGE_PROVIDERS[args.provider]()
+
+
+def _cmd_imagegen(args, paths: Paths) -> int:
+    """[6] 씬별 이미지 프롬프트 → 베이스 이미지.
+
+    입력은 runs/{run_id}/prompts.json 하나다 (ADR-0020). --slug는 run_id를 찾기 위한
+    편의일 뿐이라 --run-id를 주면 대본을 열지도 않는다.
+
+    돈이 드는 단계라 오류를 종료 코드로 구분한다 — 6은 생성 실패, 7은 앵커 0장 차단이다.
+    """
+    try:
+        result = run_imagegen_stage(
+            images=_make_image_client(args),
+            run_id=args.run_id,
+            slug=args.slug,
+            paths=paths,
+            force=args.force,
+            allow_missing_anchors=args.allow_missing_anchors,
+        )
+    except StyleAnchorsMissing as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 7
+    except ImagegenStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 6
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
 def _cmd_package(args, paths: Paths) -> int:
     topic_result = run_topic_stage(args.topic, paths=paths, force=args.force)
     print(topic_result.summary)
@@ -276,6 +327,22 @@ def build_parser() -> argparse.ArgumentParser:
                               help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
     p_prompt.add_argument("--slug", required=True)
     p_prompt.set_defaults(func=_cmd_prompt)
+
+    p_imagegen = sub.add_parser(
+        "imagegen", parents=[common],
+        help="[6] 씬별 이미지 프롬프트 → images/{scene_id}.png (2부, 편당 과금)",
+    )
+    p_imagegen.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
+    p_imagegen.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
+    p_imagegen.add_argument(
+        "--provider", choices=sorted(IMAGE_PROVIDERS), default="nano-banana",
+        help="이미지 어댑터 (기본: nano-banana. 개발·테스트는 fake)",
+    )
+    p_imagegen.add_argument(
+        "--allow-missing-anchors", action="store_true",
+        help="스타일 앵커 0장이어도 진행한다 (ADR-0005 룩 일관성 수단 없이 과금)",
+    )
+    p_imagegen.set_defaults(func=_cmd_imagegen)
 
     p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
     p_package.add_argument("--topic", default=None)
