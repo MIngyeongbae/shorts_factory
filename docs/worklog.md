@@ -3,6 +3,55 @@
 세션을 마무리할 때 맨 위에 항목 1개를 추가한다. 역순 누적이며 기존 항목은 지우지 않는다.
 세션 시작 훅이 맨 위 항목 1개만 주입하므로, 다음 세션이 알아야 할 것만 그 항목에 담는다.
 
+## 2026-08-13 (2) — MJ 어댑터 완성. **막힌 것은 코드가 아니라 mjopen 라이선스다**
+
+`[6]`에 `imagegen/midjourney.py`가 붙었다 (`c245ad9`). 898개 테스트 통과.
+`run.py imagegen`의 기본 프로바이더가 `midjourney`다 — `[5]`의 기본 방언 `mj`와 짝을
+맞춰야 아무 옵션 없이 돌린 파이프라인이 `DialectMismatch`로 안 멈춘다.
+
+**ADR-0025의 응답 기술을 실측으로 정정했다.** `imageUrls`는 URL 문자열 배열이 아니라
+`{url, thumbnail}` **객체 배열**이고 `url`이 `cdn.midjourney.com/<uuid>/0_0.png`(PNG)다.
+최상위 `imageUrl`은 4장 병합 그리드(webp, 1632×2912)라 씬 이미지가 아니다.
+
+### 이미지가 한 장도 안 나온다 — 원인 확정
+
+```
+[01:01:35 INF] License validation completed. Result: True
+[01:01:35 ERR] 许可证验证失败  ← Midjourney.License.YmTaskService.SubmitTaskAsync
+DisabledReason = '许可证验证失败，自动禁用账号'
+```
+
+**원격 검증은 통과하는데 제출 실행 경로에서 거절한다.** 계정을 켜면 mjopen이 십수 초
+안에 자동으로 다시 끈다. 27씬 전부 `code=3 无可用的账号实例`로 즉시 실패했다.
+
+배제한 것 두 가지 — **다시 시도하지 말 것.**
+
+1. **계정 enable 토글이 아니다.** `POST /mj/admin/accounts-enable`로 켰고 제출은
+   `code:1`로 받아졌다. 그 상태에서 잡이 라이선스 오류로 죽고 계정이 다시 꺼졌다
+2. **UserToken이 아니다.** 새 쿠키로 `PUT /mj/admin/account-reconnect/{id}` 재연결
+   성공 → 제출 `code:1` → **같은 자리에서 같은 오류.** 토큰은 처음부터 무관했다
+
+`docker/data/mj.json`의 `LicenseKey`는 여전히 `trueai.org`(기본 데모값)다. 어제 15시엔
+같은 키로 25번 통과하고 relax 11잡을 뽑았다. 이미지 `ghcr.io/trueai-org/midjourney-proxy:latest`
+(2일 전 pull). MJ 구독 자체는 멀쩡하다 (`Fast Time Remaining 14.73/15.0 h`).
+
+**남은 선택지는 셋이고 전부 코드 밖이다:** ①trueai.org 라이선스 정상화 ②라이선스 게이트가
+없는 옛 이미지 태그로 내리기(도박) ③MJ 웹에서 27장 수동. 사용자가 나노바나나 경로는
+쓰지 않기로 했다.
+
+### 관리 API 메모 (다음에 또 필요하다)
+
+- 계정 조회/수정은 **camelCase**다. sqlite 행(PascalCase)을 그대로 PUT하면 `参数异常`
+- `GET /mj/admin/account/{id}` → 필드 수정 → `PUT /mj/admin/account-reconnect/{id}`
+- 일괄 활성화 `POST /mj/admin/accounts-enable` (ID 배열)
+- 계정 DB는 `midjourney-proxy/docker/data/mj_sqlite.db`, 설정은 같은 폴더 `mj.json`
+
+### 이 세션에서 바뀐 외부 상태
+
+MJ 계정의 `userToken`을 사용자가 준 새 쿠키로 갈았다. 계정은 라이선스 때문에
+`enable=False`로 다시 꺼져 있다. **그 쿠키는 이 세션 대화 기록에 남아 있다** —
+신경 쓰이면 MJ 세션을 로그아웃해 무효화할 것.
+
 ## 2026-08-13 — `subject_anchor` 구현 완료. **단, 실물 대본 3편에는 앵커가 하나도 없다**
 
 ADR-0028이 코드에 들어갔다 (`ebd13ad`). 880개 테스트 통과, 워킹트리 clean.
