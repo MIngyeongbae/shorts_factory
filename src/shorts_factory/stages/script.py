@@ -5,12 +5,12 @@ specs/05-pipeline.md:
 
 ## 역할 분담 (ADR-0001, ADR-0003)
 
-헤드리스 세션은 `beat`·`text`·`visual_goal`·`subject`·`subject_scale` 다섯만 출력한다.
-나머지는 코드가 룰 테이블로 채운다.
+헤드리스 세션은 `beat`·`text`·`visual_goal`·`subject`·`subject_scale`과 선택 필드
+`subject_anchor`만 출력한다. 나머지는 코드가 룰 테이블로 채운다.
 
 | 필드 | 정하는 주체 | 근거 |
 |---|---|---|
-| `text`, `beat`, `visual_goal`, `subject`, `subject_scale` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만". `subject_scale`은 연출이 아니라 피사체 서술이라 같은 자리다 (ADR-0018). `visual_goal`은 팩트시트를 든 세션만 할 수 있는 배분 판단이다 (ADR-0022) |
+| `text`, `beat`, `visual_goal`, `subject`, `subject_scale`, `subject_anchor` | 세션 | ADR-0001 "창의적 판단은 subject와 대본 내용에만". `subject_scale`은 연출이 아니라 피사체 서술이라 같은 자리다 (ADR-0018). `visual_goal`은 팩트시트를 든 세션만 할 수 있는 배분 판단이다 (ADR-0022). `subject_anchor`는 팩트시트에 근거가 있어야 하고(ADR-0007), 어느 명사가 이 씬에서 더 센지는 씬을 쓴 쪽만 안다 (ADR-0028) |
 | `est_start`/`est_end` | 코드 (글자 수 ÷ 명목 속도) | 산술을 LLM에 맡기지 않는다 |
 | `camera` | 코드 (specs/03 비트별 기본값) | CLAUDE.md 원칙 3 |
 | `emphasis` | 코드 (숫자 비트 → 대형 빨간 숫자) | specs/03 오버레이 룰 |
@@ -144,6 +144,32 @@ def groundable_factsheet(factsheet: dict[str, Any]) -> dict[str, Any]:
     return trimmed
 
 
+def clean_anchors(raw: Any, index: int) -> list[str]:
+    """세션이 낸 `subject_anchor`를 씬 계약 형태로 다듬는다 (ADR-0028).
+
+    **비어 있어도 통과한다.** 재질도 정체도 무의미한 씬이 실제로 있고(숫자가 빼곡한
+    계산 노트 같은 도해), 선택 필드에 부재 검사를 달면 규칙이 선택이 아니게 된다.
+    막는 것은 타입이 틀린 경우뿐이다 — 문자열 하나를 그냥 준 경우가 대표적이고, 그대로
+    두면 문자 하나하나가 앵커가 되어 프롬프트에 실린다.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+        raise ScriptStageError(
+            f"{index}번째 씬의 subject_anchor가 목록이 아니다: {raw!r} "
+            "(짧은 한국어 명사구의 배열이어야 한다)"
+        )
+    anchors: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            raise ScriptStageError(
+                f"{index}번째 씬의 subject_anchor 항목이 문자열이 아니다: {item!r}"
+            )
+        if item.strip():
+            anchors.append(item.strip())
+    return anchors
+
+
 def build_scenes(
     raw_scenes: list[dict[str, Any]], *, run_id: str, topic: str
 ) -> dict[str, Any]:
@@ -160,6 +186,7 @@ def build_scenes(
         visual_goal = str(item.get("visual_goal", "")).strip()
         subject = str(item.get("subject", "")).strip()
         scale = str(item.get("subject_scale", "")).strip()
+        anchors = clean_anchors(item.get("subject_anchor"), index)
         if beat not in CAMERA_BY_BEAT:
             raise ScriptStageError(f"{index}번째 씬의 beat가 비트 테이블에 없다: {beat!r}")
         if not text or not subject:
@@ -203,6 +230,9 @@ def build_scenes(
         scene["visual_goal"] = visual_goal
         scene["subject"] = subject
         scene["subject_scale"] = scale
+        # 비어도 쓴다. 필드가 아예 없는 것(옛 대본)과 세션이 보고 비운 것은 다르고,
+        # 그 구분이 있어야 [5]의 카운트가 ADR-0028의 되돌릴 조건을 관측할 수 있다.
+        scene["subject_anchor"] = anchors
         scene["camera"] = CAMERA_BY_BEAT[beat]
         scene["motion"] = DEFAULT_MOTION
         scene["notes"] = ""

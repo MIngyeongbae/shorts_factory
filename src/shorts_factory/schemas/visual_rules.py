@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -319,7 +320,22 @@ def resolve_framing(
 # --- 프롬프트 조립 -----------------------------------------------------------
 
 
-def build_prompt(shot: str, subject: str, visual_goal: str = "") -> str:
+def clean_anchors(anchors: Sequence[str]) -> list[str]:
+    """`subject_anchor`를 프롬프트에 실을 수 있는 형태로 다듬는다 (ADR-0028).
+
+    **거르지 않는다.** 씬마다 어느 명사가 더 센지는 룰 테이블에 넣을 수 있는 값이
+    아니고, 이 모듈은 그것을 알 수단이 없다 — 고르는 것은 `[1. script]`다 (G2).
+    여기서 하는 일은 공백 제거와 빈 항목 탈락뿐이다.
+    """
+    return [item.strip() for item in anchors if item.strip()]
+
+
+def build_prompt(
+    shot: str,
+    subject: str,
+    visual_goal: str = "",
+    anchors: Sequence[str] = (),
+) -> str:
     """베이스(클린) 이미지 프롬프트.
 
     `subject`는 한국어 그대로 넣는다. 번역하면 `[1]`이 고른 피사체가 이 단계의
@@ -329,10 +345,14 @@ def build_prompt(shot: str, subject: str, visual_goal: str = "") -> str:
     `visual_goal`도 한국어 그대로 싣는다 (ADR-0022). **이 그림이 무엇을 설명해야
     하는지를 모델에게 알려 주는 줄이다** — 피사체만 주면 모델은 그것을 그릴 뿐이고,
     그 그림이 왜 거기 있는지는 모른다. 필드가 없는 옛 대본도 있으므로 비면 뺀다.
+
+    `anchors`(ADR-0028)는 **Subject 줄에 콤마 항목으로 잇는다.** 별개 줄로 빼면 그
+    한국어가 "글자로 쓰지 마라"는 지시 밖에 놓인다 — 앵커도 한국어라 같은 못이 필요하다.
     """
+    subject_line = ", ".join([subject, *clean_anchors(anchors)])
     lines = [
         "Subject (Korean description — depict it; "
-        f"do not write these words in the image): {subject}",
+        f"do not write these words in the image): {subject_line}",
     ]
     if visual_goal.strip():
         lines.append(
@@ -389,14 +409,24 @@ def _mj_composition(composition: str) -> str:
 MJ_COMPOSITION = _mj_composition(COMPOSITION)
 
 
-def build_mj_prompt(shot: str, subject: str, visual_goal: str = "") -> str:
+def build_mj_prompt(
+    shot: str,
+    subject: str,
+    visual_goal: str = "",
+    anchors: Sequence[str] = (),
+) -> str:
     """MJ 방언의 양성 프롬프트. `--ar`까지 포함하고 `--no`는 `build_mj_negative()`가 낸다.
 
     라벨(`Subject:`·`Shot:`)을 붙이지 않는다 — MJ는 그것을 구분자가 아니라 그릴 대상으로
     읽는다. 그래서 NB2 프롬프트가 라벨로 하던 일("이 한국어를 그리되 글자로 쓰지 마라")은
     `--no legible text, letters, …`가 대신한다.
+
+    앵커는 **`subject` 바로 뒤**다 (ADR-0028 G1). 실측한 문자열이 그 자리이고
+    (`홈이 파인 블록 접합면 클로즈업, 콘크리트` → 콘크리트 4/4), 뒤로 밀면 스타일·구도
+    토큰 뒤에 놓여 검증한 적 없는 배치가 된다. `subject` 문자열을 뜯을 필요는 없다 —
+    별개 항목이 인라인만큼 나왔다.
     """
-    parts = [subject.strip()]
+    parts = [subject.strip(), *clean_anchors(anchors)]
     if visual_goal.strip():
         parts.append(visual_goal.strip())
     parts.extend((shot, flatten_clauses(BASE_STYLE), MJ_COMPOSITION))
@@ -425,16 +455,21 @@ def build_scene_prompt(
     subject: str,
     visual_goal: str,
     overlay_types: tuple[str, ...],
+    anchors: Sequence[str] = (),
 ) -> tuple[str, str]:
-    """`(prompt, negative_prompt)`를 방언에 맞게 조립한다. `[5]`가 부르는 유일한 입구다."""
+    """`(prompt, negative_prompt)`를 방언에 맞게 조립한다. `[5]`가 부르는 유일한 입구다.
+
+    `anchors`는 선택 필드라 비어 있는 채로 올 수 있다 (ADR-0028). 두 방언 모두 값이
+    있을 때만 싣는다 — 빈 목록이면 문자열이 앵커 도입 전과 한 바이트도 다르지 않다.
+    """
     if dialect == "mj":
         return (
-            build_mj_prompt(shot, subject, visual_goal),
+            build_mj_prompt(shot, subject, visual_goal, anchors),
             build_mj_negative(overlay_types),
         )
     if dialect == "nb2":
         return (
-            build_prompt(shot, subject, visual_goal),
+            build_prompt(shot, subject, visual_goal, anchors),
             build_negative(overlay_types),
         )
     raise ValueError(f"모르는 방언이다: {dialect!r} (허용: {', '.join(DIALECTS)})")

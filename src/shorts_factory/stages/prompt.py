@@ -79,6 +79,9 @@ class PromptResult:
     prompts: dict[str, Any] | None = None
     warnings: list[str] = field(default_factory=list)
     skipped: bool = False
+    #: `subject_anchor`가 비어 있지 않은 씬 수 (ADR-0028). 씬 계약에서 센다 —
+    #: prompts.json에는 앵커가 프롬프트 문자열에 녹아 들어가 따로 남지 않는다.
+    anchored_scenes: int = 0
 
     @property
     def scene_count(self) -> int:
@@ -116,6 +119,7 @@ class PromptResult:
         )
         return (
             f"[5] {self.topic} — {self.scene_count}씬 ({scales}) / "
+            f"대상 앵커 {self.anchored_scenes}씬 / "
             f"레이어B 오버레이 {self.overlay_count}건 / 방언 {self.dialect} "
             f"→ {PROMPTS_FILE}{tail}"
         )
@@ -214,6 +218,9 @@ def build_prompts(
             subject=scene["subject"],
             visual_goal=scene.get("visual_goal", ""),
             overlay_types=overlay_names,
+            # ADR-0028 — 선택 필드다. 없는 씬(옛 대본)도 비운 씬도 그냥 빈 목록이고,
+            # 부재를 경고하지 않는다. 경고를 달면 선택 필드가 선택이 아니게 된다.
+            anchors=scene.get("subject_anchor", ()),
         )
 
         entry: dict[str, Any] = {
@@ -260,6 +267,16 @@ def build_prompts(
         "scenes": out_scenes,
     }
     return document, warnings
+
+
+def _anchored_scenes(script: dict[str, Any]) -> int:
+    """`subject_anchor`를 채운 씬 수 (ADR-0028).
+
+    **이 값이 되돌릴 조건의 관측 수단이다.** `[1]`이 습관적으로 비우면(예: 27씬 중 2씬)
+    선택 필드가 죽은 것이므로 프롬프트를 고칠지 필수로 올릴지 다시 본다. 그래서 경고가
+    아니라 요약에 낸다 — 한 편만 보고 판정할 값이 아니다.
+    """
+    return sum(1 for scene in script["scenes"] if scene.get("subject_anchor"))
 
 
 def _anchor_warning(paths: Paths) -> str | None:
@@ -311,6 +328,7 @@ def run_prompt_stage(
             return PromptResult(
                 topic=topic, slug=slug, run_id=run_id, skipped=True,
                 prompts_path=prompts_path, prompts=previous,
+                anchored_scenes=_anchored_scenes(script),
             )
         log.info(
             "[%s] 방언이 달라 다시 쓴다 (%s → %s)",
@@ -355,10 +373,13 @@ def run_prompt_stage(
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
         dialect=dialect,
+        # 편이 쌓여야 판정할 값이라 run 상태에도 남긴다 (ADR-0028 되돌릴 조건).
+        anchored_scenes=_anchored_scenes(script),
         warnings=warnings,
     )
 
     return PromptResult(
         topic=topic, slug=slug, run_id=run_id,
         prompts_path=prompts_path, prompts=document, warnings=warnings,
+        anchored_scenes=_anchored_scenes(script),
     )

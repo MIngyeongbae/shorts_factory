@@ -99,6 +99,11 @@ SCENE_SCHEMA: dict[str, Any] = {
         # specs/02 + ADR-0018 — beat와 함께 구도를 결정한다. 연출이 아니라 피사체 서술이라
         # [1. script]가 subject와 함께 쓴다.
         "subject_scale": {"enum": list(SUBJECT_SCALES)},
+        # specs/02 + ADR-0028 — 대상을 고정하는 짧은 한국어 명사구 목록.
+        # **required가 아니다.** 재질도 정체도 무의미한 씬이 있고(도해), 옛 대본 3편이
+        # 그대로 이 계약을 만족해야 한다 — 백필 단계를 또 만들지 않기 위한 선택이다.
+        # 없다고 실패시키지도 경고하지도 않는다. 있을 때 타입만 본다.
+        "subject_anchor": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "camera": {"enum": list(CAMERAS)},
         "motion": {"enum": list(MOTIONS)},
         "notes": {"type": "string"},
