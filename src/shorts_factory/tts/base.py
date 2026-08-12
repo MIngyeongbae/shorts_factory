@@ -42,6 +42,10 @@ class TTSError(Exception):
     """TTS 호출 실패 일반."""
 
 
+class TTSNotConfigured(TTSError):
+    """키·voice_id·플랜이 없어 호출 자체가 성립하지 않음. 재시도할 것이 없다."""
+
+
 class TTSRateLimited(TTSError):
     """사용 한도/과금 한도 도달."""
 
