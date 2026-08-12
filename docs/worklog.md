@@ -65,14 +65,16 @@ Fast/Relax는 별도 풀이고 `relax_credits`는 음수로 내려간다(사용�
 
 - **#1 해결.** `imageUrls`가 4장을 직접 준다 → **`imageUrls[0]` 고정**, 추가 잡 0.
   초안의 "U1 고정 → 편당 26→52잡" 우려는 소멸
-- **#2 미결.** `--sref` 입력 형태. **`assets/style_anchors/`가 0장이라 검증 불가**
+- **#2 미결.** `--sref` 입력 형태. **차단 아님** — 앵커 3장은 이미 있다(1024×1024,
+  2026-08-11 커밋). 남은 건 로컬 파일을 MJ에 넘기는 방법이다
+  (`POST /mj/submit/upload-discord-images` 응답 형태 미확인)
 - **#3 신규.** `prompts.json`의 `prompt`는 NB2용 여러 줄 자연어라 MJ에 못 넣는다.
   `[5] prompt`에 **MJ 방언**(한 줄 + `--ar` + `--no`)이 필요하다
 
 ### 다음 세션은 여기서 시작한다
 
-1. **`assets/style_anchors/` 3장 확보가 선행 작업이다.** 이게 없으면 G3를 볼 수 없고,
-   G3 없이는 `[6]`을 MJ로 배선해도 룩 일관성을 판정할 수 없다
+1. **G3(`--sref` 룩 일관성) 검증.** 앵커 3장은 이미 있으므로 차단 요인이 없다.
+   앵커를 MJ에 넘기는 방법(`upload-discord-images` 응답 형태)만 확인하면 바로 볼 수 있다
 2. **토큰 재확인.** 죽어 있으면 `[0] token` 단계 신설 — Firebase
    `securetoken.googleapis.com/v1/token` 경로를 ADR 되돌릴 조건에 적어 뒀다. stdlib만으로 된다
 3. 그다음 `imagegen/midjourney.py` 구현. `nano_banana.py`는 **지우지 않는다**(복귀 경로)
