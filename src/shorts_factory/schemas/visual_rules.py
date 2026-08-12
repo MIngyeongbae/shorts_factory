@@ -11,6 +11,12 @@
 - 비트별 오버레이·카메라 기본값 12행 (`BEAT_RULES`)
 - 오버레이 타입 enum 2행 (`OVERLAYS`, ADR-0019)
 
+## 방언 (ADR-0027)
+
+프롬프트 **문법**은 프로바이더마다 다르다 (`build_scene_prompt`). 룰은 다르지 않다 —
+`BASE_STYLE`·구도 표·네거티브 목록은 방언과 무관하게 같은 값이고, 바뀌는 것은 그것을
+어떻게 적느냐뿐이다.
+
 ## 이 모듈이 다루지 않는 것
 
 - 전환 규칙·자막 스타일: 스펙 03에 있지만 `[9. assemble]` 소관이다
@@ -76,6 +82,20 @@ GLOBAL_NEGATIVES: tuple[str, ...] = (
     # 한국어를 흉내 내다 깨진 글자를 만든다 — 정확해야 하는 글자는 전부 레이어 B다
     # (ADR-0002·0023). 실호출 6회에서 이 문구로 글자가 한 자도 나오지 않았다.
     "any legible or handwritten text, letters, numbers or annotation scribbles",
+)
+
+#: 같은 내용을 MJ `--no`용 **항목 나열**로 편 것 (ADR-0027). 위 문장에서 기계적으로
+#: 유도하지 않는다 — `or`·`any`를 쪼개는 규칙을 만들면 문장이 바뀔 때마다 조용히 깨진다.
+#: 두 상수는 각자의 프로바이더에서 실호출로 검증된 값이다 (NB2 6회 / MJ 9잡).
+MJ_GLOBAL_NEGATIVES: tuple[str, ...] = (
+    "burned-in subtitles",
+    "caption bars",
+    "sparkle particle overlay",
+    "legible text",
+    "handwritten text",
+    "letters",
+    "numbers",
+    "annotation scribbles",
 )
 
 # --- 피사체 스케일 (specs/02, ADR-0018) --------------------------------------
@@ -337,6 +357,89 @@ def build_negative(overlay_types: tuple[str, ...]) -> str:
     return "Do not include: " + "; ".join(items) + "."
 
 
+# --- Midjourney 방언 (ADR-0027) ----------------------------------------------
+#
+# 같은 룰의 **표기 변환**이다. `BASE_STYLE`도 구도 표도 방언마다 달라지지 않는다 —
+# 달라지는 것은 문법뿐이다: 한 줄 콤마 나열, `--ar`, `--no`.
+#
+# 실측 근거는 `runs/20260812-mj-lang-probe/`와 ADR-0025의 G3·단면 탐침이다. 특히
+# **한국어 `subject`를 그대로 넘긴다** — 영어로 옮겨도 품질이 같았고, 실패 지점은
+# 언어가 아니라 재질·정체 명사의 부재였다 (ADR-0028).
+
+
+def flatten_clauses(text: str) -> str:
+    """여러 절을 한 줄 콤마 나열로. MJ는 `:`·`;`를 구분자로 읽지 않는다."""
+    return text.replace(": ", ", ").replace("; ", ", ")
+
+
+def _mj_composition(composition: str) -> str:
+    """구도 문구에서 MJ가 쓸 부분만 남긴다. `COMPOSITION`이 유일한 출처다.
+
+    두 절을 뗀다.
+
+    - `vertical 9:16` — `--ar`가 정한다. 프롬프트 본문에 남기면 종횡비를 두 곳에서 말한다
+    - `for subtitles` — `--no`에 `burned-in subtitles`가 있다. **같은 낱말을 그리라고 하면서
+      그리지 말라고 하게 된다.** 자막을 위해 비운다는 것은 스펙의 이유이지 모델에게 할 말이
+      아니다 (ADR-0027)
+    """
+    _aspect, rest = composition.split("; ", 1)
+    return flatten_clauses(rest.replace(" for subtitles", ""))
+
+
+MJ_COMPOSITION = _mj_composition(COMPOSITION)
+
+
+def build_mj_prompt(shot: str, subject: str, visual_goal: str = "") -> str:
+    """MJ 방언의 양성 프롬프트. `--ar`까지 포함하고 `--no`는 `build_mj_negative()`가 낸다.
+
+    라벨(`Subject:`·`Shot:`)을 붙이지 않는다 — MJ는 그것을 구분자가 아니라 그릴 대상으로
+    읽는다. 그래서 NB2 프롬프트가 라벨로 하던 일("이 한국어를 그리되 글자로 쓰지 마라")은
+    `--no legible text, letters, …`가 대신한다.
+    """
+    parts = [subject.strip()]
+    if visual_goal.strip():
+        parts.append(visual_goal.strip())
+    parts.extend((shot, flatten_clauses(BASE_STYLE), MJ_COMPOSITION))
+    return ", ".join(parts) + f" --ar {ASPECT_RATIO}"
+
+
+def build_mj_negative(overlay_types: tuple[str, ...]) -> str:
+    """MJ 방언의 `--no`. 문장이 아니라 항목 나열이다."""
+    items = list(MJ_GLOBAL_NEGATIVES)
+    for name in overlay_types:
+        negative = OVERLAYS[name].negative
+        if negative not in items:
+            items.append(negative)
+    return "--no " + ", ".join(items)
+
+
+#: `[5]`가 낼 수 있는 방언. 기본값은 ADR-0025가 정한 실물 경로다.
+DIALECTS: tuple[str, ...] = ("mj", "nb2")
+DEFAULT_DIALECT = "mj"
+
+
+def build_scene_prompt(
+    dialect: str,
+    *,
+    shot: str,
+    subject: str,
+    visual_goal: str,
+    overlay_types: tuple[str, ...],
+) -> tuple[str, str]:
+    """`(prompt, negative_prompt)`를 방언에 맞게 조립한다. `[5]`가 부르는 유일한 입구다."""
+    if dialect == "mj":
+        return (
+            build_mj_prompt(shot, subject, visual_goal),
+            build_mj_negative(overlay_types),
+        )
+    if dialect == "nb2":
+        return (
+            build_prompt(shot, subject, visual_goal),
+            build_negative(overlay_types),
+        )
+    raise ValueError(f"모르는 방언이다: {dialect!r} (허용: {', '.join(DIALECTS)})")
+
+
 # --- prompts.json 스키마 -----------------------------------------------------
 
 OVERLAY_ITEM_SCHEMA: dict[str, Any] = {
@@ -395,6 +498,7 @@ PROMPTS_SCHEMA: dict[str, Any] = {
         "style": {
             "type": "object",
             "required": [
+                "dialect",
                 "base_style",
                 "composition",
                 "aspect_ratio",
@@ -404,6 +508,10 @@ PROMPTS_SCHEMA: dict[str, Any] = {
             ],
             "additionalProperties": False,
             "properties": {
+                # ADR-0027 — 이 파일이 어느 프로바이더 문법으로 쓰였는가. [6]이 자기
+                # 프로바이더와 대조한다. 필수라서 옛 prompts.json은 위반이 되는데,
+                # [5]는 무료·결정적이라 다시 돌리면 된다 (마이그레이션 단계 없음).
+                "dialect": {"enum": list(DIALECTS)},
                 "base_style": {"type": "string", "minLength": 1},
                 "composition": {"type": "string", "minLength": 1},
                 "aspect_ratio": {"const": ASPECT_RATIO},

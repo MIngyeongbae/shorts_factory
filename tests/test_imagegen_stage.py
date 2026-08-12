@@ -30,6 +30,7 @@ from shorts_factory.stages.imagegen import (
     PROMPTS_FILE,
     RECORD_FILE,
     STAGE,
+    DialectMismatch,
     ImagegenStageError,
     StyleAnchorsMissing,
     resolve_run_id,
@@ -51,11 +52,15 @@ class PaidFake(FakeImageClient):
 
 @pytest.fixture
 def prepared(paths):
-    """격리된 루트에 대본 → [5] 실행 → prompts.json. run_id를 돌려준다."""
+    """격리된 루트에 대본 → [5] 실행 → prompts.json. run_id를 돌려준다.
 
-    def _prepare(slug: str = HOOVER) -> str:
+    방언 기본값은 `nb2`다 — 이 파일의 과금 어댑터가 `NanoBananaClient` 하나이고,
+    페이크는 방언을 가리지 않는다 (ADR-0027). MJ 경로는 전용 테스트에서 본다.
+    """
+
+    def _prepare(slug: str = HOOVER, *, dialect: str = "nb2") -> str:
         install_script(paths, slug)
-        return run_prompt_stage(slug, paths=paths).run_id
+        return run_prompt_stage(slug, paths=paths, dialect=dialect).run_id
 
     return _prepare
 
@@ -311,6 +316,41 @@ def test_unusable_provider_stops_without_burning_every_scene(paths, prepared):
     )
     assert state["stages"][STAGE]["status"] == "failed"
     assert state["stages"][STAGE]["scenes_done"] == 0
+
+
+# --- 방언 대조 (ADR-0027) ----------------------------------------------------
+
+
+def test_wrong_dialect_is_blocked_before_the_first_paid_call(paths, prepared):
+    """MJ 문법 문자열이 NB2로 들어가면 `--ar 9:16`이 그릴 대상이 된다.
+
+    그 사실은 편당 과금이 끝난 뒤에야 드러나므로 호출 전에 막는다.
+    """
+    run_id = prepared(dialect="mj")
+
+    with pytest.raises(DialectMismatch, match="방언"):
+        run_imagegen_stage(
+            images=NanoBananaClient(), run_id=run_id, paths=paths,
+            allow_missing_anchors=True,
+        )
+
+    state = json.loads(
+        (paths.run_dir(run_id) / "state.json").read_text(encoding="utf-8")
+    )
+    # 실패가 아니라 진입 금지다 — 고치는 곳은 [5]이고 무료다.
+    assert state["stages"][STAGE]["status"] == "blocked"
+    assert not (paths.run_dir(run_id) / "images").exists()
+
+
+def test_fake_provider_takes_any_dialect(paths, prepared):
+    """페이크는 방언을 가리지 않는다. 대조는 과금 어댑터의 규칙이다."""
+    run_id = prepared(dialect="mj")
+
+    result = run_imagegen_stage(
+        images=FakeImageClient(), run_id=run_id, paths=paths,
+    )
+
+    assert result.passed
 
 
 # --- 스타일 앵커 (ADR-0005) --------------------------------------------------

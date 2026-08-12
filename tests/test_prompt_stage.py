@@ -245,11 +245,14 @@ def test_no_scene_asks_for_a_baked_annotation(paths, install, slug):
 
 @pytest.mark.parametrize("slug", REAL_SLUGS)
 def test_base_image_never_carries_subtitles_or_particles(paths, install, slug):
+    """방언이 바뀌어도 배제 대상은 같다 — 표기만 다르다 (ADR-0027)."""
     install(slug)
-    result = run_prompt_stage(slug, paths=paths)
-    for entry in result.prompts["scenes"]:
-        assert "burned-in subtitles or caption bars" in entry["negative_prompt"]
-        assert "sparkle particle overlay" in entry["negative_prompt"]
+    for dialect, subtitles in (("nb2", "burned-in subtitles or caption bars"),
+                               ("mj", "burned-in subtitles")):
+        result = run_prompt_stage(slug, paths=paths, dialect=dialect, force=True)
+        for entry in result.prompts["scenes"]:
+            assert subtitles in entry["negative_prompt"]
+            assert "sparkle particle overlay" in entry["negative_prompt"]
 
 
 def test_turning_point_has_no_overlay(paths, install):
@@ -318,8 +321,15 @@ def test_camera_off_the_rule_default_warns_but_proceeds(paths, install):
 def test_missing_style_anchors_warn(paths, install):
     """앵커가 없으면 [6]이 룩 일관성 수단 없이 돈다 (ADR-0005)."""
     install(PISA)
-    result = run_prompt_stage(PISA, paths=paths)
+    result = run_prompt_stage(PISA, paths=paths, dialect="nb2")
     assert any("style_anchors" in w for w in result.warnings)
+
+
+def test_mj_dialect_does_not_warn_about_anchors(paths, install):
+    """MJ 경로는 앵커를 안 쓴다 (ADR-0025 G3) — 고칠 것이 없는 경고를 띄우지 않는다."""
+    install(PISA)
+    result = run_prompt_stage(PISA, paths=paths, dialect="mj")
+    assert not any("style_anchors" in w for w in result.warnings)
 
 
 # --- 구도가 피사체를 따라간다 (ADR-0018) -------------------------------------
@@ -368,13 +378,19 @@ def test_prompt_tells_the_model_what_the_image_must_explain(paths):
     피사체만 주면 모델은 그것을 그릴 뿐이고, 그 그림이 왜 거기 있는지는 모른다.
     """
     install_script(paths, PISA)
-    result = run_prompt_stage(PISA, paths=paths)
-    doc = json.loads(result.prompts_path.read_text(encoding="utf-8"))
-
     script = load_script(PISA)
-    for scene, source in zip(doc["scenes"], script["scenes"]):
-        assert source["visual_goal"] in scene["prompt"]
-        assert "must explain" in scene["prompt"]
+
+    # 방언과 무관하게 실린다. 라벨(`must explain`)은 NB2 문법이고, MJ는 라벨 없이
+    # 콤마 항목으로 넣는다 (ADR-0027).
+    for dialect in ("nb2", "mj"):
+        result = run_prompt_stage(PISA, paths=paths, dialect=dialect, force=True)
+        doc = json.loads(result.prompts_path.read_text(encoding="utf-8"))
+        for scene, source in zip(doc["scenes"], script["scenes"]):
+            assert source["visual_goal"] in scene["prompt"]
+        if dialect == "nb2":
+            assert all("must explain" in s["prompt"] for s in doc["scenes"])
+        else:
+            assert not any("must explain" in s["prompt"] for s in doc["scenes"])
 
 
 def test_prompt_omits_the_line_when_the_field_is_absent():

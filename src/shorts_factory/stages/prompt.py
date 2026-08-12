@@ -43,13 +43,14 @@ from ..schemas.visual_rules import (
     BASE_STYLE,
     BEAT_RULES,
     COMPOSITION,
+    DEFAULT_DIALECT,
+    DIALECTS,
     FRAMINGS,
     GLOBAL_OVERLAYS,
     OVERLAYS,
     RESOLUTION,
     STYLE_ANCHOR_DIR,
-    build_negative,
-    build_prompt,
+    build_scene_prompt,
     resolve_framing,
     schema_errors,
 )
@@ -101,6 +102,13 @@ class PromptResult:
         )
 
     @property
+    def dialect(self) -> str:
+        """이 산출물이 쓰인 방언 (ADR-0027). 스킵한 경우에도 파일에서 읽힌다."""
+        if not self.prompts:
+            return ""
+        return self.prompts["style"].get("dialect", "")
+
+    @property
     def summary(self) -> str:
         tail = " (스킵)" if self.skipped else ""
         scales = " / ".join(
@@ -108,7 +116,8 @@ class PromptResult:
         )
         return (
             f"[5] {self.topic} — {self.scene_count}씬 ({scales}) / "
-            f"레이어B 오버레이 {self.overlay_count}건 → {PROMPTS_FILE}{tail}"
+            f"레이어B 오버레이 {self.overlay_count}건 / 방언 {self.dialect} "
+            f"→ {PROMPTS_FILE}{tail}"
         )
 
 
@@ -154,9 +163,18 @@ def _scene_overlays(
 
 
 def build_prompts(
-    script: dict[str, Any], *, source_script: str
+    script: dict[str, Any], *, source_script: str, dialect: str = DEFAULT_DIALECT
 ) -> tuple[dict[str, Any], list[str]]:
-    """씬 계약 → prompts.json 문서. (문서, 경고) 를 돌려준다."""
+    """씬 계약 → prompts.json 문서. (문서, 경고) 를 돌려준다.
+
+    `dialect`는 프롬프트 **문법**만 고른다 (ADR-0027). 구도·오버레이·네거티브 항목은
+    방언과 무관하게 같은 룰에서 나온다.
+    """
+    if dialect not in DIALECTS:
+        raise PromptStageError(
+            f"모르는 방언이다: {dialect!r} (허용: {', '.join(DIALECTS)})"
+        )
+
     scenes: list[dict[str, Any]] = script["scenes"]
     warnings: list[str] = []
     out_scenes: list[dict[str, Any]] = []
@@ -190,6 +208,14 @@ def build_prompts(
                 f"({'/'.join(rule.cameras)})과 다르다"
             )
 
+        prompt_text, negative_text = build_scene_prompt(
+            dialect,
+            shot=FRAMINGS[token].shot,
+            subject=scene["subject"],
+            visual_goal=scene.get("visual_goal", ""),
+            overlay_types=overlay_names,
+        )
+
         entry: dict[str, Any] = {
             "scene_id": sid,
             "beat": beat,
@@ -198,12 +224,8 @@ def build_prompts(
             "motion": scene["motion"],
             "framing": token,
             "framing_source": source,
-            "prompt": build_prompt(
-                FRAMINGS[token].shot,
-                scene["subject"],
-                scene.get("visual_goal", ""),
-            ),
-            "negative_prompt": build_negative(overlay_names),
+            "prompt": prompt_text,
+            "negative_prompt": negative_text,
             "overlays": overlays,
         }
         if reference is not None:
@@ -225,6 +247,9 @@ def build_prompts(
         "topic": script["topic"],
         "source_script": source_script,
         "style": {
+            # ADR-0027 — [6]이 자기 프로바이더와 대조하는 값. 이 파일에서 방언을 알 수
+            # 있는 곳은 여기뿐이다 (프롬프트 문자열을 보고 추측하게 두지 않는다).
+            "dialect": dialect,
             "base_style": BASE_STYLE,
             "composition": COMPOSITION,
             "aspect_ratio": ASPECT_RATIO,
@@ -255,6 +280,7 @@ def run_prompt_stage(
     *,
     paths: Paths | None = None,
     force: bool = False,
+    dialect: str = DEFAULT_DIALECT,
 ) -> PromptResult:
     paths = paths or Paths.from_env()
 
@@ -276,18 +302,28 @@ def run_prompt_stage(
     state = RunState.load_or_create(run_dir, run_id, topic=topic, slug=slug)
 
     if state.is_done(STAGE) and not force and prompts_path.exists():
-        log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
-        return PromptResult(
-            topic=topic, slug=slug, run_id=run_id, skipped=True,
-            prompts_path=prompts_path,
-            prompts=_load_json(prompts_path, PROMPTS_FILE),
+        previous = _load_json(prompts_path, PROMPTS_FILE)
+        # 방언이 다르면 스킵하지 않는다 (ADR-0027). 요청한 방언과 다른 파일을 두고
+        # "완료"라고 넘기면 [6]이 대조에서 걸리거나, 더 나쁘게는 사람이 --dialect를
+        # 줬는데 아무 일도 안 일어난 것처럼 보인다. 재생성은 무료다.
+        if previous.get("style", {}).get("dialect") == dialect:
+            log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
+            return PromptResult(
+                topic=topic, slug=slug, run_id=run_id, skipped=True,
+                prompts_path=prompts_path, prompts=previous,
+            )
+        log.info(
+            "[%s] 방언이 달라 다시 쓴다 (%s → %s)",
+            STAGE, previous.get("style", {}).get("dialect"), dialect,
         )
 
     state.mark_running(STAGE)
 
     try:
         document, warnings = build_prompts(
-            script, source_script=script_path.relative_to(paths.root).as_posix()
+            script,
+            source_script=script_path.relative_to(paths.root).as_posix(),
+            dialect=dialect,
         )
     except PromptStageError as exc:
         # specs/05 실패 정책: 단계 실패는 run 디렉터리에 기록하고 종료
@@ -301,9 +337,13 @@ def run_prompt_stage(
         state.mark_failed(STAGE, message)
         raise PromptStageError(message)
 
-    anchor_warning = _anchor_warning(paths)
-    if anchor_warning:
-        warnings.append(anchor_warning)
+    # MJ 경로는 앵커를 첨부하지 않는다 (ADR-0025 G3 — `--sref`가 BASE_STYLE을 이겨
+    # 마감을 망가뜨렸고, 씬 간 일관성은 앵커 없이도 BASE_STYLE이 만든다). 그 방언에서
+    # 앵커 없음을 경고하면 고칠 것이 없는 경고가 편마다 뜬다.
+    if dialect == "nb2":
+        anchor_warning = _anchor_warning(paths)
+        if anchor_warning:
+            warnings.append(anchor_warning)
 
     for warning in warnings:
         log.warning("[%s] %s", STAGE, warning)
@@ -314,6 +354,7 @@ def run_prompt_stage(
         output=prompts_path.relative_to(paths.root).as_posix(),
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
+        dialect=dialect,
         warnings=warnings,
     )
 

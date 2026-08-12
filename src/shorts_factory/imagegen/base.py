@@ -206,6 +206,11 @@ class ImageClient(ABC):
     #: 실행 기록에 남길 프로바이더 이름.
     name: str = "image-client"
 
+    #: 이 프로바이더가 읽을 수 있는 프롬프트 방언 (ADR-0027). `[6]`이 `prompts.json`의
+    #: `style.dialect`와 대조해 어긋나면 호출 전에 멈춘다. `None`은 아무 방언이나
+    #: 받는다는 뜻이고 **페이크 전용**이다 — 과금 어댑터는 반드시 자기 방언을 밝힌다.
+    dialect: str | None = None
+
     #: 이 프로바이더가 내는 파일의 확장자. 단계가 파일명을 지을 때 쓴다.
     #: 기본값이 `.jpg`인 이유는 실물(Nano Banana 2)이 JPEG만 주기 때문이다 (ADR-0021).
     output_suffix: str = ".jpg"

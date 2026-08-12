@@ -207,6 +207,9 @@ class NanoBananaClient(ImageClient):
     #: 앵커 없이 과금 호출을 돌리면 씬 간 룩이 갈리고 어차피 다시 만들게 된다.
     requires_style_anchors = True
     name = MODEL_NAME
+    #: 여러 줄 자연어 프롬프트를 읽는다 (ADR-0027). MJ 방언 문자열이 들어오면
+    #: `--ar`·`--no`가 그릴 대상으로 섞이므로 단계가 호출 전에 막는다.
+    dialect = "nb2"
 
     def __init__(
         self,

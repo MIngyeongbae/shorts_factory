@@ -107,6 +107,15 @@ class StyleAnchorsMissing(ImagegenStageError):
     """
 
 
+class DialectMismatch(ImagegenStageError):
+    """`prompts.json`의 방언과 프로바이더가 다르다 → 호출 전에 막았다 (ADR-0027).
+
+    이것도 실패가 아니라 진입 금지다. 고치는 방법은 `[5]`를 맞는 방언으로 다시 돌리는
+    것 하나뿐이고, 무료다. **조용히 진행하면 MJ 문법 문자열이 NB2에 그대로 들어가
+    `--ar 9:16`이 그릴 대상이 되고, 그 사실은 편당 과금이 끝난 뒤에 드러난다.**
+    """
+
+
 @dataclass
 class ImagegenResult:
     run_id: str
@@ -411,6 +420,21 @@ def run_imagegen_stage(
             result.record_path = record_path
             result.scenes = [previous[k] for k in sorted(previous)]
             return result
+
+    # ADR-0027 — 방언 대조. 앵커 검사보다 먼저 본다: 방언이 틀렸으면 앵커가 몇 장이든
+    # 이 파일로는 아무것도 만들 수 없다.
+    if images.dialect is not None and style.get("dialect") != images.dialect:
+        message = (
+            f"{PROMPTS_FILE}은 방언 {style.get('dialect')!r}로 쓰였는데 "
+            f"프로바이더 {images.name}은 {images.dialect!r}를 읽는다 (ADR-0027). "
+            f"`prompt --slug ... --dialect {images.dialect}`로 다시 만들어라 — "
+            "[5]는 무료다"
+        )
+        state.mark_blocked(STAGE, message)
+        log.error("[%s] %s", STAGE, message)
+        result.blocked = True
+        result.warnings = [message]
+        raise DialectMismatch(message)
 
     # ADR-0005 — 룩 일관성 수단. 과금 프로바이더는 앵커 0장이면 호출 전에 막는다.
     anchor_dir = style["style_anchors"]

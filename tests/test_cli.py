@@ -9,6 +9,7 @@ import pytest
 from shorts_factory.cli import _force_utf8_streams
 from shorts_factory.cli import parse_args as parse
 from shorts_factory.config import DEFAULT_MAX_RETRIES
+from shorts_factory.schemas.visual_rules import DEFAULT_DIALECT
 from shorts_factory.tts.audio import DEFAULT_TEMPO
 
 
@@ -85,6 +86,20 @@ def test_prompt_takes_no_run_id():
     args = parse(["prompt", "--slug", "abc"])
     assert args.slug == "abc"
     assert not hasattr(args, "run_id")
+
+
+def test_prompt_defaults_to_the_shipping_dialect():
+    """ADR-0027 — 실물 경로가 MJ다 (ADR-0025)."""
+    assert parse(["prompt", "--slug", "abc"]).dialect == DEFAULT_DIALECT
+
+
+def test_prompt_dialect_is_overridable():
+    assert parse(["prompt", "--slug", "abc", "--dialect", "nb2"]).dialect == "nb2"
+
+
+def test_prompt_rejects_unknown_dialect():
+    with pytest.raises(SystemExit):
+        parse(["prompt", "--slug", "abc", "--dialect", "sdxl"])
 
 
 def test_tts_requires_slug():

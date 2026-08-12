@@ -31,6 +31,7 @@ from .imagegen.fake import FakeImageClient
 from .imagegen.nano_banana import NanoBananaClient
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
+from .schemas.visual_rules import DEFAULT_DIALECT, DIALECTS
 from .stages.assemble import (
     AssembleStageError,
     resolve_run_id,
@@ -39,6 +40,7 @@ from .stages.assemble import (
 from .stages.backfill_scale import BackfillStageError, run_backfill_scale_stage
 from .stages.backfill_visual_goal import run_backfill_visual_goal_stage
 from .stages.imagegen import (
+    DialectMismatch,
     ImagegenStageError,
     StyleAnchorsMissing,
     run_imagegen_stage,
@@ -270,8 +272,14 @@ def _cmd_prompt(args, paths: Paths) -> int:
 
     run_id를 받지 않는다. 2부 산출물은 대본과 같은 run 디렉터리에 놓이고
     그 run_id는 06-script.json에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
+
+    `--dialect`는 프롬프트 **문법**만 고른다 (ADR-0027). 구도도 네거티브 항목도 같은 룰
+    테이블에서 나오므로, 방언을 바꿔도 연출은 바뀌지 않는다. 무료·결정적이라 프로바이더를
+    바꿀 때 그냥 다시 돌리면 된다.
     """
-    result = run_prompt_stage(args.slug, paths=paths, force=args.force)
+    result = run_prompt_stage(
+        args.slug, paths=paths, force=args.force, dialect=args.dialect
+    )
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
@@ -296,7 +304,8 @@ def _cmd_imagegen(args, paths: Paths) -> int:
     입력은 runs/{run_id}/prompts.json 하나다 (ADR-0020). --slug는 run_id를 찾기 위한
     편의일 뿐이라 --run-id를 주면 대본을 열지도 않는다.
 
-    돈이 드는 단계라 오류를 종료 코드로 구분한다 — 6은 생성 실패, 7은 앵커 0장 차단이다.
+    돈이 드는 단계라 오류를 종료 코드로 구분한다 — 6은 생성 실패, 7은 앵커 0장 차단,
+    12는 방언 불일치다. 셋 다 고칠 자리가 다르다 (12는 `[5]`를 다시 돌린다).
     """
     try:
         result = run_imagegen_stage(
@@ -307,6 +316,9 @@ def _cmd_imagegen(args, paths: Paths) -> int:
             force=args.force,
             allow_missing_anchors=args.allow_missing_anchors,
         )
+    except DialectMismatch as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 12
     except StyleAnchorsMissing as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 7
@@ -477,6 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_prompt = sub.add_parser("prompt", parents=[common],
                               help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
     p_prompt.add_argument("--slug", required=True)
+    p_prompt.add_argument(
+        "--dialect", choices=sorted(DIALECTS), default=DEFAULT_DIALECT,
+        help=f"프롬프트 문법 (기본: {DEFAULT_DIALECT}. ADR-0027)",
+    )
     p_prompt.set_defaults(func=_cmd_prompt)
 
     p_imagegen = sub.add_parser(
