@@ -267,3 +267,78 @@ def test_index_warns_against_hand_editing(tmp_path):
     store = KnowledgeStore(tmp_path / "knowledge")
     store.reindex(today=TODAY)
     assert "직접 편집하지 마라" in store.index_path.read_text(encoding="utf-8")
+
+
+# --- 토픽 폴더 배치 (ADR-0026) ------------------------------------------------
+
+
+def _placed(store, source_id: str):
+    """카드가 실제로 놓인 경로를 sources/ 기준 상대경로로 돌려준다."""
+    path = store.find_card(source_id)
+    return None if path is None else path.relative_to(store.sources_dir).as_posix()
+
+
+def test_new_card_lands_in_its_first_topic_folder(tmp_path):
+    store = KnowledgeStore(tmp_path)
+    store.save(SourceCard("x-0001", "t", URL, topics=["pisa", "hubeodaem"]))
+    assert _placed(store, "x-0001") == "pisa/x-0001.md"
+
+
+def test_a_card_does_not_move_when_another_topic_cites_it(tmp_path):
+    """ADR-0026의 핵심. 폴더는 표시 규약이고 소속의 진실은 topics:다.
+
+    인용 토픽이 늘 때마다 파일을 옮기면 폴더가 계약으로 승격되고 git 이력이 흔들린다.
+    """
+    store = KnowledgeStore(tmp_path)
+    store.save(SourceCard("x-0002", "t", URL, topics=["pisa"]))
+
+    card = store.load("x-0002")
+    card.topics.append("hubeodaem")
+    store.save(card)
+
+    assert _placed(store, "x-0002") == "pisa/x-0002.md"       # 그대로다
+    assert store.load("x-0002").topics == ["pisa", "hubeodaem"]  # 소속만 늘었다
+
+
+def test_a_flat_card_is_still_found_and_stays_flat(tmp_path):
+    """마이그레이션 안전성 — 평면 배치 카드도 재귀 탐색으로 읽히고, 옮겨지지 않는다."""
+    store = KnowledgeStore(tmp_path)
+    flat = store.sources_dir / "x-0003.md"
+    flat.parent.mkdir(parents=True, exist_ok=True)
+    flat.write_text(render_card(SourceCard("x-0003", "t", URL, topics=["pisa"])),
+                    encoding="utf-8")
+
+    assert store.load("x-0003") is not None
+    store.save(store.load("x-0003"))
+    assert _placed(store, "x-0003") == "x-0003.md"
+
+
+def test_a_topicless_card_is_not_lost(tmp_path):
+    store = KnowledgeStore(tmp_path)
+    store.save(SourceCard("x-0004", "t", URL))
+    assert _placed(store, "x-0004") == "_unfiled/x-0004.md"
+
+
+def test_index_lists_a_shared_card_under_every_topic_it_belongs_to(tmp_path):
+    """파일은 한 곳에만 있지만 표의 줄은 그렇지 않다 — 어느 토픽에서 찾아도 만나야 한다."""
+    store = KnowledgeStore(tmp_path)
+    store.save(SourceCard("shared-01", "걸치는 소스", URL, topics=["pisa", "hubeodaem"]))
+    store.save(SourceCard("only-01", "피사 전용", URL, topics=["pisa"]))
+
+    index = store.render_index(today=TODAY)
+    pisa, hubeodaem = index.split("## hubeodaem")
+    assert "shared-01" in pisa and "only-01" in pisa
+    assert "shared-01" in hubeodaem and "only-01" not in hubeodaem
+
+
+def test_index_sections_are_ordered_by_size_then_slug(tmp_path):
+    """재생성할 때마다 순서가 흔들리면 diff가 의미를 잃는다."""
+    store = KnowledgeStore(tmp_path)
+    for i in range(3):
+        store.save(SourceCard(f"big-{i}", "t", URL, topics=["zeta"]))
+    store.save(SourceCard("mid-0", "t", URL, topics=["alpha"]))
+    store.save(SourceCard("mid-1", "t", URL, topics=["beta"]))
+
+    headings = [ln for ln in store.render_index(today=TODAY).splitlines()
+                if ln.startswith("## ")]
+    assert headings == ["## zeta (3)", "## alpha (1)", "## beta (1)"]

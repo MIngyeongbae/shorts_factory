@@ -2,8 +2,12 @@
 
 목적은 하나다: **이미 조사한 소스를 다시 찾지 않게 한다.**
 
-- `knowledge/sources/{source_id}.md` — 소스 1건당 카드 1장 (평면 저장)
-- `knowledge/index.md`             — 카드 한 줄 요약. 자동 생성, 수동 편집 금지
+- `knowledge/sources/{topic_slug}/{source_id}.md` — 소스 1건당 카드 1장.
+  폴더는 **최초 조사 토픽**이고 **표시 규약일 뿐이다.** 소속의 진실은 frontmatter의
+  `topics:`이며, 카드는 나중에 다른 토픽에 인용돼도 **이동하지 않는다** (ADR-0026).
+  조회는 `find_card()`의 재귀 탐색이라 폴더를 몰라도 된다
+- `knowledge/index.md`             — 카드 한 줄 요약. 자동 생성, 수동 편집 금지.
+  토픽 섹션으로 나뉘고, **걸치는 카드는 모든 소속 섹션에 등장한다** (ADR-0026)
 
 카드는 파이썬만 쓴다. 세션은 Read로 읽기만 한다 (ADR-0011).
 분류 트리·태그·임베딩 검색은 두지 않는다. 탐색은 인덱스 + Read + grep이다.
@@ -31,6 +35,10 @@ FRESHNESS: dict[str, int | None] = {
     "status": 90,        # 관람시간·보존공사·집계 등 현황 정보
 }
 DEFAULT_TYPE = "reference"
+
+#: `topics:`가 빈 카드가 갈 폴더 (ADR-0026). 계약상 카드는 최소 한 토픽에서 나오므로
+#: 정상 경로에서는 비어 있다 — 손상된 카드가 사라지지 않게 두는 자리다.
+UNFILED_DIR = "_unfiled"
 
 CONFIDENCE_LEVELS = ("high", "medium", "low")
 
@@ -382,14 +390,35 @@ class KnowledgeStore:
     def index_path(self) -> Path:
         return self.root / "index.md"
 
-    def card_path(self, source_id: str) -> Path:
-        return self.sources_dir / f"{source_id}.md"
+    def find_card(self, source_id: str) -> Path | None:
+        """카드의 **실제** 경로. 폴더를 몰라도 찾는다 (ADR-0026).
+
+        재귀 탐색이므로 마이그레이션 전 평면 배치도 그대로 읽힌다.
+        """
+        if not self.sources_dir.is_dir():
+            return None
+        name = f"{source_id}.md"
+        direct = self.sources_dir / name
+        if direct.is_file():
+            return direct
+        return next(iter(sorted(self.sources_dir.rglob(name))), None)
+
+    def placement_path(self, card: SourceCard) -> Path:
+        """**새** 카드를 둘 자리 = 최초 조사 토픽 폴더 (ADR-0026).
+
+        이미 있는 카드는 여기로 옮기지 않는다 — 폴더는 표시 규약이고 소속의 진실은
+        `topics:`다. 인용 토픽이 늘 때마다 파일을 옮기면 폴더가 계약으로 승격된다.
+        """
+        topic = card.topics[0] if card.topics else UNFILED_DIR
+        return self.sources_dir / topic / f"{card.source_id}.md"
 
     def load_all(self) -> list[SourceCard]:
         if not self.sources_dir.is_dir():
             return []
         cards: list[SourceCard] = []
-        for path in sorted(self.sources_dir.glob("*.md")):
+        # 폴더가 아니라 파일명(=source_id)으로 정렬한다. 카드가 어느 토픽 폴더에
+        # 있든 인덱스 안의 줄 순서가 같아야 diff가 의미를 갖는다.
+        for path in sorted(self.sources_dir.rglob("*.md"), key=lambda p: p.name):
             try:
                 cards.append(parse_card(path.read_text(encoding="utf-8")))
             except (KnowledgeError, OSError):
@@ -397,8 +426,8 @@ class KnowledgeStore:
         return cards
 
     def load(self, source_id: str) -> SourceCard | None:
-        path = self.card_path(source_id)
-        if not path.is_file():
+        path = self.find_card(source_id)
+        if path is None:
             return None
         try:
             return parse_card(path.read_text(encoding="utf-8"))
@@ -406,7 +435,8 @@ class KnowledgeStore:
             return None
 
     def save(self, card: SourceCard) -> None:
-        write_text(self.card_path(card.source_id), render_card(card))
+        write_text(self.find_card(card.source_id) or self.placement_path(card),
+                   render_card(card))
 
     def apply(
         self, contract: dict, *, slug: str, today: date | None = None
@@ -439,6 +469,31 @@ class KnowledgeStore:
 
     # --- 인덱스 ----------------------------------------------------------
 
+    def _sections(
+        self, cards: list[SourceCard]
+    ) -> list[tuple[str, list[SourceCard]]]:
+        """토픽 → 카드 목록 (ADR-0026).
+
+        **걸치는 카드는 소속된 모든 토픽 섹션에 등장한다.** 파일은 한 곳에만 있을 수
+        있지만 표의 줄은 그렇지 않다 — 어느 토픽에서 찾아도 그 소스를 만나야 한다.
+
+        섹션 순서는 카드 수 내림차순 → 슬러그 사전순으로 고정한다. 재생성할 때마다
+        순서가 흔들리면 diff가 의미를 잃는다.
+        """
+        by_topic: dict[str, list[SourceCard]] = {}
+        for card in cards:
+            for topic in card.topics or [UNFILED_DIR]:
+                by_topic.setdefault(topic, []).append(card)
+        order = sorted(by_topic, key=lambda t: (-len(by_topic[t]), t))
+        return [(topic, by_topic[topic]) for topic in order]
+
+    def _freshness_cell(self, card: SourceCard, today: date) -> str:
+        if card.is_stale(today):
+            return "⚠ 재확인 필요"
+        if card.expires_on() is None:
+            return "영구"
+        return f"~{card.expires_on().isoformat()}"
+
     def render_index(self, *, today: date | None = None) -> str:
         today = today or date.today()
         cards = self.load_all()
@@ -451,20 +506,23 @@ class KnowledgeStore:
             "",
             f"총 {len(cards)}건 · 재확인 필요 {len(stale)}건 ({today.isoformat()} 기준)",
             "",
-            "| source_id | 제목 | 유형 | 관련 유적 | 신선도 |",
-            "|---|---|---|---|---|",
+            "토픽 섹션으로 나눈다 (ADR-0026). **여러 토픽에 걸친 소스는 각 섹션에 모두 "
+            "등장한다** — 파일이 있는 폴더는 최초 조사 토픽 하나뿐이지만, 소속의 진실은 "
+            "카드의 `topics:`다.",
         ]
-        for card in cards:
-            if card.is_stale(today):
-                freshness = "⚠ 재확인 필요"
-            elif card.expires_on() is None:
-                freshness = "영구"
-            else:
-                freshness = f"~{card.expires_on().isoformat()}"
-            lines.append(
-                f"| {card.source_id} | {card.title} | {card.source_type} "
-                f"| {_join(card.subjects)} | {freshness} |"
-            )
+        for topic, section in self._sections(cards):
+            lines += [
+                "",
+                f"## {topic} ({len(section)})",
+                "",
+                "| source_id | 제목 | 유형 | 관련 유적 | 신선도 |",
+                "|---|---|---|---|---|",
+            ]
+            for card in section:
+                lines.append(
+                    f"| {card.source_id} | {card.title} | {card.source_type} "
+                    f"| {_join(card.subjects)} | {self._freshness_cell(card, today)} |"
+                )
         return "\n".join(lines) + "\n"
 
     def reindex(self, *, today: date | None = None) -> int:
@@ -481,14 +539,17 @@ class KnowledgeStore:
         if not cards:
             return ""
 
+        # 섹션 헤더(`## 토픽`)부터 잘라낸다. 첫 `|`부터 자르면 첫 섹션 제목이 잘려
+        # 나가서 어느 토픽의 표인지 알 수 없게 된다 (ADR-0026).
         lines = self.render_index(today=today).splitlines()
-        start = next(i for i, line in enumerate(lines) if line.startswith("|"))
+        start = next((i for i, line in enumerate(lines) if line.startswith("## ")), 0)
         table = "\n".join(lines[start:])
         return (
             "# 이미 조사한 소스\n\n"
             "아래는 이미 조사가 끝난 소스다. **재검색·재fetch를 금지한다.**\n"
-            f"내용이 필요하면 `{self.sources_dir.as_posix()}/{{source_id}}.md`를 "
-            "Read 도구로 읽어 참조한다.\n"
+            f"내용이 필요하면 `{self.sources_dir.as_posix()}/` 아래에서 "
+            "`{source_id}.md`를 찾아 Read 도구로 읽어 참조한다 "
+            "(토픽 폴더로 나뉘어 있고, 한 소스가 여러 토픽 표에 나올 수 있다).\n"
             "표에 없는 소스만 새로 검색한다. "
             "`⚠ 재확인 필요`가 붙은 소스만 예외로 재fetch를 허용한다.\n\n"
             f"{table}\n"
