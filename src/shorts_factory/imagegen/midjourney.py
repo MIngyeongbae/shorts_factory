@@ -34,9 +34,12 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Callable
 
 from .base import (
@@ -75,6 +78,10 @@ POLL_INTERVAL = 10
 STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILED = ("FAILURE", "CANCEL")
 
+#: Discord 모드 그리드를 4분할할 때 쓴다. 이미 필수 의존이다 (조립·자막 번인).
+FFMPEG = "ffmpeg"
+CROP_TIMEOUT = 120
+
 #: `(method, url, headers, body, timeout) -> (status, bytes)`. 유일한 HTTP 경계다.
 Transport = Callable[[str, str, dict[str, str], bytes | None, int], "tuple[int, bytes]"]
 
@@ -108,23 +115,61 @@ def build_prompt(request: ImageRequest) -> str:
     return f"{prompt} {negative}" if negative else prompt
 
 
-def first_image_url(payload: dict[str, Any]) -> str:
-    """`imageUrls[0]`의 원본 URL (ADR-0025).
+def result_image(payload: dict[str, Any]) -> tuple[str, bool]:
+    """`(내려받을 URL, 4분할이 필요한가)`. 계정 모드마다 응답 모양이 다르다 (실측).
 
-    항목은 `{url, thumbnail}` 객체다. 문자열로 오는 프록시 판본도 있을 수 있어
-    양쪽을 받되, **`thumbnail`은 쓰지 않는다** — 640px 축소본이라 9:16 원본이 아니다.
-    최상위 `imageUrl`도 쓰지 않는다: 그것은 4장을 합친 그리드다.
+    **공식 웹 모드**는 `imageUrls`에 4장을 개별 URL로 준다
+    (`{url, thumbnail}` 객체 배열, `url`은 `cdn.midjourney.com/<uuid>/0_0.png`).
+    `imageUrls[0]` 고정이면 되고 자를 것이 없다 (ADR-0025 계약 공백 #1).
+
+    **Discord 모드**는 `imageUrls`가 `null`이고 `imageUrl` 하나만 온다. 그것은
+    **2×2 그리드**(1632×2912 = 816×1456의 4배)다 — 개별 URL이 없으므로 왼쪽 위
+    사분면을 잘라 쓴다. ADR-0025가 "개별 URL이 막히면 4분할하는 경로가 남아 있다"고
+    적어 둔 그 경로다. U1 업스케일 잡을 따로 던지지 않는다: v6 이후 U 버튼은 확대가
+    아니라 사분면 분리라서 같은 픽셀을 얻자고 잡 수를 27 → 54로 늘리게 된다.
+
+    `thumbnail`은 어느 모드에서도 쓰지 않는다 — 640px 축소본이다.
     """
     items = payload.get("imageUrls") or []
-    if not items:
-        raise ImageGenError(
-            f"태스크가 SUCCESS인데 imageUrls가 비어 있다 (키: {sorted(payload)})"
-        )
-    first = items[0]
-    url = first.get("url") if isinstance(first, dict) else first
+    if items:
+        first = items[0]
+        url = first.get("url") if isinstance(first, dict) else first
+        if not isinstance(url, str) or not url:
+            raise ImageGenError(f"imageUrls[0]에서 url을 읽을 수 없다: {first!r}")
+        return url, False
+
+    url = payload.get("imageUrl")
     if not isinstance(url, str) or not url:
-        raise ImageGenError(f"imageUrls[0]에서 url을 읽을 수 없다: {first!r}")
-    return url
+        raise ImageGenError(
+            f"태스크가 SUCCESS인데 이미지 URL이 없다 (키: {sorted(payload)})"
+        )
+    return url, True
+
+
+def crop_first_quadrant(
+    data: bytes, *, suffix: str = ".webp", ffmpeg: str = FFMPEG
+) -> bytes:
+    """2×2 그리드에서 왼쪽 위 한 장을 PNG로 잘라 낸다.
+
+    FFmpeg를 쓰는 이유는 **이미 이 프로젝트의 필수 의존이고**(조립·자막 번인) webp를
+    읽을 수 있는 유일한 수단이기 때문이다. Pillow를 새로 들이지 않는다.
+
+    `crop=iw/2:ih/2:0:0`은 정수 나눗셈이 아니라 FFmpeg 표현식이라 홀수 픽셀에서도
+    안전하다. 실측 그리드는 1632×2912라 나머지가 없다.
+    """
+    with tempfile.TemporaryDirectory(prefix="mj-grid-") as tmp:
+        source = Path(tmp) / f"grid{suffix}"
+        target = Path(tmp) / "quadrant.png"
+        source.write_bytes(data)
+        result = subprocess.run(
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(source),
+             "-vf", "crop=iw/2:ih/2:0:0", "-frames:v", "1", str(target)],
+            capture_output=True, timeout=CROP_TIMEOUT,
+        )
+        if result.returncode != 0 or not target.exists():
+            detail = result.stderr.decode("utf-8", "replace")[:300]
+            raise ImageGenError(f"그리드 4분할에 실패했다 (ffmpeg): {detail}")
+        return target.read_bytes()
 
 
 def _fail(status: int, body: bytes, *, what: str) -> ImageGenError:
@@ -162,7 +207,9 @@ class MidjourneyClient(ImageClient):
         poll_interval: float = POLL_INTERVAL,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        ffmpeg: str = FFMPEG,
     ) -> None:
+        self.ffmpeg = ffmpeg
         self.base_url = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
         self.secret = secret or os.environ.get(SECRET_ENV) or DEFAULT_SECRET
         self.transport = transport
@@ -236,13 +283,23 @@ class MidjourneyClient(ImageClient):
                 )
             self.sleep(self.poll_interval)
 
-        data = self.download(first_image_url(payload), timeout=budget)
+        url, is_grid = result_image(payload)
+        data = self.download(url, timeout=budget)
+        if is_grid:
+            suffix = ".webp" if url.lower().split("?")[0].endswith(".webp") else ".png"
+            data = crop_first_quadrant(data, suffix=suffix, ffmpeg=self.ffmpeg)
+
         return GeneratedImage(
             data=data,
             mime_type="image/png",
             request_id=task_id,
             model_id=self.name,
-            raw={"progress": payload.get("progress"), "status": status},
+            raw={
+                "progress": payload.get("progress"),
+                "status": status,
+                "mode": payload.get("mode"),
+                "grid": is_grid,
+            },
         )
 
 

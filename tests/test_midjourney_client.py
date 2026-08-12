@@ -26,7 +26,7 @@ from shorts_factory.imagegen.midjourney import (
     SUBMIT_PATH,
     MidjourneyClient,
     build_prompt,
-    first_image_url,
+    result_image,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
@@ -147,6 +147,32 @@ def test_auth_rejection_stops_the_whole_provider():
 # --- 폴링 -------------------------------------------------------------------
 
 
+def test_the_discord_grid_is_cropped_before_it_is_returned():
+    """씬마다 2×2 그리드가 들어가면 `[7]`이 그것을 그대로 움직인다."""
+    grid = "http://localhost:8086/attachments/1/2/apple.webp"
+    calls: list[tuple[bytes, str]] = []
+
+    def fake_crop(data, *, suffix, ffmpeg):
+        calls.append((data, suffix))
+        return PNG
+
+    c = client([
+        ("submit", (200, {"code": 1, "result": "task-1"})),
+        ("/fetch", (200, {"status": "SUCCESS", "imageUrls": None, "imageUrl": grid})),
+        (grid, (200, b"RIFF____WEBPgrid")),
+    ])
+    import shorts_factory.imagegen.midjourney as mj
+
+    original, mj.crop_first_quadrant = mj.crop_first_quadrant, fake_crop
+    try:
+        image = c.generate(REQUEST, timeout=60)
+    finally:
+        mj.crop_first_quadrant = original
+
+    assert calls == [(b"RIFF____WEBPgrid", ".webp")]
+    assert image.data == PNG and image.raw["grid"] is True
+
+
 def test_it_polls_until_success_then_downloads():
     c = client([
         ("submit", (200, {"code": 1, "result": "task-1"})),
@@ -193,18 +219,31 @@ def test_a_slow_task_times_out_without_resubmitting():
 # --- 응답 파싱 ---------------------------------------------------------------
 
 
-def test_it_takes_the_full_image_not_the_thumbnail_or_the_grid():
-    """썸네일은 640px 축소본이고 `imageUrl`은 4장 병합 그리드(1632×2912)다."""
-    assert first_image_url(success_payload()) == CDN
+def test_official_mode_takes_the_full_image_not_the_thumbnail():
+    """공식 웹 모드는 4장을 개별 URL로 준다. 썸네일은 640px 축소본이라 안 쓴다."""
+    assert result_image(success_payload()) == (CDN, False)
 
 
 def test_a_bare_string_url_is_also_accepted():
-    assert first_image_url({"imageUrls": [CDN]}) == CDN
+    assert result_image({"imageUrls": [CDN]}) == (CDN, False)
 
 
-def test_an_empty_result_fails_loudly():
-    with pytest.raises(ImageGenError, match="imageUrls"):
-        first_image_url({"status": "SUCCESS", "imageUrl": "merged.webp"})
+def test_discord_mode_falls_back_to_the_grid_and_asks_for_a_crop():
+    """실측: Discord 모드는 `imageUrls`가 null이고 `imageUrl`이 2×2 그리드다.
+
+    개별 URL이 없으므로 4분할한다 — ADR-0025가 남겨 둔 예비 경로다. U1 업스케일 잡을
+    따로 던지면 같은 픽셀을 얻자고 잡 수가 27 → 54가 된다.
+    """
+    grid = "http://localhost:8086/attachments/1/2/apple_7ba7dd71.webp?ex=6a7d"
+    assert result_image({"status": "SUCCESS", "imageUrls": None, "imageUrl": grid}) == (
+        grid,
+        True,
+    )
+
+
+def test_no_image_at_all_fails_loudly():
+    with pytest.raises(ImageGenError, match="이미지 URL이 없다"):
+        result_image({"status": "SUCCESS", "imageUrls": None, "imageUrl": None})
 
 
 def test_the_cdn_download_carries_no_proxy_secret():
