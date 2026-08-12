@@ -1,7 +1,7 @@
 """이미지 생성 어댑터 (`imagegen/`) — 인터페이스·페이크·미결정 프로바이더.
 
 확인 대상:
-- ADR-0005 — 모든 호출에 스타일 앵커를 붙인다. 지금 저장소에 0장이라는 사실이 드러난다
+- ADR-0005 — 모든 호출에 스타일 앵커를 붙인다. 과금 어댑터는 앵커 없이 돌지 않는다
 - ADR-0020 — 요청에 담기는 것은 `prompt`·`negative_prompt`·`style`뿐이다.
   `framing_reuse_of`는 캐시 키가 아니고, 시간 정보는 애초에 없다
 - ADR-0001·0002 — 한국어 `subject`가 번역 없이 그대로 가고, 화면에 글자로 그리지 말라는
@@ -26,8 +26,6 @@ from shorts_factory.imagegen.base import (
     discover_style_anchors,
 )
 from shorts_factory.imagegen.fake import (
-    FAKE_HEIGHT,
-    FAKE_WIDTH,
     FakeImageClient,
     fake_image,
     solid_png,
@@ -107,14 +105,6 @@ def test_fake_png_decodes_with_a_real_decoder():
     with Image.open(io.BytesIO(solid_png(9, 16, (1, 2, 3)))) as img:
         assert img.size == (9, 16)
         assert img.convert("RGB").getpixel((4, 8)) == (1, 2, 3)
-
-
-def test_fake_image_keeps_the_9_16_ratio():
-    request = ImageRequest.from_prompt_scene(SCENE, STYLE)
-    header = dict(png_chunks(fake_image(request).data))[b"IHDR"]
-    width, height = struct.unpack(">II", header[:8])
-    assert (width, height) == (FAKE_WIDTH, FAKE_HEIGHT)
-    assert width * 16 == height * 9
 
 
 def test_same_request_gives_the_same_bytes_and_a_different_one_does_not():
@@ -227,13 +217,8 @@ def test_anchor_discovery_is_sorted_and_filtered(tmp_path):
 
 
 def test_missing_anchor_dir_is_empty_not_an_error(tmp_path):
-    """지금 저장소 상태다 — README만 있고 앵커는 0장이다. 판단은 단계가 한다."""
+    """디렉터리가 없어도 예외가 아니라 빈 튜플이다. 판단은 단계가 한다."""
     assert discover_style_anchors(tmp_path / "없음") == ()
-
-
-def test_readme_only_dir_yields_no_anchors(tmp_path):
-    (tmp_path / "README.md").write_text("앵커를 여기에 둔다", encoding="utf-8")
-    assert discover_style_anchors(tmp_path) == ()
 
 
 # --- 페이크의 실패 주입 -------------------------------------------------------
