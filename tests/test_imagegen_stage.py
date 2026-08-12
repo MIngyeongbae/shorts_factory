@@ -575,9 +575,13 @@ def test_summary_names_the_money(paths, prepared):
 
 
 def test_cli_defaults_to_the_paid_provider():
-    """페이크가 기본이면 단색 PNG를 들고 다음 단계로 간다. 그쪽이 더 비싼 실수다."""
+    """페이크가 기본이면 단색 PNG를 들고 다음 단계로 간다. 그쪽이 더 비싼 실수다.
+
+    기본값은 **`[5]`의 기본 방언(`mj`)과 짝이 맞아야 한다** — 어긋나면 아무 옵션 없이
+    돌린 파이프라인이 매번 `DialectMismatch`로 멈춘다 (ADR-0025·0027).
+    """
     args = parse(["imagegen", "--slug", "abc"])
-    assert args.provider == "nano-banana"
+    assert args.provider == "midjourney"
     assert args.allow_missing_anchors is False
     assert args.run_id is None
 
@@ -589,4 +593,4 @@ def test_cli_takes_a_run_id_and_a_provider():
 
 def test_cli_rejects_an_unknown_provider():
     with pytest.raises(SystemExit):
-        parse(["imagegen", "--slug", "abc", "--provider", "midjourney"])
+        parse(["imagegen", "--slug", "abc", "--provider", "dall-e"])

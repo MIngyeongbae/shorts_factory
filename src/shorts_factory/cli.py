@@ -28,6 +28,7 @@ from pathlib import Path
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths, load_dotenv
 from .imagegen.base import ImageClient
 from .imagegen.fake import FakeImageClient
+from .imagegen.midjourney import MidjourneyClient
 from .imagegen.nano_banana import NanoBananaClient
 from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
@@ -288,7 +289,11 @@ def _cmd_prompt(args, paths: Paths) -> int:
 
 #: `--provider` 값 → 어댑터. 기본값이 실물인 이유는 nano_banana.py에 적혀 있다 —
 #: 페이크가 기본이면 단색 PNG를 들고 "이미지를 만들었다"고 착각한 채 다음 단계로 간다.
+#: 기본값이 `midjourney`인 이유는 ADR-0025다 — 실물 경로가 MJ이고 `[5]`의 기본 방언도
+#: `mj`다 (ADR-0027). 기본을 `nano-banana`로 두면 기본 프롬프트와 기본 어댑터가 서로
+#: 어긋나 매번 `DialectMismatch`로 멈춘다.
 IMAGE_PROVIDERS = {
+    "midjourney": MidjourneyClient,
     "nano-banana": NanoBananaClient,
     "fake": FakeImageClient,
 }
@@ -502,8 +507,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_imagegen.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
     p_imagegen.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
     p_imagegen.add_argument(
-        "--provider", choices=sorted(IMAGE_PROVIDERS), default="nano-banana",
-        help="이미지 어댑터 (기본: nano-banana. 개발·테스트는 fake)",
+        "--provider", choices=sorted(IMAGE_PROVIDERS), default="midjourney",
+        help="이미지 어댑터 (기본: midjourney — relax. 개발·테스트는 fake)",
     )
     p_imagegen.add_argument(
         "--allow-missing-anchors", action="store_true",
