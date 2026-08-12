@@ -9,6 +9,7 @@ import pytest
 from shorts_factory.cli import _force_utf8_streams
 from shorts_factory.cli import parse_args as parse
 from shorts_factory.config import DEFAULT_MAX_RETRIES
+from shorts_factory.tts.audio import DEFAULT_TEMPO
 
 
 def test_global_flag_before_subcommand():
@@ -84,6 +85,36 @@ def test_prompt_takes_no_run_id():
     args = parse(["prompt", "--slug", "abc"])
     assert args.slug == "abc"
     assert not hasattr(args, "run_id")
+
+
+def test_tts_requires_slug():
+    with pytest.raises(SystemExit):
+        parse(["tts"])
+
+
+def test_tts_takes_no_run_id():
+    """[3]의 run_id도 06-script.json이 들고 있다 (ADR-0017)."""
+    args = parse(["tts", "--slug", "abc"])
+    assert args.slug == "abc"
+    assert not hasattr(args, "run_id")
+
+
+def test_tts_defaults_to_the_paid_provider():
+    """페이크가 기본이면 무음 wav를 만들어 놓고 성공했다고 착각한다."""
+    args = parse(["tts", "--slug", "abc"])
+    assert args.provider == "elevenlabs"
+    assert args.tempo == DEFAULT_TEMPO
+    assert args.ffmpeg == "ffmpeg"
+
+
+def test_tts_provider_and_tempo_are_overridable():
+    args = parse(["tts", "--slug", "abc", "--provider", "fake", "--tempo", "1.2"])
+    assert args.provider == "fake" and args.tempo == 1.2
+
+
+def test_tts_rejects_unknown_provider():
+    with pytest.raises(SystemExit):
+        parse(["tts", "--slug", "abc", "--provider", "openai"])
 
 
 #: 실제로 요약문을 깨뜨린 문자들. em dash는 [0b] 요약, 나머지는 전 단계 공통이다.

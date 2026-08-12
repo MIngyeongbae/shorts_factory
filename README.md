@@ -38,7 +38,13 @@ python run.py research --slug hanyangdoseong-gakjaseongseok -v
 
 # [0a] + [0b] 연속 실행
 python run.py package --topic "한양도성 각자성석"
+
+# [3] 확정 대본 → narration.wav + 실측 타임스탬프 (2부, 편당 과금)
+python run.py tts --slug hubeodaem-konkeuriteu-naenggak
 ```
+
+`[3]`은 `.env`의 `ELEVENLABS_API_KEY`·`ELEVEN_VOICE_ID`를 쓴다 (ADR-0004). 키 없이
+경로만 확인하려면 `--provider fake`를 준다 — **무음 wav가 나오므로 기본값이 아니다.**
 
 주요 옵션 (서브커맨드 앞뒤 어느 위치에서도 동작):
 
@@ -59,6 +65,18 @@ python run.py package --topic "한양도성 각자성석"
 | 1 | 단계 실패 |
 | 2 | `[0a]` 반려 (백로그 4조건 미충족) |
 | 3 | `[0b]` 반려 (`verdict: fail`) |
+| 4 | `[1]` 대본 후보가 구조 검사에 걸림 |
+| 5 | `[2]` 검증 실패 (재생성 상한까지 못 고침) |
+| 6 | `[6]` 이미지 생성 실패 |
+| 7 | `[6]` 스타일 앵커 0장 차단 (`--allow-missing-anchors`로 해제) |
+| 8 | `[7]` 클립 렌더 실패 |
+| 9 | `[3]` TTS 호출·계약 실패 |
+| 10 | `[3]` 총 길이 상한 초과 — 대본 축약이 필요하다 (1부 소관, ADR-0017) |
+| 11 | `[3]` 키·`ELEVEN_VOICE_ID`·플랜 미비. **호출 전에 막히므로 과금이 없다** |
+| 130 | 사용자 중단 (Ctrl+C) |
+
+과금 단계(`[3]`·`[6]`)는 고칠 자리가 저마다 달라서 코드를 나눴다 — 11은 `.env`,
+10은 1부 대본, 9는 호출 자체다.
 
 ## 산출물
 

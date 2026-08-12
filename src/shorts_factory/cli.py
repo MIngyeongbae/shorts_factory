@@ -6,6 +6,7 @@
     python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
     python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
     python run.py backfill-visual-goal --slug SLUG # 확정 대본에 visual_goal만 채움 (ADR-0022)
+    python run.py tts       --slug SLUG           # [2부] 대본 → narration.wav + 실측 타임스탬프
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.jpg
     python run.py motion    --slug SLUG           # [2부] 이미지+씬 계약 → clips/{scene_id}.mp4
@@ -51,7 +52,12 @@ from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.script import ScriptStageError, run_script_stage
 from .stages.topic import TopicStageError, run_topic_stage
+from .stages.tts import TTSStageError, run_tts_stage
 from .stages.validate import ValidateStageError, run_validate_stage
+from .tts.audio import DEFAULT_TEMPO
+from .tts.base import TTSClient, TTSError, TTSNotConfigured
+from .tts.elevenlabs import ElevenLabsClient
+from .tts.fake import FakeTTSClient
 
 log = logging.getLogger("shorts_factory")
 
@@ -203,6 +209,60 @@ def _cmd_backfill_visual_goal(args, paths: Paths) -> int:
     )
     print(result.summary)
     return 0
+
+
+#: `--provider` 값 → 어댑터. 기본값이 실물인 이유는 `IMAGE_PROVIDERS`와 같다 —
+#: 페이크가 기본이면 **무음 wav**를 만들어 놓고 나레이션이 생겼다고 착각한 채
+#: 다음 단계로 간다. 페이크는 명시적으로 골라야 한다.
+TTS_PROVIDERS = {
+    "elevenlabs": ElevenLabsClient,
+    "fake": FakeTTSClient,
+}
+
+
+def _make_tts_client(args) -> TTSClient:
+    return TTS_PROVIDERS[args.provider]()
+
+
+def _cmd_tts(args, paths: Paths) -> int:
+    """[3] 대본 → narration.wav + timing.json + scenes.timed.json.
+
+    입력은 `topics/{slug}/06-script.json` 하나뿐이라 `--run-id`가 없다. run_id는 그
+    안에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
+
+    돈이 드는 단계라 오류를 종료 코드로 구분한다. 고칠 자리가 저마다 다르다:
+
+    - **11** — 키·voice_id·플랜 문제(`TTSNotConfigured`). 고칠 곳은 `.env`이고,
+      **호출 전에** 막히므로 과금이 없다
+    - **10** — 총 길이가 상한을 넘어 `scenes.timed.json`을 쓰지 않고 멈췄다.
+      고칠 곳은 **1부의 대본**이다 (ADR-0017 단방향 경계). `narration.wav`와
+      `timing.json`은 남는다 — 편당 과금이라 다시 사지 않아도 되게
+    - **9** — 그 밖의 호출·계약 실패
+
+    `judgment/human.json`의 게이트(`decision: go`)는 여기서 보지 않는다. 2부 진입점의
+    몫인데 그 진입점이 아직 없고, `imagegen`·`motion`·`assemble`도 마찬가지다 —
+    `[3]`에만 게이트를 다는 것은 정책을 한 커맨드에 숨기는 일이다.
+    """
+    try:
+        result = run_tts_stage(
+            args.slug,
+            tts=_make_tts_client(args),
+            paths=paths,
+            tempo=args.tempo,
+            force=args.force,
+            ffmpeg=args.ffmpeg,
+        )
+    except TTSNotConfigured as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 11
+    except (TTSStageError, TTSError) as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 9
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 10 if result.over_length else 0
 
 
 def _cmd_prompt(args, paths: Paths) -> int:
@@ -395,6 +455,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_backfill_goal.add_argument("--slug", required=True)
     p_backfill_goal.set_defaults(func=_cmd_backfill_visual_goal)
+
+    p_tts = sub.add_parser(
+        "tts", parents=[common],
+        help="[3] 대본 → narration.wav + 실측 타임스탬프 (2부, 편당 과금)",
+    )
+    p_tts.add_argument("--slug", required=True)
+    p_tts.add_argument(
+        "--provider", choices=sorted(TTS_PROVIDERS), default="elevenlabs",
+        help="TTS 어댑터 (기본: elevenlabs. 개발·테스트는 fake)",
+    )
+    p_tts.add_argument(
+        "--tempo", type=float, default=DEFAULT_TEMPO,
+        help=f"원속 생성 후 적용할 atempo 배속 (기본: {DEFAULT_TEMPO}. specs/04는 1.1~1.2)",
+    )
+    p_tts.add_argument(
+        "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_tts.set_defaults(func=_cmd_tts)
 
     p_prompt = sub.add_parser("prompt", parents=[common],
                               help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
