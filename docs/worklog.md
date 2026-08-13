@@ -23,6 +23,49 @@ worklog는 **인계장이지 아카이브가 아니다.** 판단과 근거는 AD
 | `docs/worklog.md` | 최근 5개 |
 | `docs/worklog-archive/2026-08.md` | 그 이전 (월별) |
 
+## 2026-08-13 (7) — ADR-0029 개정 + **`[1a]`·`[1s]` 계약 신설.** 구현 없이 계약부터
+
+순서 1번의 앞쪽 절반이다. **스테이지 코드는 한 줄도 안 썼다** — ADR-0034 §5의 순서
+(`판단 → ADR → 스펙(+schema/) → 코드`)를 지키면 계약이 먼저이고, 계약은 구현 없이도
+픽스처로 검증된다. `python tools/spec_audit.py` → **0건**, **941개 테스트** 통과(+40).
+
+### 한 일
+
+- **ADR-0029를 개정했다** (`제안` → `승인`, 맨 아래 «개정 이력»에 원문 대조표).
+  7단 고정·하드코딩 분량·`turning_point_at_char`·시퀀스 제약이 ADR-0033·0034에
+  걸려 있었다. **3분할 결정 자체는 그대로다**
+- **`specs/schema/outline.schema.json`·`sceneplan.schema.json` 신설.**
+  `schemas/outline.py`·`sceneplan.py`는 **로드만 한다**
+- `script-rules.json`에 `checks.act_budget_tolerance`(단 예산 허용 오차) 하나 추가
+- 픽스처 2개(후버댐 25씬, 550자)와 계약 테스트 40개
+
+### 이번에 계약으로 못박은 것 셋 (구현이 지킬 것)
+
+1. **`says`는 문장이 아니다.** 존댓말 종결어미·수사 의문문·시그니처 문구가 `says`에
+   들어오면 **오류**다. `[1s]`가 문장을 쓰면 `[1w]`가 할 일이 없어진다
+2. **단 예산이 이어진다.** `[1a]`의 단 예산 = 그 단에 속한 씬 `char_budget`의 합
+   (±`act_budget_tolerance`). 분량 산수는 `[1a]`에서 **한 번만** 한다
+3. **`[1w]`의 전수 대조 목록을 손으로 적지 않는다.** `sceneplan.carried_fields()`가
+   두 스키마의 교집합을 계산한다(12개). 계획에만 있는 것은 `act`·`says`·`char_budget`
+
+`framing`·`transition`은 **선택 필드로 남겼다.** 필수로 만들면 세션이 아무 값이나 채워
+`[5]`의 `구도 기본값 N씬`이 죽는다 — 그게 ADR-0033을 되돌릴지 보는 유일한 눈이다.
+
+### 다음 (순서 1번의 나머지)
+
+`prompts/05-script.md`를 셋으로 나누고(`08-outline.md`·`09-sceneplan.md`·`10-write.md`)
+`stages/script.py`를 가른다. **계약과 검증기는 이미 있으므로 세션 프롬프트와 오케스트레이션만
+남았다.** `stages/validate.py`의 재진입 매핑(분량→`[1w]`, 씬·연출→`[1s]`, 그라운딩·수미상관→`[1a]`)도
+같이. 그 뒤 후버댐 대본 재생성 → 순서 2번(ADR-0031)으로.
+
+### 함정
+
+- **`[1] script`는 여전히 옛 코드다.** 지금 돌리면 옛 구조 대본이 나오고 검증은 통과한다
+- 팩트시트 스키마는 아직 `schemas/factsheet.py`에 선언돼 있다 (`specs/schema/` 밖).
+  그래서 `grounded_in`은 **id 형식을 검사하지 않고** 팩트시트 실물과 대조한다
+  (`outline.unknown_fact_ids()`) — 형식을 두 곳에 적지 않으려는 것이다
+- 아래 (6) 항목의 프록시 정책 미반영은 **그대로 남아 있다**
+
 ## 2026-08-13 (6) — **스펙이 ADR을 따라잡았다.** ⚠ 예외 해제, `specs/schema/` 신설
 
 worklog 순서 0번(스펙 재작성)을 끝냈다. **ADR-0033·0034가 `승인`이 됐고
@@ -288,52 +331,3 @@ core 569자 기준 2회차는 **6.62자/초**로 레퍼런스 5.4~6.2를 넘는�
 3. `[6]`의 `TIMEOUT = 180`이 relax에 짧다 (3씬이 걸렸다). 어댑터 기본값은 1800이다
 4. TTS 길이 편차 → tempo 역산 ADR
 5. Discord 모드 전환은 ADR-0025의 수정이 필요하다 (공식 웹 모드가 막힌 사실 + 4분할 경로)
-
-## 2026-08-13 (2) — MJ 어댑터 완성. **막힌 것은 코드가 아니라 mjopen 라이선스다**
-
-`[6]`에 `imagegen/midjourney.py`가 붙었다 (`c245ad9`). 898개 테스트 통과.
-`run.py imagegen`의 기본 프로바이더가 `midjourney`다 — `[5]`의 기본 방언 `mj`와 짝을
-맞춰야 아무 옵션 없이 돌린 파이프라인이 `DialectMismatch`로 안 멈춘다.
-
-**ADR-0025의 응답 기술을 실측으로 정정했다.** `imageUrls`는 URL 문자열 배열이 아니라
-`{url, thumbnail}` **객체 배열**이고 `url`이 `cdn.midjourney.com/<uuid>/0_0.png`(PNG)다.
-최상위 `imageUrl`은 4장 병합 그리드(webp, 1632×2912)라 씬 이미지가 아니다.
-
-### 이미지가 한 장도 안 나온다 — 원인 확정
-
-```
-[01:01:35 INF] License validation completed. Result: True
-[01:01:35 ERR] 许可证验证失败  ← Midjourney.License.YmTaskService.SubmitTaskAsync
-DisabledReason = '许可证验证失败，自动禁用账号'
-```
-
-**원격 검증은 통과하는데 제출 실행 경로에서 거절한다.** 계정을 켜면 mjopen이 십수 초
-안에 자동으로 다시 끈다. 27씬 전부 `code=3 无可用的账号实例`로 즉시 실패했다.
-
-배제한 것 두 가지 — **다시 시도하지 말 것.**
-
-1. **계정 enable 토글이 아니다.** `POST /mj/admin/accounts-enable`로 켰고 제출은
-   `code:1`로 받아졌다. 그 상태에서 잡이 라이선스 오류로 죽고 계정이 다시 꺼졌다
-2. **UserToken이 아니다.** 새 쿠키로 `PUT /mj/admin/account-reconnect/{id}` 재연결
-   성공 → 제출 `code:1` → **같은 자리에서 같은 오류.** 토큰은 처음부터 무관했다
-
-`docker/data/mj.json`의 `LicenseKey`는 여전히 `trueai.org`(기본 데모값)다. 어제 15시엔
-같은 키로 25번 통과하고 relax 11잡을 뽑았다. 이미지 `ghcr.io/trueai-org/midjourney-proxy:latest`
-(2일 전 pull). MJ 구독 자체는 멀쩡하다 (`Fast Time Remaining 14.73/15.0 h`).
-
-**남은 선택지는 셋이고 전부 코드 밖이다:** ①trueai.org 라이선스 정상화 ②라이선스 게이트가
-없는 옛 이미지 태그로 내리기(도박) ③MJ 웹에서 27장 수동. 사용자가 나노바나나 경로는
-쓰지 않기로 했다.
-
-### 관리 API 메모 (다음에 또 필요하다)
-
-- 계정 조회/수정은 **camelCase**다. sqlite 행(PascalCase)을 그대로 PUT하면 `参数异常`
-- `GET /mj/admin/account/{id}` → 필드 수정 → `PUT /mj/admin/account-reconnect/{id}`
-- 일괄 활성화 `POST /mj/admin/accounts-enable` (ID 배열)
-- 계정 DB는 `midjourney-proxy/docker/data/mj_sqlite.db`, 설정은 같은 폴더 `mj.json`
-
-### 이 세션에서 바뀐 외부 상태
-
-MJ 계정의 `userToken`을 사용자가 준 새 쿠키로 갈았다. 계정은 라이선스 때문에
-`enable=False`로 다시 꺼져 있다. **그 쿠키는 이 세션 대화 기록에 남아 있다** —
-신경 쓰이면 MJ 세션을 로그아웃해 무효화할 것.

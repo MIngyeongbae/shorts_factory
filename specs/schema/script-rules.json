@@ -37,7 +37,9 @@
   "checks": {
     "_role": "[2] validate가 보는 것. 구조 검증은 없다 — 분량·그라운딩·수미상관뿐이다 (ADR-0033 §5).",
     "min_numbers": 2,
-    "visual_goal_overlap_limit": 0.7
+    "visual_goal_overlap_limit": 0.7,
+    "_act_budget_tolerance": "[1s]의 씬별 char_budget 합이 [1a]의 단 예산에서 벗어나도 되는 폭(자). line_chars_target의 하한보다 작아야 한다 — 그래야 줄 하나를 통째로 다른 단으로 옮긴 것이 걸린다 (ADR-0029 개정).",
+    "act_budget_tolerance": 15
   },
   "signatures": {
     "_role": "채널 브랜드 문구. ADR-0033 §2가 위치 제약을 풀고 필수에서 권장으로 내렸다 — 44~54초는 폐기된 고정 구조의 전환점 단에서 온 값이고, 문제 해결 서사가 아닌 편에서는 쓰지 않아도 된다. 없으면 경고이고 막지 않는다.",

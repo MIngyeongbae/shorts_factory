@@ -1,0 +1,270 @@
+{
+  "topic": "후버댐 콘크리트 냉각",
+  "scenes": [
+    {
+      "scene_id": 1, "act": 1, "beat": "hook_fact",
+      "says": "후버댐이 한 덩어리 콘크리트가 아니라는 사실",
+      "char_budget": 20,
+      "visual_goal": "댐 전체의 압도적인 크기 — 본문이 이름만 부르고 넘어가는 것",
+      "subject": "협곡을 가로막은 후버댐 전경",
+      "subject_anchor": ["후버댐", "콜로라도강"],
+      "subject_scale": "wide",
+      "framing": "drone_wide", "transition": "dissolve",
+      "camera": "slow_zoom_in", "motion": "kenburns"
+    },
+    {
+      "scene_id": 2, "act": 1, "beat": "hook_twist",
+      "says": "230개 블록을 따로 부어 쌓은 조립체라는 것",
+      "char_budget": 24,
+      "visual_goal": "댐 몸통이 격자로 갈라진 구조 — 말로는 '조립체' 한 단어로 지나가는 것",
+      "subject": "기둥 블록으로 나뉜 후버댐 단면 도해",
+      "subject_anchor": ["후버댐"],
+      "subject_scale": "diagram",
+      "framing": "cross_section", "transition": "hard_cut",
+      "camera": "static", "motion": "kenburns",
+      "emphasis": {"type": "big_red_text", "value": "230개"}
+    },
+    {
+      "scene_id": 3, "act": 1, "beat": "context_number",
+      "says": "높이 221미터, 바닥 두께 200미터의 규모",
+      "char_budget": 22,
+      "visual_goal": "사람과 나란히 놓은 댐의 높이 비교",
+      "subject": "댐 하부에 선 작업자와 벽면의 크기 대비",
+      "subject_scale": "wide",
+      "framing": "problem_wide", "transition": "dissolve",
+      "camera": "tilt_up", "motion": "kenburns"
+    },
+    {
+      "scene_id": 4, "act": 1, "beat": "context",
+      "says": "이 부피를 통으로 부으려던 초기 계획",
+      "char_budget": 22,
+      "visual_goal": "거푸집에 콘크리트가 통째로 부어지는 모습",
+      "subject": "협곡 거푸집에 콘크리트를 붓는 1930년대 공사 현장",
+      "subject_anchor": ["콘크리트", "거푸집"],
+      "subject_scale": "wide",
+      "framing": "attempt_medium", "transition": "dissolve",
+      "camera": "pan_right", "motion": "kenburns"
+    },
+
+    {
+      "scene_id": 5, "act": 2, "beat": "context",
+      "says": "콘크리트가 굳는 것은 마르는 것이 아니라 화학 반응이라는 것",
+      "char_budget": 21,
+      "visual_goal": "시멘트 입자와 물이 결합하며 열이 나는 반응 도해",
+      "subject": "시멘트 수화 반응 도해",
+      "subject_scale": "diagram",
+      "framing": "section_diagram", "transition": "dissolve",
+      "camera": "slow_zoom_in", "motion": "kenburns"
+    },
+    {
+      "scene_id": 6, "act": 2, "beat": "context_number",
+      "says": "반응하는 동안 스스로 내는 열",
+      "char_budget": 23,
+      "visual_goal": "굳는 콘크리트 내부의 온도 분포",
+      "subject": "열화상으로 본 콘크리트 블록 내부 온도",
+      "subject_scale": "diagram",
+      "framing": "cross_section", "transition": "dissolve",
+      "camera": "static", "motion": "kenburns"
+    },
+    {
+      "scene_id": 7, "act": 2, "beat": "failed_solution",
+      "says": "부어 놓고 식기를 기다리는 가장 단순한 방법",
+      "char_budget": 22,
+      "visual_goal": "텅 빈 공사장에서 시간만 흐르는 정경",
+      "subject": "인적 없는 댐 공사 현장",
+      "subject_scale": "wide",
+      "framing": "failure_result_wide", "transition": "hard_cut",
+      "camera": "static", "motion": "kenburns"
+    },
+    {
+      "scene_id": 8, "act": 2, "beat": "failure_reason",
+      "says": "다 식는 데 걸리는 시간 125년",
+      "char_budget": 24,
+      "visual_goal": "125년이라는 시간의 길이 — 세대가 바뀌는 눈금",
+      "subject": "1935년부터 2060년까지 이어지는 연표",
+      "subject_scale": "diagram",
+      "framing": "failure_diagram", "transition": "hard_cut",
+      "camera": "pan_left", "motion": "kenburns",
+      "emphasis": {"type": "big_red_text", "value": "125년"}
+    },
+    {
+      "scene_id": 9, "act": 2, "beat": "context_number",
+      "says": "댐 완공 예정은 5년 뒤라는 사정",
+      "char_budget": 20,
+      "visual_goal": "공사 일정표와 냉각 기간의 길이 차",
+      "subject": "공사 일정표 위에 겹친 냉각 기간 막대",
+      "subject_scale": "diagram",
+      "framing": "problem_diagram", "transition": "dissolve",
+      "camera": "static", "motion": "kenburns"
+    },
+    {
+      "scene_id": 10, "act": 2, "beat": "dilemma_peak",
+      "says": "짓고 나서 100년을 기다릴 수 없는 상황",
+      "char_budget": 22,
+      "visual_goal": "완공된 댐 위로 흐르는 시간의 무게",
+      "subject": "공사가 멈춘 협곡의 저녁 풍경",
+      "subject_scale": "wide",
+      "framing": "problem_wide", "transition": "dissolve",
+      "camera": "slow_zoom_out", "motion": "kenburns"
+    },
+
+    {
+      "scene_id": 11, "act": 3, "beat": "failure_reason",
+      "says": "겉은 먼저 식고 속은 뜨거운 채로 남는다는 점",
+      "char_budget": 22,
+      "visual_goal": "표면과 중심의 온도 차이가 만드는 층",
+      "subject": "온도 층이 보이는 콘크리트 단면 도해",
+      "subject_scale": "diagram",
+      "framing": "failure_diagram", "transition": "dissolve",
+      "camera": "slow_zoom_in", "motion": "kenburns"
+    },
+    {
+      "scene_id": 12, "act": 3, "beat": "failure_reason",
+      "says": "식는 속도 차가 만드는 수축 차",
+      "char_budget": 24,
+      "visual_goal": "서로 다른 속도로 줄어드는 두 층이 서로를 당기는 힘",
+      "subject": "수축 방향 화살표를 얹은 콘크리트 단면",
+      "subject_scale": "diagram",
+      "framing": "section_diagram", "transition": "dissolve",
+      "camera": "static", "motion": "kenburns"
+    },
+    {
+      "scene_id": 13, "act": 3, "beat": "failure_reason",
+      "says": "그 힘이 결국 균열로 나타난다는 것",
+      "char_budget": 20,
+      "visual_goal": "콘크리트 표면을 가르는 균열의 실제 모양",
+      "subject": "갈라진 콘크리트 표면 접사",
+      "subject_scale": "close",
+      "framing": "failure_closeup", "transition": "hard_cut",
+      "camera": "slow_zoom_in", "motion": "kling"
+    },
+    {
+      "scene_id": 14, "act": 3, "beat": "failed_solution",
+      "says": "표면에 물을 뿌려 식히는 시도",
+      "char_budget": 22,
+      "visual_goal": "표면에만 닿고 안으로 못 들어가는 물",
+      "subject": "콘크리트 벽면에 물을 뿌리는 작업자",
+      "subject_scale": "close",
+      "framing": "attempt_medium", "transition": "dissolve",
+      "camera": "pan_right", "motion": "kenburns"
+    },
+    {
+      "scene_id": 15, "act": 3, "beat": "dilemma_peak",
+      "says": "겉만 식히면 온도 차가 오히려 벌어진다는 역효과",
+      "char_budget": 22,
+      "visual_goal": "겉을 식힐수록 커지는 내부와의 격차",
+      "subject": "표면 냉각 전후의 온도 차 비교 도해",
+      "subject_scale": "diagram",
+      "framing": "failure_diagram", "transition": "hard_cut",
+      "camera": "static", "motion": "kenburns"
+    },
+
+    {
+      "scene_id": 16, "act": 4, "beat": "turning_point",
+      "says": "댐을 통으로 짓기를 포기하는 발상",
+      "char_budget": 19,
+      "visual_goal": "하나의 덩어리가 격자로 갈라지는 순간",
+      "subject": "블록 단위로 분할되는 댐 몸통 도해",
+      "subject_scale": "diagram",
+      "framing": "solution_diagram", "transition": "hard_cut",
+      "camera": "slow_zoom_out", "motion": "kenburns",
+      "emphasis": {"type": "sparkle_particles", "value": "분할"}
+    },
+    {
+      "scene_id": 17, "act": 4, "beat": "solution_step",
+      "says": "가로세로로 나눈 230개의 기둥 블록",
+      "char_budget": 23,
+      "visual_goal": "블록들이 격자로 놓인 배치와 크기 차이",
+      "subject": "위에서 본 후버댐 블록 배치도",
+      "subject_anchor": ["후버댐"],
+      "subject_scale": "diagram",
+      "framing": "aerial_diorama", "transition": "dissolve",
+      "camera": "tilt_down", "motion": "kenburns"
+    },
+    {
+      "scene_id": 18, "act": 4, "beat": "solution_step",
+      "says": "블록마다 따로 붓고 따로 식히는 방식",
+      "char_budget": 22,
+      "visual_goal": "높이가 제각각인 블록들이 계단처럼 올라가는 공사 현장",
+      "subject": "블록 높이가 어긋난 후버댐 축조 현장",
+      "subject_scale": "wide",
+      "framing": "solution_medium", "transition": "dissolve",
+      "camera": "pan_left", "motion": "kenburns"
+    },
+    {
+      "scene_id": 19, "act": 4, "beat": "solution_number",
+      "says": "블록 안에 묻은 강관 총연장 933킬로미터",
+      "char_budget": 24,
+      "visual_goal": "콘크리트 속을 지나는 배관망의 밀도",
+      "subject": "블록 내부를 지그재그로 지나는 냉각 강관 도해",
+      "subject_scale": "diagram",
+      "framing": "cross_section", "transition": "dissolve",
+      "camera": "slow_zoom_in", "motion": "kenburns",
+      "emphasis": {"type": "big_red_text", "value": "933km"}
+    },
+    {
+      "scene_id": 20, "act": 4, "beat": "solution_step",
+      "says": "현장에 지은 냉동 공장에서 얼음물을 흘려보내는 방법",
+      "char_budget": 22,
+      "visual_goal": "강관을 지나는 찬물이 속부터 열을 걷어 가는 흐름",
+      "subject": "냉각수가 흐르는 강관과 주변 온도 변화 도해",
+      "subject_scale": "diagram",
+      "framing": "solution_diagram", "transition": "dissolve",
+      "camera": "pan_right", "motion": "kenburns"
+    },
+    {
+      "scene_id": 21, "act": 4, "beat": "solution_number",
+      "says": "125년이 2년으로 줄어든 결과",
+      "char_budget": 22,
+      "visual_goal": "두 기간의 길이 차 — 눈금 하나에 나란히",
+      "subject": "125년과 2년을 나란히 놓은 막대 비교",
+      "subject_scale": "diagram",
+      "framing": "solution_diagram", "transition": "hard_cut",
+      "camera": "static", "motion": "kenburns",
+      "emphasis": {"type": "big_red_text", "value": "2년"}
+    },
+
+    {
+      "scene_id": 22, "act": 5, "beat": "solution_step",
+      "says": "다 식은 블록 사이 틈에 시멘트 반죽을 밀어 넣어 하나로 잇는 마무리",
+      "char_budget": 22,
+      "visual_goal": "블록과 블록 사이의 좁은 틈, 그 안을 채우는 반죽",
+      "subject": "블록 이음새에 그라우트를 주입하는 접사",
+      "subject_scale": "close",
+      "framing": "detail_closeup", "transition": "dissolve",
+      "camera": "slow_zoom_in", "motion": "kenburns"
+    },
+    {
+      "scene_id": 23, "act": 5, "beat": "present_link",
+      "says": "지금 서 있는 후버댐이 그 조립체라는 것",
+      "char_budget": 24,
+      "visual_goal": "오늘의 댐 표면에 남은 블록 경계선",
+      "subject": "햇빛에 드러난 후버댐 표면의 블록 이음매",
+      "subject_anchor": ["후버댐"],
+      "subject_scale": "close",
+      "framing": "present_closeup", "transition": "dissolve",
+      "camera": "pan_left", "motion": "kenburns"
+    },
+    {
+      "scene_id": 24, "act": 5, "beat": "present_link",
+      "says": "같은 방식이 오늘날 대형 댐 공사에 그대로 쓰인다는 현재",
+      "char_budget": 20,
+      "visual_goal": "현대 댐 공사장에서 같은 배관을 까는 장면",
+      "subject": "냉각 배관을 설치하는 현대 댐 공사 현장",
+      "subject_scale": "wide",
+      "framing": "present_wide", "transition": "dissolve",
+      "camera": "pan_right", "motion": "kenburns"
+    },
+    {
+      "scene_id": 25, "act": 5, "beat": "ending_echo",
+      "says": "후버댐은 한 덩어리가 아니라 230개의 조립체라는 처음 문장으로 돌아오기",
+      "char_budget": 22,
+      "visual_goal": "1번 씬과 같은 각도의 댐 전경 — 이번에는 블록 경계가 보인다",
+      "subject": "블록 경계가 드러난 후버댐 전경",
+      "subject_anchor": ["후버댐"],
+      "subject_scale": "wide",
+      "framing": "drone_wide", "transition": "dissolve",
+      "camera": "slow_zoom_out", "motion": "kenburns"
+    }
+  ]
+}

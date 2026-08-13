@@ -50,6 +50,8 @@ def load(name: str) -> dict[str, Any]:
 
 VOCAB: dict[str, Any] = load("vocab.json")
 SCENE_SCHEMA_DOC: dict[str, Any] = load("scene.schema.json")
+OUTLINE_SCHEMA_DOC: dict[str, Any] = load("outline.schema.json")
+SCENEPLAN_SCHEMA_DOC: dict[str, Any] = load("sceneplan.schema.json")
 SCRIPT_RULES: dict[str, Any] = load("script-rules.json")
 BEAT_DEFAULTS: dict[str, Any] = load("beat-defaults.json")
 
@@ -59,6 +61,8 @@ REGISTRY: Registry = Registry().with_resources(
     for name, doc in (
         ("vocab.json", VOCAB),
         ("scene.schema.json", SCENE_SCHEMA_DOC),
+        ("outline.schema.json", OUTLINE_SCHEMA_DOC),
+        ("sceneplan.schema.json", SCENEPLAN_SCHEMA_DOC),
     )
 )
 

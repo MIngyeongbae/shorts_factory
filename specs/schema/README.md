@@ -14,8 +14,14 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 |---|---|---|
 | `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·motion·구도 토큰·오버레이·전환·방언 + 검증된 스타일 문자열 | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[1s]` 세션 프롬프트 |
 | `scene.schema.json` | 씬 계약(`06-script.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
+| `outline.schema.json` | `[1a]` 산출(`07-outline.json`) — 훅 각도와 단 구성 (ADR-0029) | `schemas/outline.py` |
+| `sceneplan.schema.json` | `[1s]` 산출(`08-sceneplan.json`) — 씬 분할·글/그림 분담·연출 선택 (ADR-0029) | `schemas/sceneplan.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프)과 시그니처 문구 | `schemas/script_rules.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
+
+세 스키마는 대본 하나가 세 단계를 지나며 자라는 모습이다. `08-sceneplan.json`에서
+`06-script.json`으로 **어느 필드가 그대로 건너가는지는 아무 데도 손으로 적지 않는다** —
+두 스키마의 교집합이고 `sceneplan.carried_fields()`가 계산한다.
 
 ## 규칙
 

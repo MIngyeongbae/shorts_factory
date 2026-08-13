@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "outline.schema.json",
+  "title": "07-outline.json ([1a] outline 산출)",
+  "description": "무엇이 흥미롭고 어떤 순서로 말하는가. 1부 내부 파일이고 2부는 읽지 않는다 (ADR-0029, ADR-0017). 사람이 읽는 근거는 specs/01-script-template.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3). 씬도 문장도 여기 없다 — 씬은 sceneplan.schema.json, 문장은 scene.schema.json의 text다.",
+
+  "type": "object",
+  "required": ["topic", "hook_candidates", "chosen_hook", "why_chosen", "acts"],
+  "additionalProperties": false,
+  "properties": {
+    "topic": { "type": "string", "minLength": 1 },
+
+    "hook_candidates": {
+      "type": "array",
+      "minItems": 2,
+      "description": "각도 후보. 하나만 내면 고른 것이 아니다 — [1b] score가 대본 후보를 채점하는 것과 축이 다르다.",
+      "items": { "$ref": "#/$defs/hook" }
+    },
+    "chosen_hook": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "hook_candidates의 인덱스. 실재하는 후보를 가리켜야 한다 — 범위 검사는 schemas/outline.py가 한다."
+    },
+    "why_chosen": {
+      "type": "string",
+      "minLength": 1,
+      "description": "이 각도를 고른 이유. [1s] 프롬프트에 그대로 실어 단계 간 의도 손실을 막는다 (ADR-0029 되돌릴 조건)."
+    },
+
+    "acts": {
+      "type": "array",
+      "minItems": 2,
+      "description": "이 소재에 맞게 설계한 단 구성 (ADR-0033 §2). 고정 목록이 아니므로 개수도 이름도 순서도 편마다 다르다. 최소 2단인 것은 훅이 앞에 있고 마지막 단이 훅의 소재로 돌아와야 하기 때문이다.",
+      "items": { "$ref": "#/$defs/act" }
+    },
+
+    "notes": { "type": "string" }
+  },
+
+  "$defs": {
+    "hook": {
+      "type": "object",
+      "required": ["claim", "why_surprising", "grounded_in"],
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "type": "string",
+          "minLength": 1,
+          "description": "훅으로 세울 주장. 문장 다듬기는 [1w] 몫이라 여기서는 각도만 알아보면 된다."
+        },
+        "why_surprising": {
+          "type": "string",
+          "minLength": 1,
+          "description": "무슨 통념과 어긋나는가. 이것이 비면 각도가 아니라 요약이다."
+        },
+        "grounded_in": { "$ref": "#/$defs/fact_ids" }
+      }
+    },
+
+    "act": {
+      "type": "object",
+      "required": ["act", "name", "char_budget", "must_convey", "grounded_in"],
+      "additionalProperties": false,
+      "properties": {
+        "act": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1부터 연번. 08-sceneplan.json의 씬이 이 번호로 단을 가리킨다."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "이 편에서만 쓰는 이름이다. 어휘가 아니므로 이 값으로 분기하는 코드를 만들지 않는다 (ADR-0033 §2)."
+        },
+        "char_budget": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "이 단에 배분한 글자 수. 합계는 script-rules.json의 limits.total_chars다 — 분량 산수를 파이프라인에서 한 번만 하는 자리다."
+        },
+        "must_convey": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "이 단이 반드시 전달할 것. 문장이 아니라 항목이다."
+        },
+        "grounded_in": { "$ref": "#/$defs/fact_ids" }
+      }
+    },
+
+    "fact_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "팩트시트 facts[].id 목록. ADR-0007의 그라운딩을 씬이 아니라 단 단위로 먼저 건다. 계약은 형식이 아니라 **실재 여부**이고, 그 대조는 팩트시트를 함께 읽는 outline.unknown_fact_ids()가 한다 — id 형식을 여기 다시 적으면 팩트시트 스키마와 갈라진다."
+    }
+  }
+}

@@ -54,6 +54,8 @@ STALE_STAGES = {r"(?<!옛 )\[1\.\s*script\]": "[1. script] → [1a]/[1s]/[1w] (A
 REACH = {
     "07-outline.json": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
     "08-sceneplan.json": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
+    "outline.schema.json": ("specs/05-pipeline.md", "schemas/outline.py"),
+    "sceneplan.schema.json": ("specs/05-pipeline.md", "schemas/sceneplan.py"),
     "refs.json": ("specs/05-pipeline.md",),
     "image_review.json": ("specs/05-pipeline.md",),
     "specs/schema/": ("CLAUDE.md", "specs/05-pipeline.md"),

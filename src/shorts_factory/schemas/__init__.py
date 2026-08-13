@@ -1,4 +1,4 @@
-from . import vocab
+from . import outline, sceneplan, vocab
 from .factsheet import (
     FACTSHEET_SCHEMA,
     MIN_NUMBERS,
@@ -39,6 +39,8 @@ from .timed_scenes import (
     build_timed_scenes,
     validate_timed_scenes,
 )
+from .outline import validate_outline
+from .sceneplan import carried_fields, validate_sceneplan
 from .visual_rules import (
     FRAMINGS,
     OVERLAY_TYPES,
@@ -50,6 +52,11 @@ from .visual_rules import (
 
 __all__ = [
     "vocab",
+    "outline",
+    "sceneplan",
+    "carried_fields",
+    "validate_outline",
+    "validate_sceneplan",
     "FRAMINGS",
     "OVERLAY_TYPES",
     "OVERLAYS",
