@@ -21,12 +21,12 @@
       "why": "실행 후 대기의 상한. 동시 3에 27씬이면 9사이클이라 시간 비용은 ~1분이다 (ADR-0025 정정의 표)"
     },
     "dayDrawLimit": {
-      "value": 200,
-      "why": "fast+turbo 일일 상한. 시간 비용 0이고 재시도 폭주에서 계정을 지키는 마지막 방어선이다"
+      "value": -1,
+      "why": "무제한. ADR-0025 '일일 상한 철회'(2026-08-14) — 사람 결정이고, 프록시 실제 값이 처음부터 -1이었으므로 선언을 실제에 맞춘 것이다. 잃는 것은 밴 방어가 아니라 재시도 폭주 시의 사고 방어다"
     },
     "dayRelaxDrawLimit": {
-      "value": 200,
-      "why": "relax 일일 상한. dayDrawLimit과 별개 필드라 둘 다 켜야 한다"
+      "value": -1,
+      "why": "무제한. dayDrawLimit과 별개 필드라 둘 다 같이 간다. 관측은 watch의 account.dayRelaxDrawCount로 계속한다 — 하루 200을 넘는 일이 실제로 생기면 그때 다시 본다"
     },
     "enableRelaxToFast": {
       "value": false,
@@ -70,7 +70,7 @@
     "account.riskControlUnlockTime": "비어 있지 않으면 계정이 risk control에 걸린 것이다. 한 번이라도 걸리면 간격 정정을 폐기하고 원안(30~180초)으로 간다 (ADR-0025)",
     "setting.alertNotify.warningCount": "0보다 커지면 MJ가 경고를 준 것이다. 밴의 선행 신호이므로 다음 편을 돌리기 전에 사람이 본다",
     "setting.alertNotify.errorCount": "위와 같다",
-    "account.dayRelaxDrawCount": "상한(200)에 얼마나 가까운지. 편당 27잡이라 하루 7편이면 닿는다"
+    "account.dayRelaxDrawCount": "하루에 실제로 몇 잡을 던졌는지. 상한을 철회했으므로(ADR-0025, 2026-08-14) 이 값은 더 이상 '상한까지 얼마나 남았나'가 아니라 **상한을 되돌릴지 판단하는 유일한 근거**다. 편당 27잡이라 하루 7편이면 200에 닿는다"
   },
 
   "not_adopted": {

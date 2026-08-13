@@ -44,13 +44,31 @@ worklog는 **인계장이지 아카이브가 아니다.** 판단과 근거는 AD
   문장이 그 줄에 둘이었다 — 하나로 합치고 **숫자는 어디에도 안 적는다**로 바꿨다
 - 974개 통과(+20), 감사 0건
 
+### 프록시 정책 — 전역만 손봤다. 계정은 그대로다
+
+병렬로 3개를 던지게 되면서 간격 정책의 무게가 커졌다. 그래서 실제 값을 다시 읽었고
+**전역 설정이 계정보다 나빴다** — 경보가 꺼져 있어 경고 카운터가 세어지지도 않았다.
+
+- **전역 3개를 켰다** (`POST /mj/admin/setting`, 재연결 위험 없음):
+  `alertNotify.enable`·`enableAutoCollectOfficialBannedWords`·`bannedLimiting.enable`
+  전부 `false` → `true`. `enableVideo`는 원래 `true`
+- **일일 상한을 철회했다** (사람 결정). `dayDrawLimit`/`dayRelaxDrawLimit`을 `-1`로
+  ADR-0025·정책 파일에 선언했다 — 프록시 실제 값이 처음부터 `-1`이었으므로 **바꾼 것이
+  아니라 선언을 실제에 맞춘 것**이다. 잃은 것은 밴 방어가 아니라 재시도 폭주 시의 사고
+  방어다 (ADR-0025 "일일 상한 철회"에 되돌릴 조건까지 적었다)
+- **계정 간격은 안 건드렸다.** `interval: 1.2`, `afterIntervalMin/Max: 1.2` 그대로다.
+  계정 수정 엔드포인트가 `PUT /mj/admin/account-reconnect/{id}` — **"수정하고 Discord
+  재연결"**이라 실패하면 이미지 생성이 멈춘다. 사람이 웹 UI에서 하기로 했다
+- **`enableRelaxToFast`는 API로 설정할 수 없다.** `DiscordAccountConfig` 스키마(48필드)에
+  아예 없다. 지금 `null`이다 — 정책 파일이 선언한 값을 API가 안 받는다는 것은 ADR-0032가
+  모르던 사실이고, `sf mj-policy apply`를 만들 때 걸릴 자리다
+
 ### 다음 세션이 알아야 할 것
 
-1. **정책 드리프트가 아직 살아 있다.** 오늘 프록시를 직접 읽어 확인했다 —
-   `interval: 1.2`, `afterIntervalMin/Max: 1.2`, `dayRelaxDrawLimit: -1`.
-   ADR-0032가 2026-08-13에 발견한 그 값 그대로다. `config/mj-proxy.policy.json`은
-   있지만 **읽는 코드가 0줄**이고 `sf mj-policy apply`도 없다. 병렬로 3개를 던지게 됐으니
-   간격 정책의 무게가 전보다 커졌다
+1. **계정 간격이 아직 `1.2` 고정이다.** `min == max`라 랜덤이 0인 그 상태 그대로이고,
+   이제 동시 3으로 던진다. 웹 UI(`127.0.0.1:8086`)에서 `interval` 3.6 /
+   `afterIntervalMin` 1 / `afterIntervalMax` 10으로 넣으면 끝난다.
+   `config/mj-proxy.policy.json`이 정본이다
 2. worklog가 7개다. 아카이브 규칙(5개) 초과 상태이고 `2026-08-13 (5)`에 살아 있는
    운영 정보(프록시 미반영 값·함정 목록)가 있어 옮기지 않았다
 
