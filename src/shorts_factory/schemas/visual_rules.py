@@ -1,27 +1,26 @@
-"""비트 → 시각 연출 룰 테이블과 이미지 프롬프트 조립. specs/03-visual-rules.md.
+"""시각 연출 어휘와 이미지 프롬프트 조립. specs/03-visual-rules.md.
 
-`[5. prompt]`가 쓰는 유일한 판단 근거다. ADR-0001에 따라 여기 없는 연출은 만들어 내지
-않는다.
+**어휘는 이 파일에 없다.** `specs/schema/vocab.json`에서 로드한다 (ADR-0034 §3) —
+구도 토큰·오버레이 타입·스타일 문자열·배제 목록 전부. 여기 있는 것은 그 값을 프롬프트
+문자열로 조립하는 방법뿐이다.
 
-## 이 모듈이 스펙 03에서 그대로 옮겨온 것
+## 연출을 고르는 것은 이 모듈이 아니다 (ADR-0033 §3)
 
-- 베이스 스타일 3줄 (`BASE_STYLE`, `COMPOSITION`, 우하단 파티클 = `GLOBAL_OVERLAYS`)
-- 구도 표 `(beat × subject_scale) → 토큰` 36칸 (`FRAMING_TABLE`, ADR-0018)
-- 구도 토큰 → 샷 21행 (`FRAMINGS`)
-- 비트별 오버레이·카메라 기본값 12행 (`BEAT_RULES`)
-- 오버레이 타입 enum 2행 (`OVERLAYS`, ADR-0019)
+씬마다 무엇을 쓸지는 `[1s. sceneplan]`이 정해 씬 계약에 적는다. `[5. prompt]`는
+그 값을 방언으로 옮기는 변환기이고, 씬이 값을 비웠을 때만 `beat-defaults.json`의
+**기본값**으로 떨어진다 (`vocab.default_framing`). 그 표는 지시가 아니라 폴백이며
+ADR-0033을 되돌릴 자리다.
 
 ## 방언 (ADR-0027)
 
-프롬프트 **문법**은 프로바이더마다 다르다 (`build_scene_prompt`). 룰은 다르지 않다 —
-`BASE_STYLE`·구도 표·네거티브 목록은 방언과 무관하게 같은 값이고, 바뀌는 것은 그것을
+프롬프트 **문법**은 프로바이더마다 다르다 (`build_scene_prompt`). 어휘는 다르지 않다 —
+스타일 문자열·구도 토큰·배제 항목은 방언과 무관하게 같은 값이고, 바뀌는 것은 그것을
 어떻게 적느냐뿐이다.
 
 ## 이 모듈이 다루지 않는 것
 
-- 전환 규칙·자막 스타일: 스펙 03에 있지만 `[9. assemble]` 소관이다
-- 카메라 값 결정: `camera`는 이미 씬 계약에 들어 있다 (ADR-0014에서 `[1]`이 채운다).
-  여기서는 비트 기본값과 어긋나는지 **검사만** 한다
+- 전환·자막 스타일: 스펙 03에 있지만 `[9. assemble]` 소관이다
+- 카메라 워크 파라미터: `[7. motion]` 소관이다 (스펙 03의 표)
 - 레이어 A 어노테이션: 폐기됐다 (ADR-0019). 베이스 이미지는 전 씬 클린이다
 """
 
@@ -33,78 +32,31 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-# --- 베이스 스타일 (specs/03 "베이스 스타일 (전 씬 공통)") -------------------
+from . import vocab
 
-#: specs/03 "베이스 스타일" — 펜선·수채 위의 극사실 건축 렌더링 (ADR-0023).
-#: 실호출 6회로 검증한 문구다. 스펙 03이 유일한 출처이므로 여기서 고쳐 쓰지 않는다.
-#: "realism dominant"가 핵심이다 — 수채로 뭉개면 재질이 사라지고, 이 채널에서
-#: 재질은 곧 설명이다 (콘크리트 골재·거푸집 나뭇결·암반 층리, ADR-0022).
-BASE_STYLE = (
-    "photorealistic architectural rendering on white paper, mixed media: "
-    "the focal subject rendered with true-to-life detail, materials and lighting; "
-    "colour laid in as controlled watercolour washes over fine graphite and "
-    "technical-pen underdrawing, with construction and guide lines left visible; "
-    "realism dominant over painterly looseness; "
-    "detail and colour fall away toward the edges into bare paper"
-)
+# --- 베이스 스타일 (vocab.json meta.style) -----------------------------------
+#
+# 실호출 6회로 검증한 문구다. "realism dominant"가 핵심이다 — 수채로 뭉개면 재질이
+# 사라지고, 이 채널에서 재질은 곧 설명이다 (ADR-0022·0023).
 
-#: "9:16 구도, 피사체는 중앙~상단 1/3에 배치 (하단 1/3은 자막 영역으로 비움)"
-COMPOSITION = (
-    "vertical 9:16; subject placed in the centre to upper third; "
-    "bottom third left empty for subtitles"
-)
+BASE_STYLE: str = vocab.style("base_style")
+COMPOSITION: str = vocab.style("composition")
+ASPECT_RATIO: str = vocab.style("aspect_ratio")
+RESOLUTION: str = vocab.style("resolution")
+STYLE_ANCHOR_DIR: str = vocab.style("style_anchor_dir")
 
-ASPECT_RATIO = "9:16"
+#: 어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서
+#: 실호출로 검증된 값이라(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 유도하지 않는다.
+GLOBAL_NEGATIVES: tuple[str, ...] = tuple(vocab.style("negatives")["nb2"])
+MJ_GLOBAL_NEGATIVES: tuple[str, ...] = tuple(vocab.style("negatives")["mj"])
 
-#: ADR-0005 "해상도: 2K (… 4K 금지)"
-RESOLUTION = "2K"
+# --- 어휘 -------------------------------------------------------------------
 
-#: ADR-0005 "스타일 앵커 이미지 3장을 … 모든 생성 호출에 레퍼런스로 첨부"
-#: (3~5장 → 3장 고정. gemini-3.1-flash-image의 스타일 레퍼런스 상한이다 — ADR-0021)
-STYLE_ANCHOR_DIR = "assets/style_anchors"
-
-#: "우하단 반짝이 파티클(✦) 오버레이 — 후처리 공통 레이어". 씬별 룰이 아니라 전 씬 공통이라
-#: 씬 항목이 아닌 style 블록에 싣는다. 소비자는 [8. overlay]다.
-GLOBAL_OVERLAYS: tuple[dict[str, Any], ...] = (
-    {
-        "type": "sparkle_particles",
-        "layer": "B",
-        "placement": "bottom_right",
-        "scope": "all_scenes",
-    },
-)
-
-#: 어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 둘 다 레이어 B가 소유한다
-#: (자막은 스펙 03 "자막 스타일" + ADR-0002, 파티클은 위 공통 레이어).
-GLOBAL_NEGATIVES: tuple[str, ...] = (
-    "burned-in subtitles or caption bars",
-    "sparkle particle overlay",
-    # 레퍼런스 앵커 일부에 필기체 텍스처가 있어 모델이 따라 그린다. 그대로 두면
-    # 한국어를 흉내 내다 깨진 글자를 만든다 — 정확해야 하는 글자는 전부 레이어 B다
-    # (ADR-0002·0023). 실호출 6회에서 이 문구로 글자가 한 자도 나오지 않았다.
-    "any legible or handwritten text, letters, numbers or annotation scribbles",
-)
-
-#: 같은 내용을 MJ `--no`용 **항목 나열**로 편 것 (ADR-0027). 위 문장에서 기계적으로
-#: 유도하지 않는다 — `or`·`any`를 쪼개는 규칙을 만들면 문장이 바뀔 때마다 조용히 깨진다.
-#: 두 상수는 각자의 프로바이더에서 실호출로 검증된 값이다 (NB2 6회 / MJ 9잡).
-MJ_GLOBAL_NEGATIVES: tuple[str, ...] = (
-    "burned-in subtitles",
-    "caption bars",
-    "sparkle particle overlay",
-    "legible text",
-    "handwritten text",
-    "letters",
-    "numbers",
-    "annotation scribbles",
-)
-
-# --- 피사체 스케일 (specs/02, ADR-0018) --------------------------------------
-
-#: 씬 계약의 `subject_scale`. 구도 표의 열이다.
-SUBJECT_SCALES: tuple[str, ...] = ("wide", "close", "diagram")
-
-# --- 구도 토큰 → 샷 (specs/03 "구도 토큰 → 샷" 21행) -------------------------
+SUBJECT_SCALES: tuple[str, ...] = vocab.values("subject_scale")
+FRAMING_TOKENS: tuple[str, ...] = vocab.values("framing")
+OVERLAY_TYPES: tuple[str, ...] = vocab.values("overlay_type")
+DIALECTS: tuple[str, ...] = vocab.values("dialect")
+DEFAULT_DIALECT: str = vocab.meta("dialect")["default"]
 
 
 @dataclass(frozen=True)
@@ -113,128 +65,14 @@ class Framing:
 
     token: str
     shot: str
+    #: 어울리는 `subject_scale`. 표시이지 강제가 아니다 (ADR-0033 §3).
+    scale: str
 
 
 FRAMINGS: dict[str, Framing] = {
-    f.token: f
-    for f in (
-        # wide 계열
-        Framing("drone_wide", "aerial drone establishing shot, wide view of the site"),
-        Framing("aerial_diorama", "bird's-eye diorama view of the scene"),
-        Framing("attempt_medium", "medium shot of the attempted solution"),
-        Framing("solution_medium", "medium shot of the working solution"),
-        Framing("failure_result_wide", "wide shot that shows the failure outcome itself"),
-        Framing("problem_wide", "wide view of the whole problem situation"),
-        Framing(
-            "frontal_symmetric",
-            "frontal view of the key subject, symmetrical composition",
-        ),
-        Framing("present_wide", "present-day photoreal wide shot"),
-        # close 계열
-        Framing("subject_closeup", "close-up of the main subject"),
-        Framing("detail_closeup", "tight detail close-up of the solution"),
-        Framing("failure_closeup", "tight close-up of the point where it failed"),
-        Framing("problem_closeup", "tight close-up of the problem spot"),
-        Framing(
-            "frontal_closeup",
-            "frontal close-up of the key subject, symmetrical composition",
-        ),
-        Framing("present_closeup", "present-day photoreal close-up"),
-        # diagram 계열
-        Framing(
-            "section_diagram",
-            "cutaway sectional diagram, cut plane facing the camera",
-        ),
-        Framing("solution_diagram", "explanatory diagram of the attempted solution"),
-        Framing("failure_diagram", "explanatory diagram of why it failed"),
-        Framing("problem_diagram", "explanatory diagram of the problem"),
-        Framing(
-            "frontal_diagram",
-            "frontal explanatory diagram of the key subject, symmetrical layout",
-        ),
-        Framing("cross_section", "cross-section cutaway, cut plane facing the camera"),
-        Framing("present_section", "present-day photoreal shot of a cut/exposed face"),
-    )
+    token: Framing(token, item["shot"], item["scale"])
+    for token, item in vocab.meta("framing").items()
 }
-
-#: 구도가 앞 씬에서 이어진다는 표시 (hook_twist "전경 유지").
-INHERIT_PREV = "@prev"
-#: 구도가 훅 씬에서 온다는 표시 (ending_echo "훅과 동일/유사 구도 재사용").
-ECHO_HOOK = "@hook"
-
-#: 참조(`@prev`/`@hook`)가 성립하지 않을 때 쓰는 값. specs/03 "참조가 성립하지 않는 경우".
-#: 가리킬 씬이 없거나, 있어도 subject_scale이 달라 구도를 이을 수 없을 때다.
-REFERENCE_FALLBACK: dict[str, str] = {
-    INHERIT_PREV: "drone_wide",
-    ECHO_HOOK: "present_wide",
-}
-
-# --- 구도 표 (specs/03 "비트 × 스케일 → 구도 토큰" 12행 × 3열) ---------------
-
-FRAMING_TABLE: dict[str, dict[str, str]] = {
-    "hook_fact": {
-        "wide": "drone_wide",
-        "close": "subject_closeup",
-        "diagram": "section_diagram",
-    },
-    "hook_twist": {
-        "wide": INHERIT_PREV,
-        "close": "subject_closeup",
-        "diagram": "section_diagram",
-    },
-    "context": {
-        "wide": "aerial_diorama",
-        "close": "subject_closeup",
-        "diagram": "section_diagram",
-    },
-    "context_number": {
-        "wide": "aerial_diorama",
-        "close": "subject_closeup",
-        "diagram": "section_diagram",
-    },
-    "failed_solution": {
-        "wide": "attempt_medium",
-        "close": "detail_closeup",
-        "diagram": "solution_diagram",
-    },
-    "failure_reason": {
-        "wide": "failure_result_wide",
-        "close": "failure_closeup",
-        "diagram": "failure_diagram",
-    },
-    "dilemma_peak": {
-        "wide": "problem_wide",
-        "close": "problem_closeup",
-        "diagram": "problem_diagram",
-    },
-    "turning_point": {
-        "wide": "frontal_symmetric",
-        "close": "frontal_closeup",
-        "diagram": "frontal_diagram",
-    },
-    "solution_step": {
-        "wide": "solution_medium",
-        "close": "detail_closeup",
-        "diagram": "cross_section",
-    },
-    "solution_number": {
-        "wide": "solution_medium",
-        "close": "detail_closeup",
-        "diagram": "cross_section",
-    },
-    "present_link": {
-        "wide": "present_wide",
-        "close": "present_closeup",
-        "diagram": "present_section",
-    },
-    "ending_echo": {
-        "wide": ECHO_HOOK,
-        "close": "subject_closeup",
-        "diagram": "section_diagram",
-    },
-}
-
-# --- 오버레이 (specs/03 "오버레이 타입 enum", ADR-0002 2계층, ADR-0019) ------
 
 
 @dataclass(frozen=True)
@@ -254,67 +92,35 @@ class Overlay:
 
 
 OVERLAYS: dict[str, Overlay] = {
-    o.type: o
-    for o in (
-        # context_number / solution_number "대형 빨간 숫자 텍스트 (후처리 합성)"
-        Overlay("big_red_text", "B", "large red number text", needs_value=True),
-        # 전 씬 공통. 씬 항목으로는 붙지 않지만 emphasis.type enum에는 들어간다.
-        Overlay("sparkle_particles", "B", "sparkle particle overlay"),
-    )
+    name: Overlay(name, item["layer"], item["negative"], item["needs_value"])
+    for name, item in vocab.meta("overlay").items()
 }
 
-#: specs/02가 emphasis.type을 "specs/03의 오버레이 타입 enum"이라고 했다. 그 enum이
-#: 곧 위 레지스트리의 키다. 계약에 없는 타입이 오면 지어내지 않고 오류로 돌린다.
-OVERLAY_TYPES = tuple(OVERLAYS)
-
-# --- 비트별 오버레이·카메라 (specs/03 "비트별 오버레이·카메라" 12행) ---------
-
-
-@dataclass(frozen=True)
-class BeatRule:
-    overlays: tuple[str, ...]
-    #: '카메라 기본값' 열. 여러 개면 스펙이 "pan 또는 tilt"처럼 폭을 준 것이다.
-    cameras: tuple[str, ...]
-
-
-BEAT_RULES: dict[str, BeatRule] = {
-    "hook_fact": BeatRule((), ("slow_zoom_in",)),
-    "hook_twist": BeatRule((), ("static",)),
-    "context": BeatRule((), ("pan_left", "pan_right", "tilt_down", "tilt_up")),
-    "context_number": BeatRule(("big_red_text",), ("slow_zoom_in",)),
-    "failed_solution": BeatRule((), ("static",)),
-    "failure_reason": BeatRule((), ("slow_zoom_in",)),
-    "dilemma_peak": BeatRule((), ("static",)),
-    "turning_point": BeatRule((), ("slow_zoom_in",)),
-    "solution_step": BeatRule((), ("tilt_down", "slow_zoom_in")),
-    "solution_number": BeatRule(("big_red_text",), ("static",)),
-    "present_link": BeatRule((), ("slow_zoom_out",)),
-    "ending_echo": BeatRule((), ("slow_zoom_out",)),
-}
+#: 씬 항목이 아니라 전 씬 공통으로 얹히는 오버레이. `prompts.json`의 style 블록에 실린다.
+#: 소비자는 `[8. overlay]`다.
+GLOBAL_OVERLAYS: tuple[dict[str, Any], ...] = tuple(
+    {
+        "type": name,
+        "layer": item["layer"],
+        "placement": item.get("placement", ""),
+        "scope": item["scope"],
+    }
+    for name, item in vocab.meta("overlay").items()
+    if item.get("scope") == "all_scenes"
+)
 
 
-def resolve_framing(
-    beat: str,
-    scale: str,
-    *,
-    prev: tuple[str, str, int] | None = None,
-    hook: tuple[str, str, int] | None = None,
-) -> tuple[str, str, int | None]:
-    """`(구도 토큰, 출처, 참조 씬 id)`. specs/03 "비트 × 스케일 → 구도 토큰".
+def resolve_framing(scene: dict[str, Any]) -> tuple[str, str]:
+    """`(구도 토큰, 출처)`. 씬이 고른 값이 먼저다 (ADR-0033 §3).
 
-    `prev`/`hook`은 `(구도 토큰, subject_scale, scene_id)`다. 스펙 03이 참조를 푸는 순서를
-    그대로 따른다 — 가리키는 씬의 스케일이 **같을 때만** 구도를 잇고, 다르거나 가리킬 씬이
-    없으면 `REFERENCE_FALLBACK`을 쓴다. 스케일이 다른 씬의 구도를 그대로 이으면 애초에
-    이 축을 도입한 이유(ADR-0018)가 무너진다.
+    비어 있으면 `beat-defaults.json`의 기본값으로 떨어진다. **경고하지 않는다** —
+    선택 필드의 부재는 경고가 아니고(D-3), 대신 `[5]`가 기본값으로 떨어진 씬 수를
+    요약에 낸다. 그 수가 관측 수단이다.
     """
-    token = FRAMING_TABLE[beat][scale]
-    reference = {INHERIT_PREV: prev, ECHO_HOOK: hook}.get(token)
-    if token not in REFERENCE_FALLBACK:
-        return token, "beat_rule", None
-    if reference is not None and reference[1] == scale:
-        source = "prev_scene" if token == INHERIT_PREV else "hook_echo"
-        return reference[0], source, reference[2]
-    return REFERENCE_FALLBACK[token], "scale_fallback", None
+    token = scene.get("framing")
+    if token in FRAMINGS:
+        return token, "scene"
+    return vocab.default_framing(scene["beat"], scene["subject_scale"]), "beat_default"
 
 
 # --- 프롬프트 조립 -----------------------------------------------------------
@@ -323,9 +129,9 @@ def resolve_framing(
 def clean_anchors(anchors: Sequence[str]) -> list[str]:
     """`subject_anchor`를 프롬프트에 실을 수 있는 형태로 다듬는다 (ADR-0028).
 
-    **거르지 않는다.** 씬마다 어느 명사가 더 센지는 룰 테이블에 넣을 수 있는 값이
-    아니고, 이 모듈은 그것을 알 수단이 없다 — 고르는 것은 `[1. script]`다 (G2).
-    여기서 하는 일은 공백 제거와 빈 항목 탈락뿐이다.
+    **거르지 않는다.** 씬마다 어느 명사가 더 센지는 이 모듈이 알 수단이 없다 —
+    고르는 것은 `[1s. sceneplan]`이다 (G2). 여기서 하는 일은 공백 제거와 빈 항목
+    탈락뿐이다.
     """
     return [item.strip() for item in anchors if item.strip()]
 
@@ -338,9 +144,9 @@ def build_prompt(
 ) -> str:
     """베이스(클린) 이미지 프롬프트.
 
-    `subject`는 한국어 그대로 넣는다. 번역하면 `[1]`이 고른 피사체가 이 단계의
-    창의적 판단으로 바뀌고(ADR-0001·0014 위반), 외부 의존도 생긴다. 대신 그 한국어가
-    화면에 글자로 그려지지 않도록 못을 박는다 (ADR-0002).
+    `subject`는 한국어 그대로 넣는다. 번역하면 `[1s]`가 고른 피사체가 이 단계의
+    판단으로 바뀌고(ADR-0014·0033), 외부 의존도 생긴다. 대신 그 한국어가 화면에
+    글자로 그려지지 않도록 못을 박는다 (ADR-0002).
 
     `visual_goal`도 한국어 그대로 싣는다 (ADR-0022). **이 그림이 무엇을 설명해야
     하는지를 모델에게 알려 주는 줄이다** — 피사체만 주면 모델은 그것을 그릴 뿐이고,
@@ -379,7 +185,7 @@ def build_negative(overlay_types: tuple[str, ...]) -> str:
 
 # --- Midjourney 방언 (ADR-0027) ----------------------------------------------
 #
-# 같은 룰의 **표기 변환**이다. `BASE_STYLE`도 구도 표도 방언마다 달라지지 않는다 —
+# 같은 어휘의 **표기 변환**이다. 스타일 문자열도 구도 토큰도 방언마다 달라지지 않는다 —
 # 달라지는 것은 문법뿐이다: 한 줄 콤마 나열, `--ar`, `--no`.
 #
 # 실측 근거는 `runs/20260812-mj-lang-probe/`와 ADR-0025의 G3·단면 탐침이다. 특히
@@ -423,8 +229,7 @@ def build_mj_prompt(
 
     앵커는 **`subject` 바로 뒤**다 (ADR-0028 G1). 실측한 문자열이 그 자리이고
     (`홈이 파인 블록 접합면 클로즈업, 콘크리트` → 콘크리트 4/4), 뒤로 밀면 스타일·구도
-    토큰 뒤에 놓여 검증한 적 없는 배치가 된다. `subject` 문자열을 뜯을 필요는 없다 —
-    별개 항목이 인라인만큼 나왔다.
+    토큰 뒤에 놓여 검증한 적 없는 배치가 된다.
     """
     parts = [subject.strip(), *clean_anchors(anchors)]
     if visual_goal.strip():
@@ -441,11 +246,6 @@ def build_mj_negative(overlay_types: tuple[str, ...]) -> str:
         if negative not in items:
             items.append(negative)
     return "--no " + ", ".join(items)
-
-
-#: `[5]`가 낼 수 있는 방언. 기본값은 ADR-0025가 정한 실물 경로다.
-DIALECTS: tuple[str, ...] = ("mj", "nb2")
-DEFAULT_DIALECT = "mj"
 
 
 def build_scene_prompt(
@@ -509,11 +309,10 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "subject_scale": {"enum": list(SUBJECT_SCALES)},
         "camera": {"type": "string", "minLength": 1},
         "motion": {"type": "string", "minLength": 1},
-        "framing": {"enum": list(FRAMINGS)},
-        "framing_source": {
-            "enum": ["beat_rule", "prev_scene", "hook_echo", "scale_fallback"]
-        },
-        "framing_reuse_of": {"type": "integer", "minimum": 1},
+        "framing": {"enum": list(FRAMING_TOKENS)},
+        # ADR-0033 — 구도가 씬 계약에서 왔는지 기본값으로 떨어졌는지. 되돌릴 조건의
+        # 관측 수단이라 산출물에 남긴다.
+        "framing_source": {"enum": ["scene", "beat_default"]},
         "prompt": {"type": "string", "minLength": 1},
         "negative_prompt": {"type": "string", "minLength": 1},
         "overlays": {"type": "array", "items": OVERLAY_ITEM_SCHEMA},

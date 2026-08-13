@@ -1,7 +1,7 @@
 """topics/backlog.md 파싱 및 상태 갱신.
 
 백로그 항목은 specs/06-topic-research.md의 `[0a. topic] 소재 백로그` 정의를 따른다:
-소재명 / 4조건 체크 / 출처 후보 / 상태(후보·리서치중·제작완료·반려).
+소재명 / 관측 지표 체크 / 출처 후보 / 상태(후보·리서치중·제작완료·반려).
 
 컬럼 순서에 의존하지 않고 헤더 이름으로 매핑한다. `slug` 컬럼이 있으면
 자동 로마자 변환 대신 그 값을 쓴다(수동 오버라이드).
@@ -22,7 +22,8 @@ STATUS_DONE = "제작완료"
 STATUS_REJECTED = "반려"
 CANONICAL_STATUSES = (STATUS_CANDIDATE, STATUS_RESEARCHING, STATUS_DONE, STATUS_REJECTED)
 
-#: specs/06-topic-research.md의 소재 4조건 → 팩트시트 conditions 키
+#: specs/06-topic-research.md "좋은 소재의 특징" → 팩트시트 conditions 키.
+#: 게이트가 아니라 관측이다 (ADR-0033 §1).
 CONDITION_KEYS = ("twist", "failed_alternative", "numbers", "present_link")
 
 _HEADER_ALIASES: dict[str, str] = {

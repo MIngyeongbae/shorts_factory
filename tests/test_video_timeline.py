@@ -1,7 +1,7 @@
-"""전환 계획 (specs/03 "전환 규칙", specs/05 `[7]`의 클립 길이 계약).
+"""전환 계획 (specs/03 "전환", specs/05 `[7]`의 클립 길이 계약).
 
 확인 대상:
-- 어느 비트로 진입할 때 디졸브가 걸리고 어디서 하드컷이 나는가
+- 씬이 고른 전환이 이기고, 비었을 때만 기본값으로 떨어지는가 (ADR-0033 §3)
 - 클립을 놓는 자리와 자르는 길이가 씬 시각에서만 나오는가 (누적합이 아니라)
 - 씬 사이에 구멍이 있으면 조용히 밀지 않고 멈추는가
 """
@@ -9,57 +9,57 @@
 import pytest
 from timed_fixtures import HOOVER, PISA, timed_document
 
+from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import BEATS
 from shorts_factory.video.timeline import (
     DISSOLVE,
     DISSOLVE_SECONDS,
     HARD_CUT,
-    HARD_CUT_BEATS,
     TimelineError,
     build_timeline,
     transition_into,
 )
 
 
-def scene(scene_id, beat, start, end, text="가나다."):
+def scene(scene_id, beat, start, end, text="가나다.", **extra):
     return {
         "scene_id": scene_id, "beat": beat, "text": text,
-        "start": start, "end": end,
+        "start": start, "end": end, **extra,
     }
 
 
-# --- 룰 테이블 (specs/03) -----------------------------------------------------
+# --- 전환은 씬이 고른다 (ADR-0033 §3) ----------------------------------------
 
 
-def test_every_beat_in_the_schema_has_a_transition():
-    """룰에 없는 비트가 생기면 여기서 걸린다 (ADR-0001 — 임의 판단 금지)."""
-    assert {transition_into(beat) for beat in BEATS} == {DISSOLVE, HARD_CUT}
+@pytest.mark.parametrize("chosen", [DISSOLVE, HARD_CUT])
+def test_scene_transition_wins(chosen):
+    assert transition_into(scene(2, "context", 1.0, 2.0, transition=chosen)) == chosen
 
 
-@pytest.mark.parametrize("beat", HARD_CUT_BEATS)
-def test_hard_cut_beats_get_no_dissolve(beat):
-    assert transition_into(beat) == HARD_CUT
+@pytest.mark.parametrize("beat", BEATS)
+def test_empty_transition_falls_back_to_a_real_value(beat):
+    """비트마다 떨어질 기본값이 있어야 한다 — 옛 대본에는 이 필드가 없다."""
+    assert transition_into(scene(2, beat, 1.0, 2.0)) in (DISSOLVE, HARD_CUT)
 
 
-def test_turning_point_is_a_cut():
-    """specs/03: "turning_point 진입 시: 디졸브 없이 컷"."""
-    assert transition_into("turning_point") == HARD_CUT
+@pytest.mark.parametrize("beat", BEATS)
+def test_fallback_matches_the_default_table(beat):
+    assert transition_into(scene(2, beat, 1.0, 2.0)) == vocab.default_transition(beat)
 
 
-@pytest.mark.parametrize(
-    "beat",
-    ["hook_fact", "context", "context_number", "failed_solution", "failure_reason",
-     "solution_step", "solution_number", "present_link", "ending_echo"],
-)
-def test_everything_else_dissolves(beat):
-    """specs/03: "기본: 크로스 디졸브"."""
-    assert transition_into(beat) == DISSOLVE
+def test_unknown_beat_does_not_stop_the_timeline():
+    """어휘가 늘어도 [9]는 돈다 (단계 독립 D-5)."""
+    assert transition_into(scene(2, "새_비트", 1.0, 2.0)) in (DISSOLVE, HARD_CUT)
+
+
+def test_transition_outside_the_vocabulary_falls_back():
+    assert transition_into(scene(2, "context", 1.0, 2.0, transition="wipe")) == DISSOLVE
 
 
 def test_dissolve_length_matches_the_clip_contract():
     """specs/05 `[7]`: "클립 길이 = 씬 길이 + 디졸브 겹침 0.6초".
 
-    specs/03이 준 0.4~0.6초의 폭 중 이 값만 클립 꼬리를 남기지 않는다.
+    이 값에서만 클립 꼬리가 남김 없이 쓰인다 (ADR-0024). 어휘 파일이 출처다.
     """
     assert DISSOLVE_SECONDS == 0.6
 
@@ -192,10 +192,14 @@ def test_empty_scene_list_is_refused():
         build_timeline([])
 
 
-def test_unknown_beat_stops_instead_of_falling_back():
-    """룰 테이블에 없는 비트가 오면 전환을 지어내지 않는다 (ADR-0001)."""
+def test_unknown_beat_keeps_building_the_timeline():
+    """어휘 밖의 비트가 와도 전환은 기본값으로 떨어진다 (단계 독립 D-5).
+
+    예전에는 여기서 멈췄다. 연출이 씬 계약에서 오게 된 뒤로(ADR-0033 §3) 비트는
+    전환을 정하지 않으므로, 모르는 라벨 하나로 `[9]`를 세울 이유가 없다.
+    """
     assert "montage" not in BEATS
-    with pytest.raises(TimelineError, match="룰 테이블에 없는 비트"):
-        build_timeline(
-            [scene(1, "hook_fact", 0.0, 4.0), scene(2, "montage", 4.0, 7.0)]
-        )
+    timeline = build_timeline(
+        [scene(1, "hook_fact", 0.0, 4.0), scene(2, "montage", 4.0, 7.0)]
+    )
+    assert timeline.segments[1].transition_in in (DISSOLVE, HARD_CUT)

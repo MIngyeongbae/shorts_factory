@@ -3,7 +3,7 @@ name = "shorts-factory"
 version = "0.1.0"
 description = "지식 쇼츠 자동 생성 파이프라인"
 requires-python = ">=3.11"
-dependencies = ["jsonschema>=4.20"]
+dependencies = ["jsonschema>=4.20", "referencing>=0.30"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

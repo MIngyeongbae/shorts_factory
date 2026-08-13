@@ -1,6 +1,9 @@
 # 1부 파이프라인 ([0a. topic] ~ [0b. research])
 # LLM 호출은 claude CLI 서브프로세스라 SDK 의존성이 없다 (ADR-0008)
 jsonschema>=4.20
+# specs/schema/의 $ref를 푸는 레지스트리 (ADR-0034). jsonschema가 이미 쓰지만
+# 우리 코드가 직접 import하므로 명시한다
+referencing>=0.30
 
 # 개발/테스트
 pytest>=8.0

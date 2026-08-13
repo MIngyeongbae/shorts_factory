@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "script-rules.json",
+  "title": "대본이 만족해야 하는 결과 — 구조가 아니라 값 (ADR-0033 §2)",
+  "description": "레퍼런스 3편 실측에서 나온 엔벨로프다. 쇼츠의 값이지 특정 구조·도메인의 값이 아니므로 ADR-0033의 구조 자유화에도 그대로 산다. 생 실측값 자체는 docs/reference-analysis.md에만 두고 여기·CLAUDE.md에 나란히 적지 않는다 — 두 값이 공존하면 어느 쪽이 계약인지 코드가 모른다 (ADR-0034).",
+  "limits": {
+    "total_chars": [
+      545,
+      575
+    ],
+    "line_count": [
+      23,
+      28
+    ],
+    "line_chars_max": 43,
+    "line_chars_target": [
+      19,
+      24
+    ],
+    "line_seconds": [
+      0.8,
+      6.9
+    ],
+    "line_seconds_mean": [
+      3.5,
+      4.1
+    ],
+    "speed_cps": [
+      5.3,
+      6.3
+    ],
+    "total_seconds": [
+      90,
+      102
+    ]
+  },
+  "checks": {
+    "_role": "[2] validate가 보는 것. 구조 검증은 없다 — 분량·그라운딩·수미상관뿐이다 (ADR-0033 §5).",
+    "min_numbers": 2,
+    "visual_goal_overlap_limit": 0.7
+  },
+  "signatures": {
+    "_role": "채널 브랜드 문구. ADR-0033 §2가 위치 제약을 풀고 필수에서 권장으로 내렸다 — 44~54초는 폐기된 고정 구조의 전환점 단에서 온 값이고, 문제 해결 서사가 아닌 편에서는 쓰지 않아도 된다. 없으면 경고이고 막지 않는다.",
+    "phrases": [
+      {
+        "phrase": "그래서 발상을 뒤집습니다.",
+        "grade": "recommended",
+        "measured": "3/3편 (44.0s / 50.0s / 44.5s)",
+        "note": "어미까지 고정된 유일한 문구다. 쓴다면 이 형태 그대로 쓴다",
+        "primary": true
+      },
+      {
+        "phrase": "환장할 노릇",
+        "grade": "recommended",
+        "measured": "2/3편",
+        "note": "어미는 자유 (-입니다 / -이죠)"
+      },
+      {
+        "phrase": "가장 쉬운 방법은",
+        "grade": "recommended",
+        "measured": "2/3편 (21.5s / 17.4s)",
+        "note": "쉬운 해법을 먼저 세우는 자리에서만 성립한다"
+      }
+    ]
+  }
+}

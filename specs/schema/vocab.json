@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vocab.json",
+  "title": "닫힌 어휘 — 연출을 고를 수 있는 값의 전부 (ADR-0033 §3, ADR-0034 §3)",
+  "description": "`[1s] sceneplan`은 여기 있는 값에서만 고른다. 어휘에 없는 값이 필요하면 이 파일을 고치는 PR을 먼저 만든다. $defs는 스키마가 $ref로 가져가고, meta는 코드와 세션 프롬프트가 읽는다.",
+  "$defs": {
+    "beat": {
+      "enum": [
+        "hook_fact",
+        "hook_twist",
+        "context",
+        "context_number",
+        "failed_solution",
+        "failure_reason",
+        "dilemma_peak",
+        "turning_point",
+        "solution_step",
+        "solution_number",
+        "present_link",
+        "ending_echo"
+      ]
+    },
+    "subject_scale": {
+      "enum": [
+        "wide",
+        "close",
+        "diagram"
+      ]
+    },
+    "camera": {
+      "enum": [
+        "slow_zoom_in",
+        "slow_zoom_out",
+        "tilt_down",
+        "tilt_up",
+        "pan_left",
+        "pan_right",
+        "static"
+      ]
+    },
+    "motion": {
+      "enum": [
+        "kenburns",
+        "mj_video",
+        "kling"
+      ]
+    },
+    "framing": {
+      "enum": [
+        "drone_wide",
+        "aerial_diorama",
+        "attempt_medium",
+        "solution_medium",
+        "failure_result_wide",
+        "problem_wide",
+        "frontal_symmetric",
+        "present_wide",
+        "subject_closeup",
+        "detail_closeup",
+        "failure_closeup",
+        "problem_closeup",
+        "frontal_closeup",
+        "present_closeup",
+        "section_diagram",
+        "solution_diagram",
+        "failure_diagram",
+        "problem_diagram",
+        "frontal_diagram",
+        "cross_section",
+        "present_section"
+      ]
+    },
+    "overlay_type": {
+      "enum": [
+        "big_red_text",
+        "sparkle_particles"
+      ]
+    },
+    "transition": {
+      "enum": [
+        "dissolve",
+        "hard_cut"
+      ]
+    },
+    "dialect": {
+      "enum": [
+        "mj",
+        "nb2"
+      ]
+    }
+  },
+  "meta": {
+    "beat": {
+      "_role": "서사 기능의 라벨이다. 연출의 분기 기준이 아니고(ADR-0033 §4) 순서·개수 제약도 없다. 기계가 이 값으로 갈라지는 곳은 스펙 04의 turning_point 차임 하나뿐이다.",
+      "hook_fact": {
+        "gloss": "충격 사실 제시",
+        "position": "open"
+      },
+      "hook_twist": {
+        "gloss": "'~가 아닙니다' 반전",
+        "position": "open"
+      },
+      "context": {
+        "gloss": "배경 설명"
+      },
+      "context_number": {
+        "gloss": "핵심 숫자 포함 배경"
+      },
+      "failed_solution": {
+        "gloss": "실패하는 해법 제시"
+      },
+      "failure_reason": {
+        "gloss": "실패 이유 설명"
+      },
+      "dilemma_peak": {
+        "gloss": "막다른 골목의 절정"
+      },
+      "turning_point": {
+        "gloss": "발상 전환"
+      },
+      "solution_step": {
+        "gloss": "해결책 단계 설명"
+      },
+      "solution_number": {
+        "gloss": "해결책 내 핵심 숫자"
+      },
+      "present_link": {
+        "gloss": "현재와 연결",
+        "position": "close"
+      },
+      "ending_echo": {
+        "gloss": "수미상관 마무리",
+        "position": "close"
+      },
+      "_position": "open/close는 수미상관 검증이 어느 씬을 훅 쪽·엔딩 쪽으로 볼지의 표시다 (ADR-0033 §2). 라벨이 하나도 없는 대본에서는 앞뒤 씬으로 떨어진다."
+    },
+    "subject_scale": {
+      "_role": "연출이 아니라 피사체 서술이다. subject를 화면에 담는 크기이며 [1s]가 subject와 함께 쓴다 (ADR-0018).",
+      "wide": {
+        "gloss": "대상 전체·부지·전경"
+      },
+      "close": {
+        "gloss": "표면·끝단·접합면·계측기 등 근접 디테일"
+      },
+      "diagram": {
+        "gloss": "단면도·평면도·도해·일러스트·기록 노트"
+      }
+    },
+    "camera": {
+      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다.",
+      "slow_zoom_in": {
+        "gloss": "느린 줌 인"
+      },
+      "slow_zoom_out": {
+        "gloss": "느린 줌 아웃"
+      },
+      "tilt_down": {
+        "gloss": "느린 틸트 다운"
+      },
+      "tilt_up": {
+        "gloss": "느린 틸트 업"
+      },
+      "pan_left": {
+        "gloss": "느린 팬 좌"
+      },
+      "pan_right": {
+        "gloss": "느린 팬 우"
+      },
+      "static": {
+        "gloss": "고정"
+      }
+    },
+    "motion": {
+      "_role": "씬 이미지를 화면 움직임으로 옮기는 방식. 유체 모션(물·비·안개·불)이 서사상 필요한 씬에만 영상을 쓴다 (ADR-0006).",
+      "kenburns": {
+        "gloss": "이미지 + FFmpeg zoompan (기본값)",
+        "degrade": []
+      },
+      "mj_video": {
+        "gloss": "MJ 프록시 fast 엔드포인트 (ADR-0025 §3). 이미지(relax)와 달리 GPU 시간을 쓴다",
+        "degrade": [
+          "kenburns",
+          "static"
+        ],
+        "max_scenes": 10
+      },
+      "kling": {
+        "gloss": "Kling v2.6급 i2v. MJ가 막혔을 때 돌아갈 곳이라 남긴다 (ADR-0006, ADR-0025)",
+        "degrade": [
+          "kenburns"
+        ],
+        "max_scenes": 10
+      }
+    },
+    "framing": {
+      "_role": "구도 토큰. shot이 이미지 프롬프트에 그대로 들어간다. scale은 그 토큰이 어느 subject_scale에 어울리는지의 표시이고 강제가 아니다 — 고르는 것은 [1s]다 (ADR-0033 §3).",
+      "drone_wide": {
+        "scale": "wide",
+        "gloss": "드론 뷰/광각 전경",
+        "shot": "aerial drone establishing shot, wide view of the site"
+      },
+      "aerial_diorama": {
+        "scale": "wide",
+        "gloss": "조감 디오라마",
+        "shot": "bird's-eye diorama view of the scene"
+      },
+      "attempt_medium": {
+        "scale": "wide",
+        "gloss": "시도한 해법 미디엄 샷",
+        "shot": "medium shot of the attempted solution"
+      },
+      "solution_medium": {
+        "scale": "wide",
+        "gloss": "작동하는 해결책 미디엄 샷",
+        "shot": "medium shot of the working solution"
+      },
+      "failure_result_wide": {
+        "scale": "wide",
+        "gloss": "실패 결과 와이드 (무너짐·넘침 등)",
+        "shot": "wide shot that shows the failure outcome itself"
+      },
+      "problem_wide": {
+        "scale": "wide",
+        "gloss": "문제 상황 와이드 뷰",
+        "shot": "wide view of the whole problem situation"
+      },
+      "frontal_symmetric": {
+        "scale": "wide",
+        "gloss": "핵심 피사체 정면, 대칭 구도",
+        "shot": "frontal view of the key subject, symmetrical composition"
+      },
+      "present_wide": {
+        "scale": "wide",
+        "gloss": "현재 실사풍 전경",
+        "shot": "present-day photoreal wide shot"
+      },
+      "subject_closeup": {
+        "scale": "close",
+        "gloss": "피사체 클로즈업",
+        "shot": "close-up of the main subject"
+      },
+      "detail_closeup": {
+        "scale": "close",
+        "gloss": "디테일 클로즈업",
+        "shot": "tight detail close-up of the solution"
+      },
+      "failure_closeup": {
+        "scale": "close",
+        "gloss": "실패 지점 클로즈업",
+        "shot": "tight close-up of the point where it failed"
+      },
+      "problem_closeup": {
+        "scale": "close",
+        "gloss": "문제 지점 클로즈업",
+        "shot": "tight close-up of the problem spot"
+      },
+      "frontal_closeup": {
+        "scale": "close",
+        "gloss": "핵심 피사체 정면 클로즈업",
+        "shot": "frontal close-up of the key subject, symmetrical composition"
+      },
+      "present_closeup": {
+        "scale": "close",
+        "gloss": "현재 실사풍 클로즈업",
+        "shot": "present-day photoreal close-up"
+      },
+      "section_diagram": {
+        "scale": "diagram",
+        "gloss": "단면/도해 컷",
+        "shot": "cutaway sectional diagram, cut plane facing the camera"
+      },
+      "solution_diagram": {
+        "scale": "diagram",
+        "gloss": "해법 도해",
+        "shot": "explanatory diagram of the attempted solution"
+      },
+      "failure_diagram": {
+        "scale": "diagram",
+        "gloss": "실패 메커니즘 도해",
+        "shot": "explanatory diagram of why it failed"
+      },
+      "problem_diagram": {
+        "scale": "diagram",
+        "gloss": "문제 도해",
+        "shot": "explanatory diagram of the problem"
+      },
+      "frontal_diagram": {
+        "scale": "diagram",
+        "gloss": "핵심 도해 정면",
+        "shot": "frontal explanatory diagram of the key subject, symmetrical layout"
+      },
+      "cross_section": {
+        "scale": "diagram",
+        "gloss": "단면(cross-section) 컷",
+        "shot": "cross-section cutaway, cut plane facing the camera"
+      },
+      "present_section": {
+        "scale": "diagram",
+        "gloss": "현재 실사풍 단면/절단면",
+        "shot": "present-day photoreal shot of a cut/exposed face"
+      }
+    },
+    "overlay": {
+      "_role": "화면에 얹히는 것. 전부 레이어 B(후처리 합성)다 — 레이어 A는 폐기됐고 베이스 이미지는 전 씬 클린이다 (ADR-0002, ADR-0019). negative는 베이스 이미지에서 배제할 문구다.",
+      "big_red_text": {
+        "layer": "B",
+        "gloss": "대형 빨간 숫자 텍스트",
+        "negative": "large red number text",
+        "needs_value": true,
+        "scope": "scene"
+      },
+      "sparkle_particles": {
+        "layer": "B",
+        "gloss": "우하단 반짝이 파티클(✦)",
+        "negative": "sparkle particle overlay",
+        "needs_value": false,
+        "scope": "all_scenes",
+        "placement": "bottom_right"
+      }
+    },
+    "transition": {
+      "_role": "씬으로 **진입**하는 전환. [1s]가 고른다 (ADR-0033 §3). 길이 0.6초는 클립 기하가 정한 값이라 고정이다 (ADR-0024).",
+      "dissolve": {
+        "gloss": "크로스 디졸브",
+        "seconds": 0.6
+      },
+      "hard_cut": {
+        "gloss": "하드컷",
+        "seconds": 0.0
+      }
+    },
+    "dialect": {
+      "_role": "프롬프트 **문법**만 고른다 (ADR-0027). 어휘·스타일·배제 항목은 방언과 무관하게 같다.",
+      "default": "mj",
+      "mj": {
+        "gloss": "Midjourney — 한 줄 콤마 나열, --ar, --no"
+      },
+      "nb2": {
+        "gloss": "Nano Banana 2 — 라벨 붙은 여러 줄"
+      }
+    },
+    "style": {
+      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0023, ADR-0033 '무엇이 채널 일관성을 지키는가' 1번). 실호출로 검증한 값이라 글자 하나를 바꾸면 재검증이 필요하다 — D5(architectural 중립화)가 그 이유로 미결이다.",
+      "base_style": "photorealistic architectural rendering on white paper, mixed media: the focal subject rendered with true-to-life detail, materials and lighting; colour laid in as controlled watercolour washes over fine graphite and technical-pen underdrawing, with construction and guide lines left visible; realism dominant over painterly looseness; detail and colour fall away toward the edges into bare paper",
+      "composition": "vertical 9:16; subject placed in the centre to upper third; bottom third left empty for subtitles",
+      "aspect_ratio": "9:16",
+      "resolution": "2K",
+      "style_anchor_dir": "assets/style_anchors",
+      "negatives": {
+        "_role": "어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서 실호출로 검증된 값이고(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 기계적으로 유도하지 않는다.",
+        "nb2": [
+          "burned-in subtitles or caption bars",
+          "sparkle particle overlay",
+          "any legible or handwritten text, letters, numbers or annotation scribbles"
+        ],
+        "mj": [
+          "burned-in subtitles",
+          "caption bars",
+          "sparkle particle overlay",
+          "legible text",
+          "handwritten text",
+          "letters",
+          "numbers",
+          "annotation scribbles"
+        ]
+      }
+    }
+  }
+}

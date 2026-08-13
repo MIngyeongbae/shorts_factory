@@ -20,16 +20,19 @@ from typing import Any, Sequence
 
 from jsonschema import Draft202012Validator
 
-from .scenes import DURATION_TOLERANCE, SCENE_SCHEMA, SCENES_SCHEMA
+from . import vocab
+from .scenes import DURATION_TOLERANCE, SCENES_SCHEMA, scene_schema_copy
 
 #: 추정 → 실측 필드명 대응 (specs/02)
 RENAMED = {"est_start": "start", "est_end": "end"}
 
-#: 이 파일에 싣지 않는 대본 필드. **`visual_goal`은 이미지 지시라 여기 올 이유가 없다**
-#: (ADR-0020·0022). `scenes.timed.json`을 읽는 곳은 `[7]`(클립 길이·카메라·모션)과
-#: `[9]`(전환·자막)뿐이고 둘 다 그림이 무엇을 설명하는지 알 필요가 없다. 그림 쪽
+#: 이 파일에 싣지 않는 대본 필드. **이미지 지시는 여기 올 이유가 없다** (ADR-0020·0022).
+#: `scenes.timed.json`을 읽는 곳은 `[7]`(클립 길이·카메라·모션)과 `[9]`(전환·자막)뿐이고
+#: 둘 다 그림이 무엇을 설명하는지도, 어떤 구도로 잡는지도 알 필요가 없다. 그림 쪽
 #: 소비자는 `prompts.json`을 읽는다 — 같은 값이 두 파일에 있으면 갈라진다.
-DROPPED: tuple[str, ...] = ("visual_goal",)
+#:
+#: `transition`은 빠지지 않는다. `[9]`가 그 값으로 전환을 놓는다 (ADR-0033 §3).
+DROPPED: tuple[str, ...] = ("visual_goal", "framing")
 
 
 def _rename(schema: dict[str, Any]) -> dict[str, Any]:
@@ -45,13 +48,17 @@ def _rename(schema: dict[str, Any]) -> dict[str, Any]:
     return timed
 
 
-TIMED_SCENE_SCHEMA: dict[str, Any] = _rename(SCENE_SCHEMA)
+TIMED_SCENE_SCHEMA: dict[str, Any] = _rename(scene_schema_copy())
 
 TIMED_SCENES_SCHEMA: dict[str, Any] = copy.deepcopy(SCENES_SCHEMA)
+# 파생 스키마는 자기 $id를 갖는다. 원본과 같은 $id를 달면 `#/...` 참조가 레지스트리에
+# 등록된 원본으로 풀려 이름만 바꾼 이 스키마를 비껴간다.
+TIMED_SCENES_SCHEMA["$id"] = "scenes.timed.schema.json"
 TIMED_SCENES_SCHEMA["title"] = "scenes.timed.json (실측 씬 계약)"
+TIMED_SCENES_SCHEMA.pop("$defs", None)
 TIMED_SCENES_SCHEMA["properties"]["scenes"]["items"] = TIMED_SCENE_SCHEMA
 
-_VALIDATOR = Draft202012Validator(TIMED_SCENES_SCHEMA)
+_VALIDATOR = Draft202012Validator(TIMED_SCENES_SCHEMA, registry=vocab.REGISTRY)
 
 
 def schema_errors(data: Any) -> list[str]:

@@ -7,8 +7,8 @@
 
 확인 대상:
 - ADR-0017 경계 — 입력은 06-script.json 하나, 읽기 전용, 산출물은 runs/{run_id}/ 아래
-- ADR-0001 — 연출은 룰 테이블에서만 나온다 (룰에 없는 값이 오면 멈춘다)
-- ADR-0018 — 구도는 (beat × subject_scale)에서 나오고, 스케일이 다르면 구도를 잇지 않는다
+- ADR-0033 — 연출은 씬 계약에서 온다. 비었을 때만 기본값으로 떨어지고 그 수를 센다
+- ADR-0018 — 기본값으로 떨어질 때도 씬의 subject_scale과 어긋나지 않는다
 - ADR-0019 — 레이어 A 폐기. 베이스 이미지는 전 씬 클린이다
 """
 
@@ -21,7 +21,8 @@ from conftest import PISA, install_script, load_script
 
 from shorts_factory.config import write_text
 from shorts_factory.jsonio import dump_json
-from shorts_factory.schemas.visual_rules import FRAMING_TABLE, schema_errors
+from shorts_factory.schemas import vocab
+from shorts_factory.schemas.visual_rules import FRAMINGS, schema_errors
 from shorts_factory.stages.prompt import (
     PROMPTS_FILE,
     SCRIPT_FILE,
@@ -189,47 +190,31 @@ def test_state_records_the_stage(paths, install):
 # --- 룰 적용 -----------------------------------------------------------------
 
 
-def test_hook_twist_holds_the_previous_framing(paths, install):
-    """스펙 03 '전경 유지' — 앞 씬과 스케일이 같을 때만 구도를 잇는다 (ADR-0018).
-
-    피사 3번 씬이 이 경우다: 2번(hook_fact, wide) → 3번(hook_twist, wide).
-    """
+def test_framing_falls_back_when_the_script_did_not_choose(paths, install):
+    """옛 대본에는 `framing`이 없다. 막지 않고 기본값으로 떨어뜨린다 (D-3)."""
     script = install(PISA)
-    scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
-    twist = next(
-        s for s in scenes
-        if s["beat"] == "hook_twist" and s["framing_source"] == "prev_scene"
-    )
-    previous = scenes[twist["scene_id"] - 2]
+    assert all("framing" not in s for s in script["scenes"])
 
-    assert twist["framing"] == previous["framing"]
-    assert twist["subject_scale"] == previous["subject_scale"]
-    assert twist["framing_reuse_of"] == previous["scene_id"]
-    assert script["scenes"][twist["scene_id"] - 1]["subject"] in twist["prompt"]
+    result = run_prompt_stage(PISA, paths=paths)
+    scenes = result.prompts["scenes"]
+
+    assert all(s["framing_source"] == "beat_default" for s in scenes)
+    assert result.default_framed_scenes == len(scenes)
 
 
-def test_framing_is_not_inherited_across_a_different_scale(paths, install):
-    """후버댐 2번 씬 — 1번이 diagram, 2번이 wide다. 이으면 단면 구도를 전경에 쓴다."""
-    install(HOOVER)
-    scenes = run_prompt_stage(HOOVER, paths=paths).prompts["scenes"]
-    first, second = scenes[0], scenes[1]
+def test_the_scene_choice_is_carried_through_untouched(paths, install):
+    """연출을 고르는 것은 `[1s]`다. `[5]`는 그 값을 옮기기만 한다 (ADR-0033 §3)."""
 
-    assert first["subject_scale"] != second["subject_scale"]
-    assert second["framing_source"] == "scale_fallback"
-    assert second["framing"] != first["framing"]
-    assert "framing_reuse_of" not in second
+    def choose(script):
+        script["scenes"][0]["framing"] = "cross_section"
 
+    install(PISA, mutate=choose)
+    result = run_prompt_stage(PISA, paths=paths)
+    first = result.prompts["scenes"][0]
 
-def test_ending_echo_reuses_the_hook_framing_when_the_scale_matches(paths, install):
-    install(PISA)
-    scenes = run_prompt_stage(PISA, paths=paths).prompts["scenes"]
-    hook = next(s for s in scenes if s["beat"] == "hook_fact")
-    echo = next(s for s in scenes if s["beat"] == "ending_echo")
-
-    assert echo["subject_scale"] == hook["subject_scale"]
-    assert echo["framing"] == hook["framing"]
-    assert echo["framing_source"] == "hook_echo"
-    assert echo["framing_reuse_of"] == hook["scene_id"]
+    assert (first["framing"], first["framing_source"]) == ("cross_section", "scene")
+    assert FRAMINGS["cross_section"].shot in first["prompt"]
+    assert result.default_framed_scenes == len(result.prompts["scenes"]) - 1
 
 
 @pytest.mark.parametrize("slug", REAL_SLUGS)
@@ -305,8 +290,12 @@ def test_stage_still_refuses_to_invent_an_overlay(paths, install):
         build_prompts(script, source_script="x")
 
 
-def test_camera_off_the_rule_default_warns_but_proceeds(paths, install):
-    """camera는 씬 계약이 정한 값을 쓴다 (ADR-0014). 룰 기본값과 다르면 알리기만 한다."""
+def test_camera_off_the_beat_default_is_not_a_warning(paths, install):
+    """카메라도 `[1s]`가 어휘에서 고른다 (ADR-0033 §3).
+
+    예전에는 비트 기본값과 다르면 경고했다. 기본값이 지시가 아니게 된 뒤로 그 경고는
+    "고를 수 있는 값을 골랐다"는 말이라 편마다 뜨기만 한다.
+    """
 
     def odd_camera(script):
         script["scenes"][0]["camera"] = "pan_left"  # hook_fact 기본값은 slow_zoom_in
@@ -315,7 +304,7 @@ def test_camera_off_the_rule_default_warns_but_proceeds(paths, install):
     result = run_prompt_stage(PISA, paths=paths)
 
     assert result.prompts["scenes"][0]["camera"] == "pan_left"
-    assert any("씬 1" in w and "slow_zoom_in" in w for w in result.warnings)
+    assert all("camera" not in w for w in result.warnings)
 
 
 def test_missing_style_anchors_warn(paths, install):
@@ -336,18 +325,16 @@ def test_mj_dialect_does_not_warn_about_anchors(paths, install):
 
 
 @pytest.mark.parametrize("slug", REAL_SLUGS)
-def test_framing_comes_from_the_scale_the_script_declared(paths, install, slug):
-    """구도는 (beat × subject_scale) 표에서만 나온다. 씬의 스케일과 어긋날 수 없다."""
+def test_fallback_framing_follows_the_scale_the_script_declared(paths, install, slug):
+    """기본값으로 떨어질 때도 씬의 스케일과 어긋날 수 없다 (ADR-0018)."""
     install(slug)
     result = run_prompt_stage(slug, paths=paths)
 
     for entry in result.prompts["scenes"]:
-        expected = FRAMING_TABLE[entry["beat"]][entry["subject_scale"]]
-        if entry["framing_source"] == "beat_rule":
-            assert entry["framing"] == expected
-        else:
-            # 참조를 푼 경우에도 표가 참조를 지시한 칸이어야 한다
-            assert expected in ("@prev", "@hook")
+        if entry["framing_source"] != "beat_default":
+            continue
+        expected = vocab.default_framing(entry["beat"], entry["subject_scale"])
+        assert entry["framing"] == expected
 
 
 def test_close_and_diagram_subjects_no_longer_get_a_drone_shot(paths, install):

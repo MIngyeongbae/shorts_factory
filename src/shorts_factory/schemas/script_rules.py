@@ -1,22 +1,23 @@
-"""대본 규칙 검증. specs/01-script-template.md의 검증 5항목 + 분량 규칙.
+"""대본 규칙 검증. specs/01-script-template.md + specs/schema/script-rules.json.
 
 단위는 자막 줄(=씬)이다. 문장이 아니다 (ADR-0013).
 
-## errors — 스펙 01 "검증 (validator가 체크할 항목)" 5개
+## 무엇을 막는가 (errors)
 
-1. 7단이 순서대로 모두 존재하는가
-2. "그래서 발상을 뒤집습니다."가 44~54초 구간에 존재하는가
-3. 총 글자 수·자막 줄 수가 범위 내인가
-4. `solution` 구간에 구체적 숫자가 2개 이상 있는가
-5. ending이 hook의 핵심 명사를 재사용하는가 (수미상관)
+1. 총 글자 수·자막 줄 수가 범위 내인가
+2. 엔딩이 훅의 핵심 명사를 재사용하는가 (수미상관)
 
-## warnings — 스펙 01 분량 규칙 중 5항목에 없는 것
+**구조 검증은 없다** (ADR-0033 §5). 단 구성이 소재마다 다르므로 기계가 볼 수 있는 것이
+아니고, 서사가 성립하는지는 `[2b] judge`가 본다. 예전의 순서·필수 비트·시그니처 위치
+검사가 사라진 자리다.
 
-줄당 글자 수 상한, 줄당 시간, 발화 속도, 총 길이. `est_*`는 TTS 이전 추정치라
-실측으로 갱신되므로(스펙 05) 차단하지 않는다.
+## 무엇을 알리는가 (warnings)
 
-스펙 02 씬 스키마와 ADR-0007 그라운딩은 각각 다른 검증기가 맡는다. 이 모듈은
-스키마가 이미 통과한 scenes.json을 받는다고 가정한다.
+줄당 글자 수 상한, 줄당 시간, 발화 속도, 총 길이, 시그니처 문구 부재, 대본 전체 숫자
+개수. `est_*`는 TTS 이전 추정치라 실측으로 갱신되므로(스펙 05) 차단하지 않는다.
+
+값은 전부 `specs/schema/script-rules.json`에서 로드한다 (ADR-0034 §3). 씬 스키마와
+ADR-0007 그라운딩은 각각 다른 검증기가 맡는다.
 """
 
 from __future__ import annotations
@@ -24,56 +25,36 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from . import vocab
 from .grounding import extract_values
 
-#: specs/01 분량 규칙. 원본 3편 실측을 모두 포함하는 엔벨로프다 —
-#: 반올림값을 경계로 쓰면 백악 편(5.396자/초, 0.875초 줄)이 자기 기준에서 탈락한다.
-TOTAL_CHARS = (545, 575)
-LINE_COUNT = (23, 28)
-LINE_CHARS_MAX = 43
-LINE_SECONDS = (0.8, 6.9)
-SPEED_RANGE = (5.3, 6.3)
-TOTAL_SECONDS = (90.0, 102.0)
+_LIMITS = vocab.limits()
+_CHECKS = vocab.checks()
 
-#: specs/01 — 어미까지 고정된 필수 문구는 이것 하나뿐 (3/3편)
-TURNING_PHRASE = "그래서 발상을 뒤집습니다."
-TURNING_WINDOW = (44.0, 54.0)
+#: specs/schema/script-rules.json — 원본 3편 실측을 모두 포함하는 엔벨로프다.
+TOTAL_CHARS = tuple(_LIMITS["total_chars"])
+LINE_COUNT = tuple(_LIMITS["line_count"])
+LINE_CHARS_MAX = _LIMITS["line_chars_max"]
+LINE_SECONDS = tuple(_LIMITS["line_seconds"])
+SPEED_RANGE = tuple(_LIMITS["speed_cps"])
+TOTAL_SECONDS = tuple(float(v) for v in _LIMITS["total_seconds"])
 
-#: specs/01 검증 4항목
-MIN_SOLUTION_NUMBERS = 2
-#: 3단·4단이 각각 존재하려면 실패 대안이 두 번 나와야 한다
-MIN_FAILED_SOLUTIONS = 2
+#: 대본 전체 기준. 구간을 비트로 자를 수 없으므로 편 단위로 센다 (ADR-0033).
+MIN_NUMBERS = _CHECKS["min_numbers"]
 
-#: 비트 → 템플릿 단계 (specs/02 대응 테이블). 튜플은 그 비트가 걸칠 수 있는 단계다.
-STAGES_OF_BEAT: dict[str, tuple[int, ...]] = {
-    "hook_fact": (1,),
-    "hook_twist": (1,),
-    "context": (2,),
-    "context_number": (2, 6),
-    "failed_solution": (3, 4),
-    "failure_reason": (3, 4),
-    "dilemma_peak": (4,),
-    "turning_point": (5,),
-    "solution_step": (6,),
-    "solution_number": (6,),
-    "present_link": (7,),
-    "ending_echo": (7,),
-}
-
-#: 단계별로 하나는 있어야 하는 비트. 3단·4단은 비트만으로 구분되지 않아
-#: (specs/02가 failed_solution·failure_reason을 "3, 4"로 둘 다 매핑한다)
-#: MIN_FAILED_SOLUTIONS로 따로 센다.
-REQUIRED_STAGE_BEATS: tuple[tuple[int, str, tuple[str, ...]], ...] = (
-    (1, "hook", ("hook_fact", "hook_twist")),
-    (2, "context", ("context", "context_number")),
-    (5, "turning_point", ("turning_point",)),
-    (6, "solution", ("solution_step", "solution_number")),
-    (7, "ending", ("present_link", "ending_echo")),
+#: 시그니처 문구. 필수가 아니라 권장이고, 없으면 경고다 (ADR-0033 §2).
+SIGNATURES = vocab.signature_phrases()
+PRIMARY_SIGNATURE = next(
+    (item["phrase"] for item in SIGNATURES if item.get("primary")), ""
 )
 
-HOOK_BEATS = ("hook_fact", "hook_twist")
-ENDING_BEATS = ("present_link", "ending_echo")
-SOLUTION_BEATS = ("solution_step", "solution_number")
+#: 수미상관을 볼 때 훅 쪽·엔딩 쪽으로 치는 비트 (vocab.json `meta.beat.position`).
+_BEAT_META = vocab.meta("beat")
+HOOK_BEATS = tuple(b for b, m in _BEAT_META.items() if m.get("position") == "open")
+ENDING_BEATS = tuple(b for b, m in _BEAT_META.items() if m.get("position") == "close")
+
+#: 라벨이 하나도 없는 대본에서 앞뒤로 떼어 볼 비율. 최소 1씬은 본다.
+EDGE_RATIO = 0.15
 
 _PUNCT = re.compile(r"[\s.,!?…·「」『』\"'()\[\]\-~:;]")
 _HANGUL = re.compile(r"[가-힣]+")
@@ -104,9 +85,9 @@ def noun_stems(text: str) -> set[str]:
     """명사 후보 어간. 형태소 분석기 없이 조사만 떼는 휴리스틱이다.
 
     용언 판정은 **어절 원형에만** 한다. 조사를 뗀 어간에 같은 검사를 다시 걸면
-    '파비아의' → '파비아'처럼 아/어/야로 끝나는 명사가 통째로 사라진다. 도메인이
-    국가 무관이 된 뒤로(ADR-0016) 그런 외래 고유명사가 기본값이라 이건 예외가
-    아니다 — 피사 편 첫 대본의 수미상관(파비아)이 실제로 이걸로 오탐을 맞았다.
+    '파비아의' → '파비아'처럼 아/어/야로 끝나는 명사가 통째로 사라진다. 도메인 제한이
+    없어진 뒤로(ADR-0016·0033) 그런 외래 고유명사가 기본값이라 이건 예외가 아니다 —
+    피사 편 첫 대본의 수미상관(파비아)이 실제로 이걸로 오탐을 맞았다.
 
     남는 한계: 조사가 붙지 않은 채 아/어/다로 끝나는 명사('바다', '언어')는 여전히
     용언으로 보고 버린다. 조사가 붙으면('바다에') 잡힌다.
@@ -124,39 +105,24 @@ def noun_stems(text: str) -> set[str]:
     return found
 
 
-def _join(scenes: list[dict[str, Any]], beats: tuple[str, ...]) -> str:
-    return " ".join(str(s.get("text", "")) for s in scenes if s.get("beat") in beats)
+def _text_of(scenes: list[dict[str, Any]]) -> str:
+    return " ".join(str(s.get("text", "")) for s in scenes)
 
 
-def _stage_order_errors(scenes: list[dict[str, Any]]) -> list[str]:
-    """검증 1항목: 7단이 순서대로 모두 존재하는가."""
-    errors: list[str] = []
-    beats = [s.get("beat") for s in scenes]
+def _edge_scenes(
+    items: list[dict[str, Any]], beats: tuple[str, ...], *, head: bool
+) -> list[dict[str, Any]]:
+    """훅 쪽 / 엔딩 쪽 씬. 라벨이 있으면 라벨이 이긴다.
 
-    # 순서: 각 비트에 '앞 단계 이상'인 최소 단계를 그리디로 배정한다.
-    # 배정이 불가능하면 단계가 역행한 것이다.
-    current = 1
-    for scene in scenes:
-        options = [st for st in STAGES_OF_BEAT.get(scene.get("beat"), ()) if st >= current]
-        if not options:
-            errors.append(
-                f"scenes/{scene.get('scene_id')}: 비트 '{scene.get('beat')}'가 "
-                f"{current}단 뒤에 올 수 없다 (7단 순서 역행)"
-            )
-            break
-        current = min(options)
-
-    for stage, name, candidates in REQUIRED_STAGE_BEATS:
-        if not any(b in candidates for b in beats):
-            errors.append(f"beats: {stage}단({name}) 비트가 없다 — {' | '.join(candidates)} 중 하나 필요")
-
-    failed = beats.count("failed_solution")
-    if failed < MIN_FAILED_SOLUTIONS:
-        errors.append(
-            f"beats: failed_solution이 {failed}회다 — 3단·4단에 각각 하나씩 "
-            f"최소 {MIN_FAILED_SOLUTIONS}회 필요"
-        )
-    return errors
+    비트는 이제 라벨일 뿐이고 어느 편에서든 있으리라는 보장이 없다 (ADR-0033 §4).
+    하나도 없으면 앞뒤 씬을 떼어 본다 — 수미상관은 구조가 아니라 결과에 거는 제약이라
+    라벨이 없다고 검사를 포기하지 않는다.
+    """
+    tagged = [s for s in items if s.get("beat") in beats]
+    if tagged:
+        return tagged
+    size = max(1, round(len(items) * EDGE_RATIO))
+    return items[:size] if head else items[-size:]
 
 
 def validate_script(scenes: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -167,27 +133,11 @@ def validate_script(scenes: dict[str, Any]) -> tuple[list[str], list[str]]:
     if not items:
         return ["scenes: 씬이 없다"], []
 
-    full_text = " ".join(str(s.get("text", "")) for s in items)
+    full_text = _text_of(items)
     total_chars = len(core_chars(full_text))
     duration = float(scenes.get("total_duration") or items[-1].get("est_end", 0))
 
-    # 1. 7단 순서
-    errors.extend(_stage_order_errors(items))
-
-    # 2. 필수 시그니처 문구와 그 위치
-    hits = [s for s in items if TURNING_PHRASE in str(s.get("text", ""))]
-    if not hits:
-        errors.append(f"text: 필수 문구 '{TURNING_PHRASE}'가 없다")
-    else:
-        start = float(hits[0].get("est_start", 0))
-        low, high = TURNING_WINDOW
-        if not low <= start <= high:
-            errors.append(
-                f"scenes/{hits[0].get('scene_id')}: '{TURNING_PHRASE}'가 {start:.1f}초에 있다 "
-                f"({low:.0f}~{high:.0f}초 구간이어야 한다)"
-            )
-
-    # 3. 총 글자 수 · 자막 줄 수
+    # 1. 총 글자 수 · 자막 줄 수
     if not TOTAL_CHARS[0] <= total_chars <= TOTAL_CHARS[1]:
         errors.append(
             f"text: 총 {total_chars}자 (범위 {TOTAL_CHARS[0]}~{TOTAL_CHARS[1]}자)"
@@ -197,20 +147,25 @@ def validate_script(scenes: dict[str, Any]) -> tuple[list[str], list[str]]:
             f"scenes: 자막 {len(items)}줄 (범위 {LINE_COUNT[0]}~{LINE_COUNT[1]}줄)"
         )
 
-    # 4. solution 구간 숫자
-    solution_numbers = extract_values(_join(items, SOLUTION_BEATS))
-    if len(solution_numbers) < MIN_SOLUTION_NUMBERS:
-        errors.append(
-            f"beats/solution: 구체적 숫자가 {len(solution_numbers)}개다 "
-            f"(최소 {MIN_SOLUTION_NUMBERS}개)"
+    # 2. 수미상관
+    opening = _edge_scenes(items, HOOK_BEATS, head=True)
+    closing = _edge_scenes(items, ENDING_BEATS, head=False)
+    if not noun_stems(_text_of(opening)) & noun_stems(_text_of(closing)):
+        errors.append("text: 엔딩이 훅의 명사를 하나도 재사용하지 않는다 (수미상관 실패)")
+
+    # --- 경고 ---
+    if PRIMARY_SIGNATURE and PRIMARY_SIGNATURE not in full_text:
+        warnings.append(
+            f"시그니처 문구 '{PRIMARY_SIGNATURE}'가 없다 — 문제 해결 서사가 아니면 "
+            "쓰지 않아도 된다 (ADR-0033 §2)"
         )
 
-    # 5. 수미상관
-    shared = noun_stems(_join(items, HOOK_BEATS)) & noun_stems(_join(items, ENDING_BEATS))
-    if not shared:
-        errors.append("text: ending이 hook의 명사를 하나도 재사용하지 않는다 (수미상관 실패)")
+    numbers = extract_values(full_text)
+    if len(numbers) < MIN_NUMBERS:
+        warnings.append(
+            f"대본 전체의 구체적 숫자가 {len(numbers)}개다 (권장 최소 {MIN_NUMBERS}개)"
+        )
 
-    # --- 분량 규칙 (경고) ---
     if not TOTAL_SECONDS[0] <= duration <= TOTAL_SECONDS[1]:
         warnings.append(
             f"total_duration: {duration:.1f}초 (권장 {TOTAL_SECONDS[0]:.0f}~{TOTAL_SECONDS[1]:.0f}초)"

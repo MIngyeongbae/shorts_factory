@@ -1,18 +1,16 @@
-"""전환 계획 — 씬 계약을 타임라인 배치로 옮긴다. specs/03 "전환 규칙".
+"""전환 계획 — 씬 계약을 타임라인 배치로 옮긴다. specs/03 "전환".
 
-    - 기본: 크로스 디졸브 0.4~0.6초
-    - `turning_point` 진입 시: 디졸브 없이 컷 + 오디오 룰의 차임 동기화
-    - 하드컷은 `hook_twist`, `dilemma_peak` 진입 시에만 허용
+**전환을 고르는 것은 `[1s. sceneplan]`이다** (ADR-0033 §3). 이 모듈은 씬 계약의
+`transition`을 읽고, 비어 있을 때만 `beat-defaults.json`의 기본값으로 떨어진다.
 
-읽는 곳은 `scenes.timed.json` 하나다 (ADR-0020). 전환이 비트에 걸려 있어 `beat`을,
-배치가 시각에 걸려 있어 `start`/`end`를 같은 파일에서 읽는다.
+읽는 곳은 `scenes.timed.json` 하나다 (ADR-0020). 배치가 시각에 걸려 있어
+`start`/`end`를 같은 파일에서 읽는다.
 
 ## 디졸브 길이를 0.6초로 고정하는 근거
 
-스펙 03은 0.4~0.6초의 폭을 준다. 그중 0.6을 쓰는 이유는 **클립 계약이 그 값을 이미
-정했기 때문**이다 — specs/05 `[7. motion]`: "클립 길이 = 씬 길이 + 디졸브 겹침 0.6초".
-0.4를 쓰면 클립마다 0.2초가 쓰이지 않고 남는다. 값을 고르는 것이 아니라 이미 고른 값을
-읽는 것이다.
+**클립 계약이 그 값을 이미 정했다** — specs/05 `[7. motion]`: "클립 길이 = 씬 길이 +
+디졸브 겹침 0.6초". 더 짧게 두면 클립마다 그 차이만큼이 쓰이지 않고 남는다. 값을
+고르는 것이 아니라 이미 고른 값을 읽는 것이고, 그래서 자유화 대상이 아니다 (ADR-0024).
 
 ## 배치 (기하)
 
@@ -37,25 +35,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from ..schemas.scenes import BEATS
+from ..schemas import vocab
+
+#: 전환 어휘 (`specs/schema/vocab.json`). 값 목록을 선언하지 않고 이름으로 가리킨다.
+DISSOLVE = vocab.require("transition", "dissolve")
+HARD_CUT = vocab.require("transition", "hard_cut")
 
 #: specs/05 `[7. motion]` "클립 길이 = 씬 길이 + 디졸브 겹침 0.6초"가 정한 겹침.
-#: specs/03의 "0.4~0.6초" 중 이 값만이 클립 꼬리를 남기지 않는다.
-DISSOLVE_SECONDS = 0.6
-
-DISSOLVE = "dissolve"
-HARD_CUT = "cut"
-
-#: specs/03 전환 규칙 — 이 비트로 **진입**하는 자리에는 디졸브를 걸지 않는다.
-#:
-#: `turning_point`는 스펙이 직접 지시한다("디졸브 없이 컷"). `hook_twist`·`dilemma_peak`은
-#: "하드컷은 … 진입 시에만 허용"이라는 문장에서 왔다. 그 문장을 허가가 아니라 지시로
-#: 읽었다 — 허가로만 읽으면 파이프라인의 어떤 룰도 그 두 비트에서 하드컷을 만들지 않아
-#: 문장이 죽는다. 세 비트 모두 서사가 끊기는 자리라는 점도 같다.
-#:
-#: 이 독법이 스펙 저자의 의도와 다르면 **여기 튜플에서 두 값을 빼면 된다.** 그 경우
-#: 전 구간이 디졸브가 되고 하드컷은 `turning_point` 한 번뿐이다.
-HARD_CUT_BEATS: tuple[str, ...] = ("turning_point", "hook_twist", "dilemma_peak")
+DISSOLVE_SECONDS: float = vocab.meta("transition")[DISSOLVE]["seconds"]
 
 #: 씬이 이어지는지 판정하는 허용 오차(초). `[3]`은 빈틈 없이 이어 붙이므로(tts/sync.py)
 #: 여기 걸리는 것은 계산 오류이지 반올림이 아니다.
@@ -66,17 +53,16 @@ class TimelineError(Exception):
     """씬 계약으로 타임라인을 만들 수 없음."""
 
 
-def transition_into(beat: str) -> str:
-    """씬 `beat`으로 **진입**하는 전환. specs/03 전환 규칙.
+def transition_into(scene: dict[str, Any]) -> str:
+    """이 씬으로 **진입**하는 전환. 씬이 고른 값이 먼저다 (ADR-0033 §3).
 
-    룰 테이블에 없는 비트는 기본값으로 흘려보내지 않고 멈춘다. 스펙 02의 enum이 먼저
-    막지만, 비트가 늘어나면 전환 규칙도 함께 늘어야 한다 (ADR-0001).
+    비어 있으면 `beat-defaults.json`의 기본값으로 떨어진다. **멈추지 않는다** —
+    선택 필드의 부재는 경고가 아니고(단계 독립 D-3), 모르는 비트에도 폴백이 있다.
     """
-    if beat not in BEATS:
-        raise TimelineError(
-            f"스펙 02·03 룰 테이블에 없는 비트 '{beat}'. 전환을 임의로 정하지 않는다"
-        )
-    return HARD_CUT if beat in HARD_CUT_BEATS else DISSOLVE
+    chosen = scene.get("transition")
+    if chosen in (DISSOLVE, HARD_CUT):
+        return chosen
+    return vocab.default_transition(scene.get("beat", ""))
 
 
 @dataclass(frozen=True)
@@ -155,7 +141,7 @@ def build_timeline(
 
     transitions: list[str | None] = [None]
     for scene in scenes[1:]:
-        transitions.append(transition_into(scene["beat"]))
+        transitions.append(transition_into(scene))
 
     segments: list[Segment] = []
     for index, scene in enumerate(scenes):

@@ -11,9 +11,10 @@ specs/05-pipeline.md:
 
 ## 이 단계가 판단하지 않는 것
 
-연출은 전부 `schemas/visual_rules.py`의 룰 테이블에서 나온다 (ADR-0001). 이 모듈이
-하는 일은 룰 적용 순서를 정하고, 씬을 가로지르는 참조(`전경 유지`, `훅 구도 재사용`)를
-풀고, 결과를 계약 형태로 쓰는 것뿐이다. 룰에 없는 연출을 만들지 않는다.
+**연출은 전부 씬 계약에서 온다** (ADR-0033 §3). 고른 것은 `[1s. sceneplan]`이고 이
+모듈은 그것을 방언으로 옮기는 변환기다. 씬이 값을 비웠을 때만 `beat-defaults.json`의
+기본값으로 떨어지며, **그 씬 수를 요약에 낸다** — 연출 선택이 형식적으로 비어 있는지를
+보는 유일한 수단이다. 어휘 밖의 연출은 만들지 않는다.
 
 ## 외부 의존 없음
 
@@ -41,7 +42,6 @@ from ..schemas.scenes import validate_scenes
 from ..schemas.visual_rules import (
     ASPECT_RATIO,
     BASE_STYLE,
-    BEAT_RULES,
     COMPOSITION,
     DEFAULT_DIALECT,
     DIALECTS,
@@ -96,6 +96,20 @@ class PromptResult:
         return counts
 
     @property
+    def default_framed_scenes(self) -> int:
+        """구도를 씬이 고르지 않아 **기본값으로 떨어진** 씬 수 (ADR-0033).
+
+        이 값이 되돌릴 조건의 관측 수단이다 — `[1s]`가 연출을 습관적으로 비우면
+        구도가 다시 비트 표에서 나오게 되고, 그건 ADR-0033 이전과 같은 상태다.
+        경고가 아니라 요약에 내는 이유는 한 편만 보고 판정할 값이 아니어서다.
+        """
+        if not self.prompts:
+            return 0
+        return sum(
+            1 for s in self.prompts["scenes"] if s["framing_source"] == "beat_default"
+        )
+
+    @property
     def overlay_count(self) -> int:
         """[8. overlay]가 합성해야 하는 레이어 B 항목 수."""
         if not self.prompts:
@@ -120,6 +134,7 @@ class PromptResult:
         return (
             f"[5] {self.topic} — {self.scene_count}씬 ({scales}) / "
             f"대상 앵커 {self.anchored_scenes}씬 / "
+            f"구도 기본값 {self.default_framed_scenes}씬 / "
             f"레이어B 오버레이 {self.overlay_count}건 / 방언 {self.dialect} "
             f"→ {PROMPTS_FILE}{tail}"
         )
@@ -134,36 +149,24 @@ def _load_json(path: Path, what: str) -> dict[str, Any]:
         raise PromptStageError(f"{what}을(를) 읽을 수 없다: {path} — {exc}") from exc
 
 
-def _scene_overlays(
-    scene: dict[str, Any], beat: str, sid: int
-) -> list[dict[str, Any]]:
-    """비트 룰 오버레이 + 씬의 emphasis.
+def _scene_overlays(scene: dict[str, Any], sid: int) -> list[dict[str, Any]]:
+    """씬의 `emphasis` 하나. **비트로 오버레이를 더하지 않는다** (ADR-0033 §3).
 
-    레이어 A가 폐기돼(ADR-0019) 나오는 항목은 전부 레이어 B다 — `[8. overlay]`가
-    합성한다. 베이스 이미지에는 아무것도 그리지 않는다.
+    무엇을 얹을지는 `[1s]`가 고른다. 레이어 A가 폐기돼(ADR-0019) 나오는 항목은 전부
+    레이어 B다 — `[8. overlay]`가 합성한다. 베이스 이미지에는 아무것도 그리지 않는다.
     """
-    names = list(BEAT_RULES[beat].overlays)
-
     emphasis = scene.get("emphasis")
-    value_of: dict[str, str] = {}
-    if emphasis:
-        etype = emphasis["type"]
-        if etype not in OVERLAYS:
-            # specs/02는 emphasis.type을 "specs/03의 오버레이 타입 enum"이라고 했다.
-            # 목록에 없는 값이 오면 연출을 지어내지 않고 멈춘다 (ADR-0001).
-            raise PromptStageError(
-                f"씬 {sid}: 스펙 03 룰 테이블에 없는 emphasis.type '{etype}'. "
-                f"허용: {', '.join(sorted(OVERLAYS))}"
-            )
-        value_of[etype] = emphasis["value"]
-        if etype not in names:
-            # 숫자 비트가 아닌데 emphasis가 달린 경우 (specs/02 "그 외 옵션").
-            names.append(etype)
+    if not emphasis:
+        return []
 
-    return [
-        {"type": name, "layer": OVERLAYS[name].layer, "value": value_of.get(name)}
-        for name in names
-    ]
+    etype = emphasis["type"]
+    if etype not in OVERLAYS:
+        # 어휘에 없는 값이 오면 연출을 지어내지 않고 멈춘다 (ADR-0033 §3).
+        raise PromptStageError(
+            f"씬 {sid}: 어휘에 없는 emphasis.type '{etype}'. "
+            f"허용: {', '.join(sorted(OVERLAYS))}"
+        )
+    return [{"type": etype, "layer": OVERLAYS[etype].layer, "value": emphasis["value"]}]
 
 
 def build_prompts(
@@ -182,35 +185,20 @@ def build_prompts(
     scenes: list[dict[str, Any]] = script["scenes"]
     warnings: list[str] = []
     out_scenes: list[dict[str, Any]] = []
-
-    #: (구도 토큰, subject_scale, scene_id) — 스케일이 같을 때만 구도를 잇는다 (ADR-0018)
-    prev: tuple[str, str, int] | None = None
-    hook: tuple[str, str, int] | None = None
     missing_values: dict[str, list[int]] = {}
 
     for scene in scenes:
         sid = scene["scene_id"]
         beat = scene["beat"]
-        if beat not in BEAT_RULES:
-            raise PromptStageError(
-                f"씬 {sid}: 스펙 03 룰 테이블에 없는 비트 '{beat}'"
-            )
-        rule = BEAT_RULES[beat]
         scale = scene["subject_scale"]
 
-        token, source, reference = resolve_framing(beat, scale, prev=prev, hook=hook)
+        token, source = resolve_framing(scene)
 
-        overlays = _scene_overlays(scene, beat, sid)
+        overlays = _scene_overlays(scene, sid)
         overlay_names = tuple(item["type"] for item in overlays)
         for item in overlays:
             if OVERLAYS[item["type"]].needs_value and item["value"] is None:
                 missing_values.setdefault(item["type"], []).append(sid)
-
-        if scene["camera"] not in rule.cameras:
-            warnings.append(
-                f"씬 {sid}: camera={scene['camera']}가 비트 {beat}의 스펙 03 기본값"
-                f"({'/'.join(rule.cameras)})과 다르다"
-            )
 
         prompt_text, negative_text = build_scene_prompt(
             dialect,
@@ -223,25 +211,20 @@ def build_prompts(
             anchors=scene.get("subject_anchor", ()),
         )
 
-        entry: dict[str, Any] = {
-            "scene_id": sid,
-            "beat": beat,
-            "subject_scale": scale,
-            "camera": scene["camera"],
-            "motion": scene["motion"],
-            "framing": token,
-            "framing_source": source,
-            "prompt": prompt_text,
-            "negative_prompt": negative_text,
-            "overlays": overlays,
-        }
-        if reference is not None:
-            entry["framing_reuse_of"] = reference
-        out_scenes.append(entry)
-
-        prev = (token, scale, sid)
-        if hook is None and beat == "hook_fact":
-            hook = (token, scale, sid)
+        out_scenes.append(
+            {
+                "scene_id": sid,
+                "beat": beat,
+                "subject_scale": scale,
+                "camera": scene["camera"],
+                "motion": scene["motion"],
+                "framing": token,
+                "framing_source": source,
+                "prompt": prompt_text,
+                "negative_prompt": negative_text,
+                "overlays": overlays,
+            }
+        )
 
     for overlay_type, ids in sorted(missing_values.items()):
         warnings.append(
@@ -373,8 +356,11 @@ def run_prompt_stage(
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
         dialect=dialect,
-        # 편이 쌓여야 판정할 값이라 run 상태에도 남긴다 (ADR-0028 되돌릴 조건).
+        # 편이 쌓여야 판정할 값이라 run 상태에도 남긴다 (ADR-0028·0033 되돌릴 조건).
         anchored_scenes=_anchored_scenes(script),
+        default_framed_scenes=sum(
+            1 for s in document["scenes"] if s["framing_source"] == "beat_default"
+        ),
         warnings=warnings,
     )
 

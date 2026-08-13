@@ -15,7 +15,7 @@
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
 
 ADR-0008에 따라 LLM 단계는 claude 헤드리스 서브프로세스로 실행된다.
-`prompt`는 2부 단계이고 LLM도 네트워크도 쓰지 않는다 (순수 룰 변환, ADR-0001).
+`prompt`는 2부 단계이고 LLM도 네트워크도 쓰지 않는다 (순수 변환, ADR-0033 §3).
 """
 
 from __future__ import annotations
@@ -109,8 +109,8 @@ def _cmd_topic(args, paths: Paths) -> int:
     print(result.summary)
     if not result.accepted:
         print(
-            "\n백로그에서 미충족 조건을 채우거나 소재를 반려하라 "
-            "(specs/06-topic-research.md 소재 4조건).",
+            "\n백로그 항목을 고치거나 소재를 반려하라 "
+            "(specs/06-topic-research.md).",
             file=sys.stderr,
         )
         return 2

@@ -149,7 +149,7 @@ def _build_feedback(problems: list[str]) -> str:
         "\n\n# 재생성 지시 — 직전 출력이 계약 검증에 실패했다\n\n"
         f"{bullets}\n\n"
         "위 문제를 모두 고쳐 JSON 객체 하나만 다시 출력하라. "
-        "특히 4조건과 verdict의 일치 규칙을 다시 확인하라.\n"
+        "특히 관측 지표(conditions)와 근거 필드의 일치를 다시 확인하라.\n"
     )
 
 
@@ -431,7 +431,7 @@ def run_research_stage(
         log.warning("[%s] %s", STAGE, warning)
 
     if verdict == "fail":
-        reason = factsheet.get("reject_reason") or "소재 4조건 중 불충족 항목이 있다"
+        reason = factsheet.get("reject_reason") or "판별 기준을 넘기지 못했다"
         log.warning("[%s] verdict=fail → 백로그 반려: %s", STAGE, reason)
 
         status_mod.write_status(
@@ -442,7 +442,7 @@ def run_research_stage(
             run_id=run_id,
             reason=(
                 f"[0b. research] 자동 반려 — {reason}\n\n"
-                "소재 4조건 중 하나 이상이 사료 근거로 불충족 판정됐다 "
+                "그림이 설명의 일부를 지지 못하거나 사실이 그라운딩을 못 버틴다 "
                 "(specs/06-topic-research.md). 대본 생성으로 진입하지 않는다."
             ),
             decided_by="파이프라인 (자동 반려)",
@@ -470,8 +470,8 @@ def run_research_stage(
             slug=slug,
             run_id=run_id,
             reason=(
-                "[0b. research] 통과 — 소재 4조건이 사료 근거로 충족됐다.\n\n"
-                "대본 후보 생성([1. script]) 이후 패키지 전체를 보고 "
+                "[0b. research] 통과 — 사료 근거로 판별 기준을 넘겼다.\n\n"
+                "대본 후보 생성 이후 패키지 전체를 보고 "
                 "사람이 go / no-go를 기록한다 (ADR-0009)."
             ),
             done_stages=("topic", "research"),

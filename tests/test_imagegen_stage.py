@@ -120,22 +120,31 @@ def test_images_are_real_png_files(paths, prepared):
         assert width * 16 == height * 9  # 9:16 (specs/03)
 
 
-def test_framing_reuse_is_not_treated_as_an_image_cache(paths, prepared):
+def test_same_framing_is_not_treated_as_an_image_cache(paths, prepared):
     """ADR-0020 — 구도만 같고 subject는 다르다. 캐시 키로 쓰면 다른 피사체가 같은 그림이 된다."""
     run_id = prepared(PISA)
     prompts = json.loads(
         (paths.run_dir(run_id) / PROMPTS_FILE).read_text(encoding="utf-8")
     )
-    reuser = next(s for s in prompts["scenes"] if "framing_reuse_of" in s)
-    source_id = reuser["framing_reuse_of"]
+    seen: dict[str, int] = {}
+    pair = None
+    for entry in prompts["scenes"]:
+        token = entry["framing"]
+        if token in seen:
+            pair = (seen[token], entry["scene_id"])
+            break
+        seen[token] = entry["scene_id"]
+    assert pair, "같은 구도를 두 번 쓰는 씬이 없어 이 회귀를 볼 수 없다"
+
+    first, second = pair
     client = FakeImageClient()
 
     run_imagegen_stage(images=client, run_id=run_id, paths=paths)
 
     images = paths.run_dir(run_id) / IMAGES_DIR
-    assert client.attempts_for(reuser["scene_id"]) == 1  # 건너뛰지 않았다
-    assert (images / f"{reuser['scene_id']}.png").read_bytes() != (
-        images / f"{source_id}.png"
+    assert client.attempts_for(second) == 1  # 건너뛰지 않았다
+    assert (images / f"{second}.png").read_bytes() != (
+        images / f"{first}.png"
     ).read_bytes()
 
 

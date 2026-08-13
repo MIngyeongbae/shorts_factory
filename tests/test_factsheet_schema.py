@@ -46,20 +46,23 @@ def test_bad_confidence_value_is_rejected():
     assert any("confidence" in e for e in errors)
 
 
-def test_all_conditions_met_must_be_pass():
-    """specs/06: 4조건 충족인데 fail이면 계약 위반."""
+def test_conditions_do_not_decide_the_verdict():
+    """`conditions`는 관측이지 판정이 아니다 (ADR-0033 §1).
+
+    지표가 다 차 있어도 매체 적합성에서 fail일 수 있고, 비어 있어도 pass일 수 있다.
+    둘을 묶으면 지표가 다시 게이트가 된다.
+    """
     data = load_fixture("factsheet_pass.json")
     data["verdict"] = "fail"
     errors, _ = validate_factsheet(data)
-    assert any("pass" in e for e in errors)
+    assert errors == []
 
 
-def test_unmet_condition_must_be_fail():
-    """specs/06: 4조건 중 하나라도 불충족이면 verdict는 fail."""
+def test_an_empty_indicator_does_not_reject_the_topic():
     data = load_fixture("factsheet_pass.json")
     data["conditions"]["numbers"] = False
     errors, _ = validate_factsheet(data)
-    assert any("fail" in e for e in errors)
+    assert errors == []
 
 
 def test_numbers_condition_requires_minimum_count():

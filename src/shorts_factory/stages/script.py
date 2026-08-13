@@ -342,7 +342,7 @@ def run_script_stage(
     if factsheet.get("verdict") != "pass":
         reason = (
             f"팩트시트 verdict가 '{factsheet.get('verdict')}'다. "
-            "4조건 불충족 소재는 대본 생성에 진입하지 않는다 (specs/06)."
+            "판별 기준을 넘기지 못한 소재는 대본 생성에 진입하지 않는다 (specs/06)."
         )
         state.mark_blocked(STAGE, reason=reason)
         raise ScriptStageError(reason)

@@ -1,4 +1,4 @@
-"""스펙 01 대본 규칙 검증 (ADR-0013 단위: 자막 줄).
+"""스펙 01 대본 규칙 검증 (ADR-0013 단위: 자막 줄, ADR-0033 구조 자유화).
 
 기준 픽스처는 `scenes_golden_baegak.json` — 레퍼런스 채널 "경복궁 뒷산은 왜 500년 동안
 도끼가 금지됐을까"의 원본 SRT를 그대로 옮긴 것이다. 실제로 성공한 대본이 자기 검증기를
@@ -6,6 +6,9 @@
 
 이 픽스처는 대본 전문을 담고 있어 저장소에 올리지 않는다. 없으면 해당 테스트는 skip된다.
 생성: `python tools/srt_to_scenes.py`
+
+**막는 것은 분량과 수미상관뿐이다** (ADR-0033 §5). 구조 검증이 사라진 자리를 이 파일이
+반대 방향으로 고정한다 — 비트를 흔들어도 오류가 나지 않아야 한다.
 """
 
 import pytest
@@ -13,8 +16,7 @@ import pytest
 from conftest import FIXTURES, load_fixture
 from shorts_factory.schemas.script_rules import (
     LINE_CHARS_MAX,
-    MIN_FAILED_SOLUTIONS,
-    TURNING_PHRASE,
+    PRIMARY_SIGNATURE,
     core_chars,
     noun_stems,
     validate_script,
@@ -63,109 +65,112 @@ def test_schema_fixture_is_not_a_golden_script():
     assert any("총" in e and "자" in e for e in errors)
 
 
-# --- 검증 1: 7단 순서 ---------------------------------------------------------
+# --- 구조는 검증하지 않는다 (ADR-0033 §5) ------------------------------------
 
 
-def test_stage_regression_is_rejected(golden):
-    scenes = golden
-    scenes["scenes"][2]["beat"] = "ending_echo"  # 3번째 줄에 7단이 오면 뒤가 역행한다
-    errors, _ = validate_script(scenes)
-    assert any("역행" in e for e in errors)
+def test_beat_order_is_not_validated(golden):
+    """단 구성이 소재마다 다르므로 순서를 기계가 볼 수 없다."""
+    golden["scenes"][2]["beat"] = "ending_echo"
+    errors, _ = validate_script(golden)
+    assert errors == []
 
 
-def test_missing_turning_point_beat_is_rejected(golden):
-    scenes = golden
-    find(scenes, "turning_point")["beat"] = "solution_step"
-    errors, _ = validate_script(scenes)
-    assert any("5단" in e for e in errors)
+def test_missing_turning_point_beat_is_fine(golden):
+    """전환점이 없는 서사도 있다. 그 판단은 `[2b] judge` 몫이다."""
+    find(golden, "turning_point")["beat"] = "solution_step"
+    errors, _ = validate_script(golden)
+    assert errors == []
 
 
-def test_single_failed_solution_is_rejected(golden):
-    """3단·4단이 각각 있으려면 실패 대안이 두 번 나와야 한다."""
-    scenes = golden
-    for scene in scenes["scenes"]:
+def test_single_failed_solution_is_fine(golden):
+    """실패한 대안이 한 번만 나오는 편을 막지 않는다."""
+    for scene in golden["scenes"]:
         if scene["beat"] == "failed_solution":
             scene["beat"] = "failure_reason"
             break
-    errors, _ = validate_script(scenes)
-    assert any(str(MIN_FAILED_SOLUTIONS) in e and "failed_solution" in e for e in errors)
+    errors, _ = validate_script(golden)
+    assert errors == []
 
 
-# --- 검증 2: 필수 시그니처 문구 -----------------------------------------------
+# --- 시그니처 문구: 권장이라 경고다 (ADR-0033 §2) ----------------------------
 
 
-def test_missing_turning_phrase_is_rejected(golden):
-    scenes = golden
-    find(scenes, "turning_point")["text"] = "그래서 생각을 바꿉니다."
-    errors, _ = validate_script(scenes)
-    assert any(TURNING_PHRASE in e for e in errors)
+def test_missing_signature_phrase_is_a_warning(golden):
+    find(golden, "turning_point")["text"] = "그래서 생각을 바꿉니다."
+    errors, warnings = validate_script(golden)
+    assert all(PRIMARY_SIGNATURE not in e for e in errors)
+    assert any(PRIMARY_SIGNATURE in w for w in warnings)
 
 
-def test_turning_phrase_outside_window_is_rejected(golden):
-    scenes = golden
-    find(scenes, "turning_point")["est_start"] = 20.0
-    errors, _ = validate_script(scenes)
-    assert any("44~54초" in e for e in errors)
+def test_signature_position_is_not_checked(golden):
+    """44~54초는 폐기된 고정 구조에서 온 값이라 자리가 없다."""
+    find(golden, "turning_point")["est_start"] = 20.0
+    errors, warnings = validate_script(golden)
+    assert all("44" not in e for e in errors)
+    assert all("44" not in w for w in warnings)
 
 
 def test_dilemma_phrase_variant_is_not_required(golden):
     """'환장할 노릇'은 권장이라 없어도 통과한다 (3편 중 1편은 아예 없다)."""
-    scenes = golden
-    scene = find(scenes, "dilemma_peak")
+    scene = find(golden, "dilemma_peak")
     scene["text"] = scene["text"].replace(" 환장할 노릇입니다.", "")
-    errors, _ = validate_script(scenes)
+    errors, warnings = validate_script(golden)
     assert all("환장" not in e for e in errors)
+    assert all("환장" not in w for w in warnings)
 
 
-# --- 검증 3: 분량 -------------------------------------------------------------
+# --- 분량 (막는다) -----------------------------------------------------------
 
 
 def test_too_few_lines_is_rejected(golden):
-    scenes = golden
-    scenes["scenes"] = scenes["scenes"][:20]
-    errors, _ = validate_script(scenes)
+    golden["scenes"] = golden["scenes"][:20]
+    errors, _ = validate_script(golden)
     assert any("자막" in e and "줄" in e for e in errors)
 
 
 def test_too_few_chars_is_rejected(golden):
-    scenes = golden
-    for scene in scenes["scenes"]:
+    for scene in golden["scenes"]:
         scene["text"] = scene["text"][:5]
-    errors, _ = validate_script(scenes)
+    errors, _ = validate_script(golden)
     assert any("총" in e for e in errors)
 
 
-# --- 검증 4: solution 숫자 ----------------------------------------------------
+# --- 숫자: 편 전체 기준 경고 -------------------------------------------------
 
 
-def test_solution_without_numbers_is_rejected(golden):
-    scenes = golden
-    for scene in scenes["scenes"]:
-        if scene["beat"] in ("solution_step", "solution_number"):
-            scene["text"] = "해결책을 설명하는 문장입니다."
-    errors, _ = validate_script(scenes)
-    assert any("solution" in e and "숫자" in e for e in errors)
+def test_script_without_numbers_is_a_warning(golden):
+    """비트로 구간을 자를 수 없으므로 편 전체에서 센다."""
+    for scene in golden["scenes"]:
+        scene["text"] = "숫자가 하나도 없는 설명 문장입니다."
+    errors, warnings = validate_script(golden)
+    assert all("숫자" not in e for e in errors)
+    assert any("숫자" in w for w in warnings)
 
 
-def test_context_numbers_are_not_required(golden):
-    """실측 3편 중 2편이 context에 숫자가 없다 — 검증하지 않는다 (specs/01)."""
-    scenes = golden
-    for scene in scenes["scenes"]:
-        if scene["beat"] == "context":
-            scene["text"] = "숫자가 없는 배경 설명입니다."
-    errors, _ = validate_script(scenes)
-    assert all("context" not in e for e in errors)
-
-
-# --- 검증 5: 수미상관 ---------------------------------------------------------
+# --- 수미상관 (막는다) -------------------------------------------------------
 
 
 def test_missing_echo_is_rejected(golden):
-    scenes = golden
-    for scene in scenes["scenes"]:
+    for scene in golden["scenes"]:
         if scene["beat"] in ("hook_fact", "hook_twist"):
             scene["text"] = "전혀 다른 화제의 도입부 문장을 넣습니다."
-    errors, _ = validate_script(scenes)
+    errors, _ = validate_script(golden)
+    assert any("수미상관" in e for e in errors)
+
+
+def test_echo_falls_back_to_the_edges_without_position_labels(golden):
+    """훅·엔딩 라벨이 하나도 없는 대본에서도 수미상관은 본다.
+
+    비트는 이제 라벨일 뿐이라 어느 편에서든 있으리라는 보장이 없다 (ADR-0033 §4).
+    """
+    for scene in golden["scenes"]:
+        scene["beat"] = "context"
+    errors, _ = validate_script(golden)
+    assert all("수미상관" not in e for e in errors)
+
+    for scene in golden["scenes"][:3]:
+        scene["text"] = "전혀 다른 화제의 도입부 문장을 넣습니다."
+    errors, _ = validate_script(golden)
     assert any("수미상관" in e for e in errors)
 
 
@@ -189,7 +194,7 @@ def test_noun_stem_drops_verbs_and_stopwords():
 def test_noun_stem_keeps_nouns_ending_in_verb_like_syllables(word):
     """아/어/야로 끝나는 명사를 용언으로 오인하지 않는다.
 
-    도메인이 국가 무관이 된 뒤(ADR-0016) 외래 고유명사가 기본값이다. 조사를 뗀
+    도메인 제한이 없어진 뒤(ADR-0016·0033) 외래 고유명사가 기본값이다. 조사를 뗀
     어간에 용언 검사를 다시 걸면 '파비아의'→'파비아'가 통째로 사라졌고, 피사 편
     첫 대본이 실제 수미상관(hook '파비아의' ↔ ending '파비아가')을 갖고도
     실패 판정을 받았다.
@@ -222,16 +227,14 @@ def test_core_chars_excludes_whitespace_and_punctuation():
 
 
 def test_overlong_line_is_warning_not_error(golden):
-    scenes = golden
-    target = scenes["scenes"][2]
+    target = golden["scenes"][2]
     target["text"] = "가" * (LINE_CHARS_MAX + 5)
-    errors, warnings = validate_script(scenes)
+    errors, warnings = validate_script(golden)
     assert all(str(LINE_CHARS_MAX) not in e for e in errors)
     assert any(str(LINE_CHARS_MAX) in w for w in warnings)
 
 
 def test_speed_out_of_range_is_warning_not_error(golden):
-    scenes = golden
-    scenes["total_duration"] = 200.0
-    _, warnings = validate_script(scenes)
+    golden["total_duration"] = 200.0
+    _, warnings = validate_script(golden)
     assert any("발화 속도" in w for w in warnings)

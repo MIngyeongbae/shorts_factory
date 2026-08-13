@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scene.schema.json",
+  "title": "06-script.json (씬 계약)",
+  "description": "1부의 최종 산출물이자 2부의 읽기 전용 입력 (ADR-0017). 사람이 읽는 근거는 specs/02-beat-schema.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3).",
+
+  "type": "object",
+  "required": ["run_id", "topic", "total_duration", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "topic": { "type": "string", "minLength": 1 },
+    "total_duration": { "type": "number", "exclusiveMinimum": 0 },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scene" }
+    }
+  },
+
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "description": "씬 1개 = 자막 줄(SRT 큐) 1개 (ADR-0013).",
+      "required": [
+        "scene_id",
+        "beat",
+        "text",
+        "est_start",
+        "est_end",
+        "visual_goal",
+        "subject",
+        "subject_scale",
+        "camera",
+        "motion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scene_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1부터 연번. 자막 줄 순서와 일치한다."
+        },
+        "beat": {
+          "$ref": "vocab.json#/$defs/beat",
+          "description": "서사 기능의 라벨. 연출의 분기 기준이 아니다 (ADR-0033 §4)."
+        },
+        "text": { "type": "string", "minLength": 1 },
+        "est_start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "TTS 이전 추정치. 갱신되지 않는다 — 실측은 scenes.timed.json의 start/end다 (ADR-0017)."
+        },
+        "est_end": { "type": "number", "minimum": 0 },
+
+        "visual_goal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "이 그림이 지는 설명 (ADR-0022). text가 이미 말한 것을 되풀이하면 검증에서 걸린다."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "visual_goal을 달성할 핵심 피사체 (한국어). 이미지 프롬프트의 재료다."
+        },
+        "subject_anchor": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "선택. 대상을 고정하는 짧은 한국어 명사구 목록 (ADR-0028). 부재는 경고가 아니다."
+        },
+        "subject_scale": { "$ref": "vocab.json#/$defs/subject_scale" },
+
+        "framing": {
+          "$ref": "vocab.json#/$defs/framing",
+          "description": "선택. [1s]가 구도 토큰 어휘에서 고른다 (ADR-0033 §3). 없으면 [5]가 beat-defaults.json의 기본값으로 떨어지고 그 씬 수를 요약에 낸다."
+        },
+        "transition": {
+          "$ref": "vocab.json#/$defs/transition",
+          "description": "선택. 이 씬으로 **진입**하는 전환. 없으면 beat-defaults.json의 기본값이다. 첫 씬에서는 무시한다."
+        },
+        "camera": { "$ref": "vocab.json#/$defs/camera" },
+        "motion": { "$ref": "vocab.json#/$defs/motion" },
+
+        "emphasis": {
+          "type": "object",
+          "description": "선택. 화면 강조 요소 (레이어 B). 숫자를 화면에 세울 씬에 [1s]가 단다.",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "$ref": "vocab.json#/$defs/overlay_type" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

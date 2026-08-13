@@ -182,8 +182,8 @@ def test_low_confidence_surfaces_as_warning(prepared):
 
 def test_retries_until_contract_is_satisfied(prepared):
     broken_json = "JSON이 아닌 설명 문장입니다."
-    # 4조건 충족인데 verdict가 fail → semantic 위반
-    contract_violation = _sheet("factsheet_pass.json", verdict="fail")
+    # conditions.twist가 true인데 근거 문장이 비었다 → semantic 위반
+    contract_violation = _sheet("factsheet_pass.json", twist="")
 
     llm = FakeLLMClient(
         [RESEARCH_MD, VERIFY_MD, CRITIQUE_MD,
@@ -200,7 +200,7 @@ def test_retries_until_contract_is_satisfied(prepared):
 
 
 def test_gives_up_after_max_attempts(prepared):
-    violation = _sheet("factsheet_pass.json", verdict="fail")
+    violation = _sheet("factsheet_pass.json", twist="")
     llm = FakeLLMClient([RESEARCH_MD, VERIFY_MD, CRITIQUE_MD] + [violation] * 3)
 
     with pytest.raises(ResearchStageError, match="계약"):

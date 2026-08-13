@@ -54,15 +54,19 @@ def test_run_state_records_stage(paths):
     assert state["topic"] == "한양도성 각자성석"
 
 
-def test_unmet_conditions_are_rejected_without_creating_package(paths):
-    """4조건 미충족이면 패키지를 만들지 않는다 (specs/06)."""
+def test_empty_indicators_do_not_reject_the_topic(paths):
+    """지표가 비어도 패키지를 만든다 (ADR-0033 §1).
+
+    네 지표는 전부 폐기된 고정 구조를 채우기 위한 것이었다. 지금 게이트는 매체
+    적합성 하나이고, 지표는 `[1b] score`로 흘려보내는 관측값이다.
+    """
     result = run_topic_stage("미완성 소재", paths=paths, today=TODAY)
 
-    assert not result.accepted
+    assert result.accepted
+    assert result.topic_dir.exists()
+    # 관측은 남는다 — 반려하지 않을 뿐 세지 않는 것은 아니다
     assert set(result.unmet_conditions) == {"failed_alternative", "present_link"}
-    assert not result.topic_dir.exists()
-    # 백로그 상태는 건드리지 않는다 — 반려 판단은 사람 또는 [0b]의 몫
-    assert parse_backlog(paths.backlog)[1].status == "후보"
+    assert "관측" in result.summary
 
 
 def test_rerun_skips_completed_stage(paths):

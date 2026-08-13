@@ -9,11 +9,13 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from conftest import load_fixture
+from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import (
     visual_goal_overlap,
     BEATS,
-    MAX_KLING_SCENES,
+    MAX_VIDEO_SCENES,
     SCENE_SCHEMA,
+    VIDEO_MOTIONS,
     validate_scenes,
 )
 
@@ -42,11 +44,14 @@ def test_spec_inline_example_scene_is_valid():
         "visual_goal": "축조 현장의 규모 — 자막이 말하지 않는 것",
         "subject": "성벽 축조 현장",
         "subject_scale": "wide",
+        "framing": "frontal_symmetric",
+        "transition": "hard_cut",
         "camera": "slow_zoom_in",
         "motion": "kenburns",
         "notes": "",
     }
-    assert list(Draft202012Validator(SCENE_SCHEMA).iter_errors(example)) == []
+    validator = Draft202012Validator(SCENE_SCHEMA, registry=vocab.REGISTRY)
+    assert list(validator.iter_errors(example)) == []
 
 
 def test_missing_required_field_is_rejected():
@@ -58,7 +63,7 @@ def test_missing_required_field_is_rejected():
 
 def test_unknown_field_is_rejected():
     data = load_fixture("scenes_pass.json")
-    data["scenes"][0]["transition"] = "dissolve"
+    data["scenes"][0]["shot_type"] = "dolly"
     errors, _ = validate_scenes(data)
     assert errors
 
@@ -123,41 +128,45 @@ def test_overlapping_scenes_are_rejected():
 
 
 @pytest.mark.parametrize("beat", ["context_number", "solution_number"])
-def test_number_beat_requires_emphasis(beat):
-    """specs/02: emphasis는 숫자 비트에 필수, 그 외 옵션."""
+def test_number_beat_without_emphasis_is_a_warning(beat):
+    """오버레이를 고르는 것은 이제 [1s]다 (ADR-0033 §3). 막지 않고 알린다."""
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == beat)
     del scene["emphasis"]
-    errors, _ = validate_scenes(data)
-    assert any("emphasis" in e for e in errors)
+    errors, warnings = validate_scenes(data)
+    assert errors == []
+    assert any("emphasis" in w for w in warnings)
 
 
 def test_non_number_beat_may_omit_emphasis():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
     scene.pop("emphasis", None)
-    errors, _ = validate_scenes(data)
+    errors, warnings = validate_scenes(data)
     assert errors == []
+    assert warnings == []
 
 
-def _with_kling_count(data: dict, count: int) -> dict:
-    """픽스처에 이미 kling 씬이 있으므로 전부 되돌린 뒤 정확히 count개만 켠다."""
+def _with_video_count(data: dict, count: int, motion: str = "kling") -> dict:
+    """픽스처에 이미 영상 씬이 있으므로 전부 되돌린 뒤 정확히 count개만 켠다."""
     for idx, scene in enumerate(data["scenes"]):
-        scene["motion"] = "kling" if idx < count else "kenburns"
+        scene["motion"] = motion if idx < count else "kenburns"
     return data
 
 
-def test_kling_at_limit_is_allowed():
-    data = _with_kling_count(load_fixture("scenes_pass.json"), MAX_KLING_SCENES)
+@pytest.mark.parametrize("motion", VIDEO_MOTIONS)
+def test_video_motion_at_limit_is_allowed(motion):
+    data = _with_video_count(load_fixture("scenes_pass.json"), MAX_VIDEO_SCENES, motion)
     errors, _ = validate_scenes(data)
     assert errors == []
 
 
-def test_kling_over_limit_is_rejected():
-    """specs/02 + ADR-0006: kling은 편당 최대 10씬."""
-    data = _with_kling_count(load_fixture("scenes_pass.json"), MAX_KLING_SCENES + 1)
+@pytest.mark.parametrize("motion", VIDEO_MOTIONS)
+def test_video_motion_over_limit_is_rejected(motion):
+    """specs/02 + ADR-0006: 영상은 편당 최대 10씬. mj_video도 같은 상한이다 (ADR-0025 §3)."""
+    data = _with_video_count(load_fixture("scenes_pass.json"), MAX_VIDEO_SCENES + 1, motion)
     errors, _ = validate_scenes(data)
-    assert any(str(MAX_KLING_SCENES) in e for e in errors)
+    assert any(str(MAX_VIDEO_SCENES) in e for e in errors)
 
 
 def test_duration_mismatch_is_warning_not_error():
@@ -216,3 +225,38 @@ def test_overlap_is_measured_on_content_not_punctuation():
 def test_empty_goal_counts_as_fully_overlapping():
     """빈 값에 관대하면 필드가 조용히 죽는다."""
     assert visual_goal_overlap("아무 문장.", "") == 1.0
+
+
+# --- 연출 필드는 선택이다 (ADR-0033 §3) ---------------------------------------
+
+
+def test_framing_and_transition_are_optional():
+    """옛 대본은 두 필드가 없다. 부재는 경고가 아니다 (단계 독립 D-3)."""
+    data = load_fixture("scenes_pass.json")
+    assert all("framing" not in s for s in data["scenes"])
+    errors, warnings = validate_scenes(data)
+    assert errors == []
+    assert warnings == []
+
+
+def test_chosen_framing_must_be_in_the_vocabulary():
+    """자유 기술이 아니라 닫힌 어휘에서의 선택이다."""
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["framing"] = "cinematic_dolly_zoom"
+    errors, _ = validate_scenes(data)
+    assert any("framing" in e for e in errors)
+
+
+def test_chosen_transition_must_be_in_the_vocabulary():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["transition"] = "wipe"
+    errors, _ = validate_scenes(data)
+    assert any("transition" in e for e in errors)
+
+
+@pytest.mark.parametrize("token", ["drone_wide", "cross_section", "present_closeup"])
+def test_vocabulary_framing_tokens_are_accepted(token):
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["framing"] = token
+    errors, _ = validate_scenes(data)
+    assert errors == []

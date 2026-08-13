@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "beat-defaults.json",
+  "title": "비트별 연출 기본값 — 지시가 아니라 폴백 (ADR-0033)",
+  "description": "ADR-0001의 강제 표가 있던 자리다. 지금 이 값은 **강제가 아니다** — 연출을 고르는 것은 [1s] sceneplan이고(ADR-0033 §3), 이 표는 씬이 그 값을 비웠을 때만 쓰인다. 남겨 둔 이유는 ADR-0033의 되돌릴 조건이다: 편마다 룩이나 리듬이 갈리면 이 표를 다시 지시로 올린다. camera·overlay 열은 코드가 읽지 않고 [1s] 세션 프롬프트가 참고한다 — camera는 씬 계약의 필수 필드라 기본값으로 떨어질 자리가 없고, overlay는 [1s]가 emphasis로 직접 단다.",
+
+  "fallback": {
+    "framing": {
+      "wide": "drone_wide",
+      "close": "subject_closeup",
+      "diagram": "section_diagram"
+    },
+    "camera": ["slow_zoom_in"],
+    "overlay": [],
+    "transition": "dissolve"
+  },
+
+  "beat": {
+    "hook_fact": {
+      "framing": { "wide": "drone_wide", "close": "subject_closeup", "diagram": "section_diagram" },
+      "camera": ["slow_zoom_in"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "hook_twist": {
+      "framing": { "wide": "drone_wide", "close": "subject_closeup", "diagram": "section_diagram" },
+      "camera": ["static"],
+      "overlay": [],
+      "transition": "hard_cut"
+    },
+    "context": {
+      "framing": { "wide": "aerial_diorama", "close": "subject_closeup", "diagram": "section_diagram" },
+      "camera": ["pan_left", "pan_right", "tilt_down", "tilt_up"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "context_number": {
+      "framing": { "wide": "aerial_diorama", "close": "subject_closeup", "diagram": "section_diagram" },
+      "camera": ["slow_zoom_in"],
+      "overlay": ["big_red_text"],
+      "transition": "dissolve"
+    },
+    "failed_solution": {
+      "framing": { "wide": "attempt_medium", "close": "detail_closeup", "diagram": "solution_diagram" },
+      "camera": ["static"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "failure_reason": {
+      "framing": { "wide": "failure_result_wide", "close": "failure_closeup", "diagram": "failure_diagram" },
+      "camera": ["slow_zoom_in"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "dilemma_peak": {
+      "framing": { "wide": "problem_wide", "close": "problem_closeup", "diagram": "problem_diagram" },
+      "camera": ["static"],
+      "overlay": [],
+      "transition": "hard_cut"
+    },
+    "turning_point": {
+      "framing": { "wide": "frontal_symmetric", "close": "frontal_closeup", "diagram": "frontal_diagram" },
+      "camera": ["slow_zoom_in"],
+      "overlay": [],
+      "transition": "hard_cut"
+    },
+    "solution_step": {
+      "framing": { "wide": "solution_medium", "close": "detail_closeup", "diagram": "cross_section" },
+      "camera": ["tilt_down", "slow_zoom_in"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "solution_number": {
+      "framing": { "wide": "solution_medium", "close": "detail_closeup", "diagram": "cross_section" },
+      "camera": ["static"],
+      "overlay": ["big_red_text"],
+      "transition": "dissolve"
+    },
+    "present_link": {
+      "framing": { "wide": "present_wide", "close": "present_closeup", "diagram": "present_section" },
+      "camera": ["slow_zoom_out"],
+      "overlay": [],
+      "transition": "dissolve"
+    },
+    "ending_echo": {
+      "framing": { "wide": "present_wide", "close": "subject_closeup", "diagram": "section_diagram" },
+      "camera": ["slow_zoom_out"],
+      "overlay": [],
+      "transition": "dissolve"
+    }
+  }
+}

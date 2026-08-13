@@ -1,130 +1,57 @@
-"""씬 계약(scenes.json) 스키마 및 검증. specs/02-beat-schema.md + specs/05-pipeline.md.
+"""씬 계약(`06-script.json`) 검증. specs/02-beat-schema.md + specs/schema/scene.schema.json.
 
-[1. script]가 대본과 비트 태그를 한 번에 출력하므로(ADR-0003) 이 계약이 대본 단계의
-첫 기계 검증 지점이다.
+**스키마도 어휘도 이 파일에 없다.** `specs/schema/`에서 로드한다 (ADR-0034 §3).
+여기 있는 것은 스키마로 표현할 수 없는 교차 규칙뿐이다.
 
 씬 1개 = 자막 줄(SRT 큐) 1개다 (ADR-0013). 문장이 아니라서 한 씬의 `text`에 문장이
 1~3개 들어갈 수 있다.
 
-이 모듈은 **스펙 02의 씬 스키마와 스펙 05의 봉투(run_id/topic/total_duration/scenes)만**
-본다. 스펙 01의 대본 규칙(글자 수, 자막 줄 수, 시그니처 문구, 수미상관)과 ADR-0007
-그라운딩은 이 모듈이 손대지 않는다 — 별도 검증기가 맡는다.
+스펙 01의 대본 규칙(글자 수, 자막 줄 수, 수미상관)과 ADR-0007 그라운딩은 이 모듈이
+손대지 않는다 — 별도 검증기가 맡는다.
 
-`est_start`/`est_end`는 TTS 이전 추정치다. TTS 후 `start`/`end`로 바뀐 형태(스펙 02)는
-[3. tts+sync] 시점의 계약이라 여기서 다루지 않는다.
+`est_start`/`est_end`는 TTS 이전 추정치다. TTS 후 `start`/`end`로 바뀐 형태는
+`timed_scenes.py`가 이 스키마에서 파생시킨다.
 """
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from .visual_rules import OVERLAY_TYPES, SUBJECT_SCALES
+from . import vocab
 
-#: specs/02-beat-schema.md 비트 타입 테이블
-BEATS = (
-    "hook_fact",
-    "hook_twist",
-    "context",
-    "context_number",
-    "failed_solution",
-    "failure_reason",
-    "dilemma_peak",
-    "turning_point",
-    "solution_step",
-    "solution_number",
-    "present_link",
-    "ending_echo",
+#: specs/schema/vocab.json — 손으로 옮겨 적지 않는다 (ADR-0034 §3).
+BEATS: tuple[str, ...] = vocab.values("beat")
+CAMERAS: tuple[str, ...] = vocab.values("camera")
+MOTIONS: tuple[str, ...] = vocab.values("motion")
+SUBJECT_SCALES: tuple[str, ...] = vocab.values("subject_scale")
+FRAMING_TOKENS: tuple[str, ...] = vocab.values("framing")
+TRANSITIONS: tuple[str, ...] = vocab.values("transition")
+
+#: 숫자를 세우는 비트. 이름에서 뽑는다 — 목록을 또 적으면 어휘가 늘 때 갈라진다.
+NUMBER_BEATS: tuple[str, ...] = tuple(b for b in BEATS if b.endswith("_number"))
+
+#: 편당 영상 씬 상한 (ADR-0006). 어느 모션이 영상인지도 어휘가 안다.
+VIDEO_MOTIONS: tuple[str, ...] = tuple(
+    name for name, item in vocab.meta("motion").items() if item.get("max_scenes")
+)
+MAX_VIDEO_SCENES: int = min(
+    (item["max_scenes"] for item in vocab.meta("motion").values() if item.get("max_scenes")),
+    default=0,
 )
 
-#: specs/02 — "숫자 비트는 필수, 그 외 옵션". emphasis를 반드시 달아야 하는 비트.
-NUMBER_BEATS = ("context_number", "solution_number")
-
-#: specs/02 — 복합 카메라 워크 금지 (AI 영상 왜곡 방지)
-CAMERAS = (
-    "slow_zoom_in",
-    "slow_zoom_out",
-    "tilt_down",
-    "tilt_up",
-    "pan_left",
-    "pan_right",
-    "static",
-)
-
-MOTIONS = ("kenburns", "kling")
-
-#: specs/02 + ADR-0006 — kling은 편당 최대 10씬
-MAX_KLING_SCENES = 10
+#: `visual_goal`이 `text`를 되풀이했다고 볼 겹침 비율 (ADR-0022).
+VISUAL_GOAL_OVERLAP_LIMIT: float = vocab.checks()["visual_goal_overlap_limit"]
 
 #: total_duration과 마지막 씬 est_end의 허용 오차(초). 경고 판정에만 쓴다.
 DURATION_TOLERANCE = 0.5
 
-SCENE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": [
-        "scene_id",
-        "beat",
-        "text",
-        "est_start",
-        "est_end",
-        "visual_goal",
-        "subject",
-        "subject_scale",
-        "camera",
-        "motion",
-    ],
-    "additionalProperties": False,
-    "properties": {
-        "scene_id": {"type": "integer", "minimum": 1},
-        "beat": {"enum": list(BEATS)},
-        "text": {"type": "string", "minLength": 1},
-        "est_start": {"type": "number", "minimum": 0},
-        "est_end": {"type": "number", "minimum": 0},
-        "emphasis": {
-            "type": "object",
-            "required": ["type", "value"],
-            "additionalProperties": False,
-            "properties": {
-                # specs/02 — "specs/03의 오버레이 타입 enum". 그 표가 ADR-0019로
-                # 생겼으므로 문자열이 아니라 enum으로 조인다.
-                "type": {"enum": list(OVERLAY_TYPES)},
-                "value": {"type": "string", "minLength": 1},
-            },
-        },
-        # specs/02 + ADR-0022 — 이 그림이 지는 설명. subject보다 먼저 정해진다.
-        # 그림이 시간을 채우는 것이 아니라 설명을 대신하게 하는 필드다.
-        "visual_goal": {"type": "string", "minLength": 1},
-        "subject": {"type": "string", "minLength": 1},
-        # specs/02 + ADR-0018 — beat와 함께 구도를 결정한다. 연출이 아니라 피사체 서술이라
-        # [1. script]가 subject와 함께 쓴다.
-        "subject_scale": {"enum": list(SUBJECT_SCALES)},
-        # specs/02 + ADR-0028 — 대상을 고정하는 짧은 한국어 명사구 목록.
-        # **required가 아니다.** 재질도 정체도 무의미한 씬이 있고(도해), 옛 대본 3편이
-        # 그대로 이 계약을 만족해야 한다 — 백필 단계를 또 만들지 않기 위한 선택이다.
-        # 없다고 실패시키지도 경고하지도 않는다. 있을 때 타입만 본다.
-        "subject_anchor": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "camera": {"enum": list(CAMERAS)},
-        "motion": {"enum": list(MOTIONS)},
-        "notes": {"type": "string"},
-    },
-}
+SCENES_SCHEMA: dict[str, Any] = vocab.SCENE_SCHEMA_DOC
+SCENE_SCHEMA: dict[str, Any] = SCENES_SCHEMA["$defs"]["scene"]
 
-SCENES_SCHEMA: dict[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "scenes.json (씬 계약)",
-    "type": "object",
-    "required": ["run_id", "topic", "total_duration", "scenes"],
-    "additionalProperties": False,
-    "properties": {
-        "run_id": {"type": "string", "minLength": 1},
-        "topic": {"type": "string", "minLength": 1},
-        "total_duration": {"type": "number", "exclusiveMinimum": 0},
-        "scenes": {"type": "array", "minItems": 1, "items": SCENE_SCHEMA},
-    },
-}
-
-_VALIDATOR = Draft202012Validator(SCENES_SCHEMA)
+_VALIDATOR = Draft202012Validator(SCENES_SCHEMA, registry=vocab.REGISTRY)
 
 
 def schema_errors(data: Any) -> list[str]:
@@ -134,12 +61,6 @@ def schema_errors(data: Any) -> list[str]:
         location = "/".join(str(p) for p in err.absolute_path) or "(root)"
         errors.append(f"{location}: {err.message}")
     return errors
-
-
-#: `visual_goal`이 `text`를 되풀이했다고 볼 겹침 비율 (ADR-0022).
-#: 문자 바이그램 기준이다 — 한국어라 형태소 분석기 없이 재려면 이게 가장 단순하다.
-#: 0.7은 "본문을 살짝 바꿔 쓴 문장"은 걸고 "본문이 안 한 말"은 통과시키는 선이다.
-VISUAL_GOAL_OVERLAP_LIMIT = 0.7
 
 
 def _bigrams(text: str) -> set[str]:
@@ -161,7 +82,11 @@ def visual_goal_overlap(text: str, visual_goal: str) -> float:
 
 
 def semantic_errors(data: dict[str, Any]) -> list[str]:
-    """스펙 02의 교차 규칙 검사 (스키마로 표현 불가한 부분)."""
+    """스키마로 표현 불가한 교차 규칙 (스펙 02).
+
+    **구조 검증은 없다** (ADR-0033 §4). 비트 순서·개수 제약은 폐기됐고, 서사가
+    성립하는지는 `[2b] judge`가 본다.
+    """
     errors: list[str] = []
     scenes: list[dict[str, Any]] = data.get("scenes", [])
 
@@ -192,24 +117,19 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
         if start >= end:
             errors.append(f"scenes/{sid}: est_start({start}) >= est_end({end})")
         # 씬은 자막 줄 순서를 그대로 따르므로 시간이 역행하거나 겹칠 수 없다.
-        # (스펙 02에 명시된 문장은 아니고 "scene_id는 자막 줄 순서와 일치"에서 파생한 규칙)
         elif prev_end is not None and start < prev_end:
             errors.append(
                 f"scenes/{sid}: est_start({start})가 앞 씬의 est_end({prev_end})보다 이르다"
             )
         prev_end = end
 
-        # 규칙: 숫자 비트는 emphasis 필수 (specs/02)
-        if scene.get("beat") in NUMBER_BEATS and not scene.get("emphasis"):
-            errors.append(
-                f"scenes/{sid}: 숫자 비트({scene.get('beat')})인데 emphasis가 없다"
-            )
-
-    # 규칙: kling은 편당 최대 10씬 (specs/02, ADR-0006)
-    kling = [s.get("scene_id") for s in scenes if s.get("motion") == "kling"]
-    if len(kling) > MAX_KLING_SCENES:
+    # 규칙: 영상 모션은 편당 상한이 있다 (specs/02, ADR-0006). fast 엔드포인트라
+    # GPU 시간을 쓰는 mj_video도 같은 상한을 쓴다 (ADR-0025 §3).
+    video = [s.get("scene_id") for s in scenes if s.get("motion") in VIDEO_MOTIONS]
+    if MAX_VIDEO_SCENES and len(video) > MAX_VIDEO_SCENES:
         errors.append(
-            f"scenes: motion=kling 씬이 {len(kling)}개다 (편당 최대 {MAX_KLING_SCENES}개)"
+            f"scenes: 영상 모션({'/'.join(VIDEO_MOTIONS)}) 씬이 {len(video)}개다 "
+            f"(편당 최대 {MAX_VIDEO_SCENES}개)"
         )
 
     return errors
@@ -221,6 +141,20 @@ def semantic_warnings(data: dict[str, Any]) -> list[str]:
     scenes: list[dict[str, Any]] = data.get("scenes", [])
     if not scenes:
         return warnings
+
+    # ADR-0033 — 오버레이를 고르는 것은 이제 비트 표가 아니라 [1s]다. 숫자 비트에
+    # 강조가 없는 것이 틀린 것은 아니지만(그 숫자를 화면에 안 세울 수 있다) 대개는
+    # 빠뜨린 것이라 알린다. 막지는 않는다.
+    missing = [
+        s.get("scene_id")
+        for s in scenes
+        if s.get("beat") in NUMBER_BEATS and not s.get("emphasis")
+    ]
+    if missing:
+        warnings.append(
+            f"숫자 비트인데 emphasis가 없는 씬: {', '.join(str(i) for i in missing)} — "
+            "그 숫자를 화면에 세우지 않을 생각이면 그대로 두어도 된다"
+        )
 
     last_end = scenes[-1].get("est_end")
     total = data.get("total_duration")
@@ -239,3 +173,8 @@ def validate_scenes(data: Any) -> tuple[list[str], list[str]]:
         # 스키마가 깨졌으면 semantic 검사는 의미가 없다
         return errors, []
     return semantic_errors(data), semantic_warnings(data)
+
+
+def scene_schema_copy() -> dict[str, Any]:
+    """씬 스키마의 깊은 복사본. 파생 스키마(`timed_scenes`)가 손대도 원본이 안 바뀐다."""
+    return copy.deepcopy(SCENE_SCHEMA)

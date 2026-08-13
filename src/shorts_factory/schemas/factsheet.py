@@ -1,7 +1,11 @@
 """팩트시트(research.json) 스키마 및 검증. specs/06-topic-research.md.
 
-JSON Schema로는 표현되지 않는 스펙 규칙(4조건 ↔ verdict 일치, 숫자 3개 이상,
+JSON Schema로는 표현되지 않는 스펙 규칙(관측 지표 ↔ 근거 필드 일치, 숫자 개수,
 출처 필수)은 semantic 검사로 따로 확인한다.
+
+**`conditions`는 판정이 아니라 관측이다** (ADR-0033 §1). 비어 있다고 `verdict`가
+`fail`이 되지 않는다 — `fail`은 매체 적합성이나 그라운딩을 못 넘길 때다. 여기서 보는
+것은 "true라고 적었으면 그 근거가 있는가"뿐이다.
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ from jsonschema import Draft202012Validator
 
 CONFIDENCE_LEVELS = ("high", "medium", "low")
 
-#: specs/06-topic-research.md 조건 3 — 구체적 숫자 최소 개수
+#: specs/06-topic-research.md 관측 지표 3 — 구체적 숫자 최소 개수
 MIN_NUMBERS = 3
 
 FACTSHEET_SCHEMA: dict[str, Any] = {
@@ -87,19 +91,9 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
 
     conditions = data.get("conditions", {})
     facts = data.get("facts", [])
-    verdict = data.get("verdict")
 
-    # 규칙: 4조건 중 하나라도 불충족 시 verdict는 fail (specs/06)
-    all_met = all(bool(conditions.get(k)) for k in
-                  ("twist", "failed_alternative", "numbers", "present_link"))
-    if all_met and verdict != "pass":
-        errors.append("conditions: 4조건이 모두 충족인데 verdict가 pass가 아니다")
-    if not all_met and verdict != "fail":
-        unmet = [k for k in ("twist", "failed_alternative", "numbers", "present_link")
-                 if not conditions.get(k)]
-        errors.append(
-            f"verdict: 미충족 조건({', '.join(unmet)})이 있으므로 verdict는 fail이어야 한다"
-        )
+    # ADR-0033 §1 — conditions와 verdict를 묶던 규칙은 없앴다. 지표가 비어도 pass일
+    # 수 있고, 네 지표가 다 차 있어도 매체 적합성에서 fail일 수 있다.
 
     # 규칙: fact마다 출처 필수 (스키마가 minLength로 막지만 공백 문자열 방어)
     seen_ids: set[str] = set()
@@ -113,7 +107,7 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
             errors.append(f"facts/{fid}: id가 중복됐다")
         seen_ids.add(fid)
 
-    # 규칙: 조건 3 — 구체적 숫자 최소 3개
+    # 규칙: numbers를 true라고 적었으면 그만큼의 숫자가 실제로 있어야 한다
     unique_numbers = {
         str(n).strip()
         for fact in facts
@@ -127,7 +121,7 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
             f"{len(unique_numbers)}개다 (최소 {MIN_NUMBERS}개)"
         )
 
-    # 규칙: 조건이 true면 대응 근거 필드가 채워져 있어야 한다
+    # 규칙: 지표가 true면 대응 근거 필드가 채워져 있어야 한다
     if conditions.get("twist") and not str(data.get("twist", "")).strip():
         errors.append("twist: conditions.twist가 true인데 뒤집기 문장이 비어 있다")
     if conditions.get("failed_alternative") and not data.get("failed_alternatives"):
