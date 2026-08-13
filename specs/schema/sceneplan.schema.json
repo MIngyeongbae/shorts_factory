@@ -72,8 +72,8 @@
         },
         "subject_anchor": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "description": "선택. 대상을 고정하는 짧은 한국어 명사구 목록 (ADR-0028). 부재는 경고가 아니다."
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "description": "선택. 대상을 고정하는 짧은 한국어 명사구 목록 (ADR-0028). 부재는 경고가 아니다. 공백뿐인 항목은 여기서 막는다 — 값이 태어나는 자리다."
         },
         "subject_scale": { "$ref": "vocab.json#/$defs/subject_scale" },
 

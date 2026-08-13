@@ -23,7 +23,9 @@ _STATUS_RE = re.compile(r"^#\s*STATUS:\s*(\S+)", re.MULTILINE)
 _CHECKLIST = (
     ("0a. topic", "topic"),
     ("0b. research", "research"),
-    ("1. script", "script"),
+    ("1a. outline", "outline"),
+    ("1s. sceneplan", "sceneplan"),
+    ("1w. write", "write"),
     ("1b. score", "score"),
     ("2. validate", "validate"),
     ("2b. judge", "judge"),

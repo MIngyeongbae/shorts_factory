@@ -1,7 +1,7 @@
 # ADR-0029: `[1] script`를 `[1a] outline` · `[1s] sceneplan` · `[1w] write` 셋으로 가른다
 
-- 상태: **승인** (2026-08-13. 스펙 01·02·05 반영 완료, 계약 파일 신설 완료.
-  **구현은 미착수** — `stages/`에는 아직 옛 `[1] script` 하나뿐이다)
+- 상태: **승인** (2026-08-13. 스펙·계약·구현 반영 완료. `stages/script.py`와
+  `prompts/05-script.md`는 지웠다 — 코드는 소모품이다, ADR-0034 §1)
 - 날짜: 2026-08-13 (**같은 날 개정** — 아래 «개정 이력»)
 - 관련 스펙: specs/01-script-template.md, specs/02-beat-schema.md, specs/05-pipeline.md
 - 관련 ADR: ADR-0003(대본+태그 한 번에), ADR-0014(세션 3필드), ADR-0018, ADR-0022(visual_goal), ADR-0028(subject_anchor)
@@ -221,9 +221,11 @@ ADR-0003이 탈락시킨 것은 **"생성 → 별도 분류"** 다. 텍스트를
 | **`specs/schema/sceneplan.schema.json`** | **신설.** `[1s]` 산출의 기계 계약 | **끝** |
 | `specs/schema/script-rules.json` | `checks.act_budget_tolerance` 추가 | **끝** |
 | `schemas/outline.py`·`sceneplan.py` | 위 둘을 **로드**한다. 선언하지 않는다 (ADR-0034 §3) | **끝** |
-| `prompts/05-script.md` | **셋으로 쪼갠다** → `08-outline.md`·`09-sceneplan.md`·`10-write.md` | 남음 |
-| `stages/script.py` | 세 단계로 분리 | 남음 |
-| `stages/validate.py` | 실패 종류 → 재진입 단계 매핑 | 남음 |
+| `prompts/05-script.md` | **셋으로 쪼갰다** → `08-outline.md`·`09-sceneplan.md`·`10-write.md`. 원본은 삭제 | **끝** |
+| `stages/script.py` | `outline.py`·`sceneplan.py`·`write.py`로 분리. 원본은 삭제 | **끝** |
+| `stages/session.py` | 신설. 세 단계의 공통 배선(프롬프트·JSON 회수·계약 값 주입) | **끝** |
+| `stages/validate.py` | 실패 종류 → 재진입 단계 매핑 (`reentry_for`) | **끝** |
+| `cli.py` | `script` → `outline`·`sceneplan`·`write` + 연속 실행 `draft` | **끝** |
 
 **계약이 코드보다 먼저 선다.** `schemas/*.py`는 스키마를 선언하지 않고
 `specs/schema/`에서 로드하므로(ADR-0034 §3), 스테이지 구현이 없어도 계약은 이미

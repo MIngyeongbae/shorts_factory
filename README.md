@@ -7,16 +7,20 @@ Spec-Driven Development로 운영하는 AI 쇼츠 자동 생성 파이프라인.
 
 ## 구현 현황
 
-`specs/05-pipeline.md`의 1부 중 `[0a. topic]` ~ `[0b. research]`.
+`specs/05-pipeline.md`의 1부 `[0a]`~`[2]`와 2부 `[3]`·`[5]`~`[7]`·`[9]`.
 
 ```
 topics/backlog.md
   → [0a. topic]     topics/{slug}/ 생성, runs/{run_id}/topic.json
   → [0b. research]  01-research.md → 02-verify.md → 03-critique.md → 04-factsheet.json
                     (각각 독립 헤드리스 세션, ADR-0009)
+  ┌ [1a. outline]   07-outline.json    훅 각도 + 단 구성
+  │ [1s. sceneplan] 08-sceneplan.json  씬 분할 + 그림·연출
+  └ [1w. write]     05-candidates/*    자막 문장 (ADR-0029로 갈린 셋)
+  → [2. validate]   06-script.json     실패 종류에 따라 [1w]/[1s]/[1a]로 재진입
 ```
 
-이후 단계(`[1. script]` ~)는 미구현.
+`[1b] score`·`[1c] critique2`·`[2b] judge`와 2부 `[4]`·`[6r]`·`[8]`·`[10]`·`[11]`은 미구현.
 
 ## 준비물
 
@@ -38,6 +42,12 @@ python run.py research --slug hanyangdoseong-gakjaseongseok -v
 
 # [0a] + [0b] 연속 실행
 python run.py package --topic "한양도성 각자성석"
+
+# [1a]+[1s]+[1w] 팩트시트 → 대본 후보 (셋을 따로 돌릴 수도 있다)
+python run.py draft --slug hanyangdoseong-gakjaseongseok
+
+# [2] 후보 검증 → 실패 종류에 따라 되돌아가 재생성 (최대 3회)
+python run.py validate --slug hanyangdoseong-gakjaseongseok
 
 # [3] 확정 대본 → narration.wav + 실측 타임스탬프 (2부, 편당 과금)
 python run.py tts --slug hubeodaem-konkeuriteu-naenggak
@@ -65,7 +75,7 @@ python run.py tts --slug hubeodaem-konkeuriteu-naenggak
 | 1 | 단계 실패 |
 | 2 | `[0a]` 반려 (백로그 4조건 미충족) |
 | 3 | `[0b]` 반려 (`verdict: fail`) |
-| 4 | `[1]` 대본 후보가 구조 검사에 걸림 |
+| 4 | `[1a]`·`[1s]`·`[1w]` 산출물이 계약·검증에 걸림 (산출물은 남는다) |
 | 5 | `[2]` 검증 실패 (재생성 상한까지 못 고침) |
 | 6 | `[6]` 이미지 생성 실패 |
 | 7 | `[6]` 스타일 앵커 0장 차단 (`--allow-missing-anchors`로 해제) |
@@ -87,7 +97,10 @@ topics/{slug}/          # 사람이 읽는 토픽 패키지 (specs/06)
 ├── 02-verify.md        # 검증
 ├── 03-critique.md      # 비판
 ├── 04-factsheet.json   # 팩트시트 (하류의 유일한 사실 원천, ADR-0007)
-├── 05-candidates/
+├── 05-candidates/      # [1w]가 쓴 대본 후보
+├── 06-script.json      # 씬 계약 — 1부의 최종 산출물이자 2부의 유일한 입력 (ADR-0017)
+├── 07-outline.json     # [1a] 훅 각도 + 단 구성 (1부 내부, 2부는 안 읽는다)
+├── 08-sceneplan.json   # [1s] 씬 분할 + 그림·연출 (1부 내부)
 └── STATUS.md           # go / no-go / 보류 — go는 사람만 기록한다 (ADR-0009)
 
 runs/{run_id}/          # 기계용 단계 간 계약 (ADR-0011)

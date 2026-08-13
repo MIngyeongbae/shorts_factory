@@ -1,0 +1,103 @@
+{
+  "topic": "후버댐 콘크리트 냉각",
+  "verdict": "pass",
+  "conditions": {
+    "twist": true,
+    "failed_alternative": true,
+    "numbers": true,
+    "present_link": true
+  },
+  "facts": [
+    {
+      "id": "f01",
+      "claim": "후버댐은 높이 221미터의 콘크리트 중력식 아치댐이다",
+      "numbers": ["221미터"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f02",
+      "claim": "댐 바닥의 두께는 200미터다",
+      "numbers": ["200미터"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f03",
+      "claim": "댐 몸통을 230개의 기둥 블록으로 나누어 따로 타설했다",
+      "numbers": ["230개"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f04",
+      "claim": "콘크리트가 굳는 것은 건조가 아니라 시멘트의 수화 반응이다",
+      "numbers": [],
+      "source": "콘크리트 공학 개론",
+      "confidence": "high"
+    },
+    {
+      "id": "f05",
+      "claim": "통짜로 부었다면 완전히 식는 데 125년이 걸릴 것으로 계산됐다",
+      "numbers": ["125년"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f06",
+      "claim": "수화 반응은 발열 반응이라 굳는 동안 콘크리트가 스스로 뜨거워진다",
+      "numbers": [],
+      "source": "콘크리트 공학 개론",
+      "confidence": "high"
+    },
+    {
+      "id": "f07",
+      "claim": "블록 안에 총연장 933킬로미터의 냉각용 강관을 묻었다",
+      "numbers": ["933킬로미터"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f08",
+      "claim": "현장에 냉동 설비를 지어 얼음물을 강관에 순환시켰다",
+      "numbers": [],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f09",
+      "claim": "겉과 속이 식는 속도가 다르면 수축 차가 생겨 균열이 발생한다",
+      "numbers": [],
+      "source": "콘크리트 공학 개론",
+      "confidence": "high"
+    },
+    {
+      "id": "f10",
+      "claim": "표면에만 물을 뿌리면 내부와의 온도 차가 오히려 커진다",
+      "numbers": [],
+      "source": "콘크리트 공학 개론",
+      "confidence": "medium"
+    },
+    {
+      "id": "f11",
+      "claim": "분할 타설과 강관 냉각으로 냉각 기간이 2년으로 줄었다",
+      "numbers": ["2년"],
+      "source": "미국 개척국 기술보고서",
+      "confidence": "high"
+    },
+    {
+      "id": "f12",
+      "claim": "같은 분할 타설·냉각 방식이 오늘날 대형 댐 공사에 쓰인다",
+      "numbers": [],
+      "source": "대형 댐 시공 사례집",
+      "confidence": "high"
+    }
+  ],
+  "twist": "후버댐은 통짜 콘크리트가 아니라 230개 블록의 조립체다",
+  "failed_alternatives": [
+    "부어 놓고 자연 냉각을 기다리기 (125년)",
+    "표면에 물을 뿌려 식히기 (온도 차가 더 벌어짐)"
+  ],
+  "present_link": "지금도 댐 표면에 블록 이음매가 보이고 같은 공법이 쓰인다",
+  "notes": "테스트 픽스처. [1a]/[1s]/[1w] 3단계 계약을 한 소재로 잇기 위한 것이다."
+}

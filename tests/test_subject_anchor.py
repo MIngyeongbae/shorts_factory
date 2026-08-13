@@ -5,7 +5,8 @@
 
 확인 대상:
 - 계약: **선택 필드**다. 없어도 비어도 통과하고, 있을 때 타입만 본다
-- `[1]`: 세션 출력에서 받아 씬 계약에 옮긴다. 비어도 키를 쓴다
+- `[1s]`: 앵커를 쓰는 자리. 타입은 `sceneplan.schema.json`이 본다
+- `[1w]`: 계획에 있으면 그대로 옮기고, 없으면 만들지 않는다
 - `[5]`: 값이 있을 때 **`subject` 바로 뒤**(G1이 검증한 자리)에 싣고 **거르지 않는다**(G2)
 - `[5]`: 앵커를 채운 씬 수를 요약에 센다 — ADR-0028 되돌릴 조건의 관측 수단이다
 """
@@ -28,7 +29,8 @@ from shorts_factory.schemas.visual_rules import (
     clean_anchors,
 )
 from shorts_factory.stages.prompt import SCRIPT_FILE, run_prompt_stage
-from shorts_factory.stages.script import ScriptStageError, build_scenes
+from shorts_factory.schemas.sceneplan import validate_sceneplan
+from shorts_factory.stages.write import build_scenes
 
 from conftest import HOOVER, load_script
 
@@ -36,19 +38,6 @@ from conftest import HOOVER, load_script
 SUBJECT = "홈이 파인 블록 접합면 클로즈업"
 GOAL = "맞물린 홈이 어떤 모양인지"
 SHOT = "tight detail close-up of the solution"
-
-
-def session_scene(**overrides) -> dict:
-    """세션이 낸 씬 하나. `build_scenes`가 받는 형태다."""
-    scene = {
-        "beat": "hook_fact",
-        "text": "문장입니다.",
-        "visual_goal": "그림이 지는 설명",
-        "subject": "피사체",
-        "subject_scale": "wide",
-    }
-    scene.update(overrides)
-    return scene
 
 
 # --- 계약 (specs/02) ---------------------------------------------------------
@@ -176,39 +165,59 @@ def test_blank_items_are_dropped():
     )
 
 
-# --- [1. script] -------------------------------------------------------------
+# --- [1s. sceneplan] → [1w. write] -------------------------------------------
 
 
-def test_the_session_anchor_reaches_the_scene_contract():
-    doc = build_scenes(
-        [session_scene(subject_anchor=["후버댐", "콘크리트"])], run_id="r", topic="t"
-    )
+def planned_scene(**overrides) -> dict:
+    """씬 계획의 씬 하나. 앵커의 생산자는 이제 `[1s]`다 (ADR-0029)."""
+    scene = {
+        "scene_id": 1, "act": 1, "beat": "hook_fact",
+        "says": "무엇을 말하는가", "char_budget": 22,
+        "visual_goal": "그림이 지는 설명", "subject": "피사체",
+        "subject_scale": "wide", "camera": "static", "motion": "kenburns",
+    }
+    scene.update(overrides)
+    return scene
+
+
+def plan_of(scene: dict) -> dict:
+    return {"topic": "t", "scenes": [scene]}
+
+
+def test_the_planned_anchor_reaches_the_scene_contract():
+    plan = plan_of(planned_scene(subject_anchor=["후버댐", "콘크리트"]))
+    doc = build_scenes(plan, {1: "문장입니다."}, run_id="r", topic="t")
+
     assert doc["scenes"][0]["subject_anchor"] == ["후버댐", "콘크리트"]
     assert validate_scenes(doc)[0] == []
 
 
-def test_a_scene_without_the_key_gets_an_empty_list():
-    """필드가 없는 것(옛 대본)과 세션이 보고 비운 것은 다르다. 후자를 기록한다."""
-    doc = build_scenes([session_scene()], run_id="r", topic="t")
-    assert doc["scenes"][0]["subject_anchor"] == []
+def test_a_scene_without_the_key_stays_without_it():
+    """`[1w]`는 계획에 없는 필드를 지어내지 않는다 — 부재는 경고가 아니다 (ADR-0028)."""
+    doc = build_scenes(plan_of(planned_scene()), {1: "문장입니다."}, run_id="r", topic="t")
+
+    assert "subject_anchor" not in doc["scenes"][0]
+    assert validate_scenes(doc)[0] == []
 
 
-def test_a_bare_string_is_rejected():
-    """문자열을 그냥 두면 `list()`가 아니라 프롬프트에 통째로 실리거나 낱글자가 된다."""
-    with pytest.raises(ScriptStageError, match="subject_anchor"):
-        build_scenes([session_scene(subject_anchor="콘크리트")], run_id="r", topic="t")
+def test_a_bare_string_is_rejected_by_the_plan_contract():
+    """문자열을 그냥 두면 낱글자가 앵커가 되어 프롬프트에 실린다.
+
+    타입 검사가 `[1w]`의 코드에서 `[1s]`의 스키마로 옮겨 갔다 (ADR-0034 §3) — 값이
+    태어나는 자리에서 막는 쪽이 옳고, 옮긴 뒤에도 같은 것이 걸린다.
+    """
+    errors, _ = validate_sceneplan(plan_of(planned_scene(subject_anchor="콘크리트")))
+    assert any("subject_anchor" in e for e in errors)
 
 
-def test_a_non_string_item_is_rejected():
-    with pytest.raises(ScriptStageError, match="subject_anchor"):
-        build_scenes([session_scene(subject_anchor=["콘크리트", 3])], run_id="r", topic="t")
+def test_a_non_string_item_is_rejected_by_the_plan_contract():
+    errors, _ = validate_sceneplan(plan_of(planned_scene(subject_anchor=["콘크리트", 3])))
+    assert any("subject_anchor" in e for e in errors)
 
 
-def test_blank_items_from_the_session_are_dropped():
-    doc = build_scenes(
-        [session_scene(subject_anchor=[" 콘크리트", "", " "])], run_id="r", topic="t"
-    )
-    assert doc["scenes"][0]["subject_anchor"] == ["콘크리트"]
+def test_a_blank_item_is_rejected_by_the_plan_contract():
+    errors, _ = validate_sceneplan(plan_of(planned_scene(subject_anchor=["콘크리트", " "])))
+    assert any("subject_anchor" in e for e in errors)
 
 
 # --- [5. prompt] 단계 --------------------------------------------------------

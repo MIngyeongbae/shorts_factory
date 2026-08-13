@@ -2,8 +2,11 @@
 
     python run.py topic     [--topic 소재명]
     python run.py research  --slug SLUG [--only 01-research]
-    python run.py script    --slug SLUG           # 팩트시트 → 대본 후보
-    python run.py validate  --slug SLUG           # 후보 검증 → 실패 시 재생성 (최대 3회)
+    python run.py outline   --slug SLUG           # [1a] 팩트시트 → 훅 각도 + 단 구성
+    python run.py sceneplan --slug SLUG           # [1s] 구성안 → 씬 분할 + 그림·연출
+    python run.py write     --slug SLUG           # [1w] 씬 계획 → 자막 문장 (대본 후보)
+    python run.py draft     --slug SLUG           # 1a + 1s + 1w 연속 실행
+    python run.py validate  --slug SLUG           # 후보 검증 → 실패 종류에 따라 재진입 (최대 3회)
     python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
     python run.py backfill-visual-goal --slug SLUG # 확정 대본에 visual_goal만 채움 (ADR-0022)
     python run.py tts       --slug SLUG           # [2부] 대본 → narration.wav + 실측 타임스탬프
@@ -53,7 +56,10 @@ from .stages.motion import (
 from .stages.motion import resolve_run_id as resolve_motion_run_id
 from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
-from .stages.script import ScriptStageError, run_script_stage
+from .stages.outline import run_outline_stage
+from .stages.sceneplan import run_sceneplan_stage
+from .stages.session import ScriptSessionError
+from .stages.write import run_write_stage
 from .stages.topic import TopicStageError, run_topic_stage
 from .stages.tts import TTSStageError, run_tts_stage
 from .stages.validate import ValidateStageError, run_validate_stage
@@ -135,27 +141,59 @@ def _cmd_research(args, paths: Paths) -> int:
     return 0
 
 
-def _cmd_script(args, paths: Paths) -> int:
-    run_id = args.run_id
-    if not run_id:
-        run_id, _ = find_run_for_slug(paths, args.slug)
+def _report(result) -> int:
+    """대본 3단계 공통 출력. 검증 실패는 4로 나가되 **산출물은 남긴다.**
 
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
-    result = run_script_stage(
-        args.slug, llm=client, paths=paths, run_id=run_id, force=args.force,
-    )
+    재생성은 `[2. validate]` 소관이라 여기서 다시 부르지 않는다 (ADR-0029).
+    """
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
     for error in result.errors:
         print(f"  오류: {error}", file=sys.stderr)
-    if result.errors:
-        print(
-            f"\n후보는 {result.candidate_path}에 남겼다. "
-            "재생성은 [2. validate] 소관이다 (미구현).",
-            file=sys.stderr,
+    return 4 if result.errors else 0
+
+
+def _run_script_stage(args, paths: Paths, runner) -> int:
+    run_id = args.run_id
+    if not run_id:
+        run_id, _ = find_run_for_slug(paths, args.slug)
+    client = _make_client(args, paths.run_dir(run_id) / "logs")
+    return _report(
+        runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force)
+    )
+
+
+def _cmd_outline(args, paths: Paths) -> int:
+    return _run_script_stage(args, paths, run_outline_stage)
+
+
+def _cmd_sceneplan(args, paths: Paths) -> int:
+    return _run_script_stage(args, paths, run_sceneplan_stage)
+
+
+def _cmd_write(args, paths: Paths) -> int:
+    return _run_script_stage(args, paths, run_write_stage)
+
+
+def _cmd_draft(args, paths: Paths) -> int:
+    """[1a] → [1s] → [1w] 연속 실행.
+
+    **앞 단계가 계약을 못 지키면 멈춘다.** 깨진 구성안 위에 씬 계획을 얹으면 실패가
+    한 단계 아래에서 다른 모양으로 나오고, 어디로 되돌아갈지 판단이 그때부터 틀린다.
+    """
+    run_id = args.run_id
+    if not run_id:
+        run_id, _ = find_run_for_slug(paths, args.slug)
+    client = _make_client(args, paths.run_dir(run_id) / "logs")
+
+    for runner in (run_outline_stage, run_sceneplan_stage, run_write_stage):
+        code = _report(
+            runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force)
         )
-        return 4
+        if code:
+            print("\n앞 단계가 검증을 통과하지 못해 멈춘다.", file=sys.stderr)
+            return code
     return 0
 
 
@@ -447,14 +485,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_research.set_defaults(func=_cmd_research)
 
-    p_script = sub.add_parser("script", parents=[common],
-                              help="[1] 팩트시트 → 대본 후보")
-    p_script.add_argument("--slug", required=True)
-    p_script.add_argument("--run-id", default=None)
-    p_script.set_defaults(func=_cmd_script)
+    # [1a]/[1s]/[1w] — 옛 [1] script 하나를 가른 것이다 (ADR-0029). 인자는 셋이 같고
+    # draft가 셋을 순서대로 부른다.
+    for name, help_text, func in (
+        ("outline", "[1a] 팩트시트 → 훅 각도 + 단 구성", _cmd_outline),
+        ("sceneplan", "[1s] 구성안 → 씬 분할 + 그림·연출", _cmd_sceneplan),
+        ("write", "[1w] 씬 계획 → 자막 문장 (대본 후보)", _cmd_write),
+        ("draft", "[1a]+[1s]+[1w] 연속 실행", _cmd_draft),
+    ):
+        stage_parser = sub.add_parser(name, parents=[common], help=help_text)
+        stage_parser.add_argument("--slug", required=True)
+        stage_parser.add_argument("--run-id", default=None)
+        stage_parser.set_defaults(func=func)
 
     p_validate = sub.add_parser("validate", parents=[common],
-                                help="[2] 후보 검증 → 실패 사유 피드백 재생성 (최대 3회)")
+                                help="[2] 후보 검증 → 실패 종류에 따라 [1w]/[1s]/[1a] 재진입 (최대 3회)")
     p_validate.add_argument("--slug", required=True)
     p_validate.add_argument("--run-id", default=None)
     p_validate.set_defaults(func=_cmd_validate)
@@ -583,7 +628,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args, paths)
     except (
-        TopicStageError, ResearchStageError, ScriptStageError, ValidateStageError,
+        TopicStageError, ResearchStageError, ScriptSessionError, ValidateStageError,
         PromptStageError, BackfillStageError, AssembleStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
