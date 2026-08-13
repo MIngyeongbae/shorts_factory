@@ -1,8 +1,7 @@
-"""ASS 자막 생성 — 레이어 B. specs/03 "자막 스타일", ADR-0002, ADR-0013.
+"""ASS 자막 생성 — 레이어 B. specs/schema/subtitle-style.json, ADR-0002, ADR-0013.
 
-    - 위치: 하단 중앙, 세로 기준 화면 72~82% 지점
-    - 폰트: 굵은 고딕 (Pretendard Bold 계열), 흰색 + 검정 외곽선 3px
-    - 폰트 크기 40px 고정, 1줄 최대 22자, 2줄 초과 금지
+**스타일 값은 이 파일에 없다.** 계약 파일에서 로드한다 (ADR-0034 §3) — 값이 코드와
+스펙 문서 두 곳에 있으면 갈라지고, 갈라진 쪽을 읽은 사람만 기준이 달라진다.
 
 자막은 **후처리 합성**이다 (ADR-0002). 정확해야 하는 한국어를 이미지 생성에 맡기지
 않는다. 큐 1개 = 씬 1개다 (ADR-0013) — 씬을 다시 묶거나 쪼개지 않는다.
@@ -29,38 +28,30 @@ import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-# --- 스타일 상수 (specs/03 "자막 스타일", specs/00 산출물 정의) ---------------
+from ..schemas import vocab
 
-#: specs/00 "9:16 세로, 1080×1920". ASS의 PlayRes를 실제 해상도와 같게 두면
-#: ScaledBorderAndShadow 계산이 1:1이라 외곽선 3px이 그대로 3px이다.
-PLAY_RES_X = 1080
-PLAY_RES_Y = 1920
+# --- 스타일 값 (specs/schema/subtitle-style.json) -----------------------------
+#
+# **선언하지 않고 로드한다** (ADR-0034 §3). 이 값들이 코드와 스펙 03 두 곳에 적혀
+# 있던 것이 `mj_video` 사고와 같은 모양이라 계약 파일로 옮겼다.
 
-#: "굵은 고딕 (Pretendard Bold 계열)". 굵기는 Bold 플래그로 준다 — 폰트 파일 이름이
-#: 아니라 패밀리 이름을 적어야 fontconfig가 없는 환경에서도 매칭이 된다.
-FONT_NAME = "Pretendard"
+_STYLE = vocab.SUBTITLE_STYLE
 
-#: 리포지토리가 폰트를 들고 있어야 렌더가 재현된다 (ADR-0002 "레이어 B용 폰트/스타일
-#: 에셋을 코드 리포지토리에 포함"). 없으면 libass가 아무 폰트로 떨어져 룩이 바뀐다.
-FONTS_DIR = "assets/fonts"
+PLAY_RES_X, PLAY_RES_Y = _STYLE["play_res"]
+FONT_NAME = _STYLE["font_name"]
+FONTS_DIR = _STYLE["fonts_dir"]
+PRIMARY_COLOUR = _STYLE["primary_colour"]
+OUTLINE_COLOUR = _STYLE["outline_colour"]
+OUTLINE = _STYLE["outline"]
+SHADOW = _STYLE["shadow"]
+ALIGNMENT = _STYLE["alignment"]
+MARGIN_LR = _STYLE["margin_lr"]
 
-#: **검정 + 흰색 외곽선 3px** (ADR-0023). ASS 색은 &HAABBGGRR (알파 00 = 불투명).
-#: 베이스가 흰 종이라 흰 글자는 외곽선만 남는다 — 스펙 03에서 뒤집었다.
-PRIMARY_COLOUR = "&H00000000"
-OUTLINE_COLOUR = "&H00FFFFFF"
-OUTLINE = 3
-SHADOW = 0
-
-#: 하단 중앙 (ASS Alignment 2 = bottom center)
-ALIGNMENT = 2
-MARGIN_LR = 60
-
-#: specs/03 자막 규칙. **세 값은 함께 정해졌다** — 스펙 03이 유일한 출처이므로
-#: 여기서 역산하거나 재해석하지 않는다. 40px에서 22자는 880px이고, 스펙 01이 허용하는
-#: 가장 긴 큐(43자)도 22+21로 두 줄에 들어간다. 그래서 큐별 폰트 축소 경로가 없다.
-MAX_LINE_CHARS = 22
-MAX_LINES = 2
-FONT_SIZE = 40
+#: 폰트 크기·줄당 글자 수·줄 수는 **함께 정해진 한 벌이다.** 하나를 고치면 셋을 다시
+#: 계산해야 하므로 계약 파일의 `_geometry`가 그 산수를 들고 있다.
+MAX_LINE_CHARS = _STYLE["max_line_chars"]
+MAX_LINES = _STYLE["max_lines"]
+FONT_SIZE = _STYLE["font_size"]
 
 #: 자막이 쓸 수 있는 가로 폭(px)
 TEXT_WIDTH = PLAY_RES_X - 2 * MARGIN_LR
@@ -68,8 +59,8 @@ TEXT_WIDTH = PLAY_RES_X - 2 * MARGIN_LR
 #: 한글 한 글자의 가로 advance ÷ 폰트 크기. 한글은 전각이라 1.0이다 (숫자·라틴은 더 좁다).
 GLYPH_WIDTH_RATIO = 1.0
 
-#: specs/03 "위치: 하단 중앙, 세로 기준 화면 72~82% 지점"
-BAND = (0.72, 0.82)
+#: 자막 블록이 놓이는 세로 밴드 (화면 비율)
+BAND = tuple(_STYLE["band"])
 
 #: 자막 블록의 **아래끝**을 밴드의 아래끝에 맞추는 하단 여백(px). 위끝은 줄 수에 따라
 #: 움직이며(1줄 78.7% / 2줄 75.4%) 둘 다 밴드 안이다 — `subtitle_band()`가 계산한다.

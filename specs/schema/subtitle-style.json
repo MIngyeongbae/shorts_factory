@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "subtitle-style.json",
+  "title": "자막 스타일 (레이어 B)",
+  "description": "번인 자막의 렌더 값. 사람이 읽는 근거는 specs/03-visual-rules.md의 「자막 스타일」에 있고 기계가 읽는 정본은 이 파일이다 (ADR-0034 §3). 정확해야 하는 한국어는 이미지 생성에 맡기지 않는다 (ADR-0002).",
+
+  "_geometry": "폰트 크기·줄당 글자 수·줄 수 셋은 **함께 정해진 한 벌이다.** 40px에서 22자는 880px이라 가로 안전폭(1080 − 60×2 = 960px) 안에 들어가고, script-rules.json의 line_chars_max(가장 긴 큐)도 22+21로 두 줄에 들어간다. 그래서 큐별 폰트 축소 경로를 두지 않는다 — 안 들어가는 큐는 상류(스펙 01) 위반이므로 실패로 올린다. 하나를 고치면 셋을 다시 계산해야 한다.",
+  "font_size": 40,
+  "max_line_chars": 22,
+  "max_lines": 2,
+
+  "font_name": "Pretendard",
+  "_font_name": "굵은 고딕. 굵기는 Bold 플래그로 준다 — 폰트 파일 이름이 아니라 패밀리 이름을 적어야 fontconfig가 없는 환경에서도 매칭된다.",
+  "fonts_dir": "assets/fonts",
+  "_fonts_dir": "리포지토리가 폰트를 들고 있어야 렌더가 재현된다 (ADR-0002). 없으면 libass가 아무 폰트로 떨어져 룩이 바뀐다.",
+
+  "primary_colour": "&H00000000",
+  "outline_colour": "&H00FFFFFF",
+  "_colour": "검정 글자 + 흰색 외곽선. ASS 색은 &HAABBGGRR(알파 00 = 불투명)이다. 베이스가 흰 종이라 흰 글자는 외곽선만 남아서 ADR-0023에서 뒤집었다.",
+  "outline": 3,
+  "shadow": 0,
+
+  "alignment": 2,
+  "_alignment": "ASS Alignment 2 = 하단 중앙.",
+  "margin_lr": 60,
+  "band": [0.72, 0.82],
+  "_band": "자막 블록이 놓이는 세로 밴드(화면 비율). 아래끝을 밴드 아래끝에 맞추고 위끝은 줄 수에 따라 움직인다.",
+
+  "play_res": [1080, 1920],
+  "_play_res": "ASS의 PlayRes를 실제 해상도와 같게 두면 ScaledBorderAndShadow 계산이 1:1이라 외곽선 3px이 그대로 3px이다 (스펙 00의 산출물 해상도)."
+}

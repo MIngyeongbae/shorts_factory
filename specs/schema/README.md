@@ -16,7 +16,9 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 | `scene.schema.json` | 씬 계약(`06-script.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
 | `outline.schema.json` | `[1a]` 산출(`07-outline.json`) — 훅 각도와 단 구성 (ADR-0029) | `schemas/outline.py` |
 | `sceneplan.schema.json` | `[1s]` 산출(`08-sceneplan.json`) — 씬 분할·글/그림 분담·연출 선택 (ADR-0029) | `schemas/sceneplan.py` |
+| `factsheet.schema.json` | `[0b]` 산출(`04-factsheet.json`) — 하류의 유일한 사실 원천 (ADR-0007) | `schemas/factsheet.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프)과 시그니처 문구 | `schemas/script_rules.py` |
+| `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
 
 세 스키마는 대본 하나가 세 단계를 지나며 자라는 모습이다. `08-sceneplan.json`에서

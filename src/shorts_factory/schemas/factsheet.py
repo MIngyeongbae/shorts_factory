@@ -1,7 +1,8 @@
-"""팩트시트(research.json) 스키마 및 검증. specs/06-topic-research.md.
+"""팩트시트(research.json) 검증. specs/06-topic-research.md + specs/schema/factsheet.schema.json.
 
-JSON Schema로는 표현되지 않는 스펙 규칙(관측 지표 ↔ 근거 필드 일치, 숫자 개수,
-출처 필수)은 semantic 검사로 따로 확인한다.
+**스키마도 값도 이 파일에 없다.** `specs/schema/`에서 로드한다 (ADR-0034 §3).
+여기 있는 것은 JSON Schema로 표현되지 않는 교차 규칙뿐이다 — 관측 지표와 근거 필드의
+일치, 고유 숫자 개수, 출처 유무, id 중복.
 
 **`conditions`는 판정이 아니라 관측이다** (ADR-0033 §1). 비어 있다고 `verdict`가
 `fail`이 되지 않는다 — `fail`은 매체 적합성이나 그라운딩을 못 넘길 때다. 여기서 보는
@@ -14,66 +15,19 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-CONFIDENCE_LEVELS = ("high", "medium", "low")
+from . import vocab
 
-#: specs/06-topic-research.md 관측 지표 3 — 구체적 숫자 최소 개수
-MIN_NUMBERS = 3
+FACTSHEET_SCHEMA: dict[str, Any] = vocab.FACTSHEET_SCHEMA_DOC
 
-FACTSHEET_SCHEMA: dict[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "research.json (팩트시트)",
-    "type": "object",
-    "required": [
-        "topic",
-        "verdict",
-        "conditions",
-        "facts",
-        "twist",
-        "failed_alternatives",
-        "present_link",
-    ],
-    "additionalProperties": False,
-    "properties": {
-        "topic": {"type": "string", "minLength": 1},
-        "verdict": {"enum": ["pass", "fail"]},
-        "conditions": {
-            "type": "object",
-            "required": ["twist", "failed_alternative", "numbers", "present_link"],
-            "additionalProperties": False,
-            "properties": {
-                "twist": {"type": "boolean"},
-                "failed_alternative": {"type": "boolean"},
-                "numbers": {"type": "boolean"},
-                "present_link": {"type": "boolean"},
-            },
-        },
-        "facts": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "required": ["id", "claim", "numbers", "source", "confidence"],
-                "additionalProperties": False,
-                "properties": {
-                    "id": {"type": "string", "pattern": "^f[0-9]{2,3}$"},
-                    "claim": {"type": "string", "minLength": 1},
-                    "numbers": {"type": "array", "items": {"type": "string"}},
-                    "source": {"type": "string", "minLength": 1},
-                    "confidence": {"enum": list(CONFIDENCE_LEVELS)},
-                    # 사료 간 수치 이견 기록용 (specs/06 규칙)
-                    "notes": {"type": "string"},
-                },
-            },
-        },
-        "twist": {"type": "string"},
-        "failed_alternatives": {"type": "array", "items": {"type": "string"}},
-        "present_link": {"type": "string"},
-        "notes": {"type": "string"},
-        "reject_reason": {"type": "string"},
-    },
-}
+#: specs/schema/factsheet.schema.json — 손으로 옮겨 적지 않는다 (ADR-0034 §3).
+CONFIDENCE_LEVELS: tuple[str, ...] = tuple(
+    FACTSHEET_SCHEMA["$defs"]["fact"]["properties"]["confidence"]["enum"]
+)
 
-_VALIDATOR = Draft202012Validator(FACTSHEET_SCHEMA)
+#: 관측 지표 3(구체적 숫자)이 true일 때 실제로 있어야 하는 고유 숫자 개수.
+MIN_NUMBERS: int = FACTSHEET_SCHEMA["checks"]["min_numbers"]
+
+_VALIDATOR = Draft202012Validator(FACTSHEET_SCHEMA, registry=vocab.REGISTRY)
 
 
 def schema_errors(data: Any) -> list[str]:

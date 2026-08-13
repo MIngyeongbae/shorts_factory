@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "factsheet.schema.json",
+  "title": "04-factsheet.json / research.json (팩트시트)",
+  "description": "`[0b] research`의 산출물이자 **하류의 유일한 사실 원천**이다 (ADR-0007). 사람이 읽는 근거는 specs/06-topic-research.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3). 이 파일이 늦게 생긴 것은 ADR-0034가 `scene.schema.json`·`vocab.json`부터 옮기고 나머지를 미뤘기 때문이고, 그 사이 스키마가 문서와 코드 두 곳에 있었다.",
+
+  "type": "object",
+  "required": ["topic", "verdict", "conditions", "facts", "twist", "failed_alternatives", "present_link"],
+  "additionalProperties": false,
+  "properties": {
+    "topic": { "type": "string", "minLength": 1 },
+    "verdict": {
+      "enum": ["pass", "fail"],
+      "description": "fail은 **판별 기준을 못 넘길 때만이다** — 그림이 설명을 지지 못하거나 사실이 그라운딩을 못 버틸 때다. 관측 지표가 비어서 반려하지 않는다 (ADR-0033 §1)."
+    },
+    "conditions": {
+      "type": "object",
+      "description": "좋은 소재의 특징 넷. **판정이 아니라 관측이고** 소비자는 [1b] score다 (ADR-0033 §1). false가 섞여 있어도 verdict는 pass일 수 있다.",
+      "required": ["twist", "failed_alternative", "numbers", "present_link"],
+      "additionalProperties": false,
+      "properties": {
+        "twist": { "type": "boolean" },
+        "failed_alternative": { "type": "boolean" },
+        "numbers": { "type": "boolean" },
+        "present_link": { "type": "boolean" }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fact" }
+    },
+    "twist": { "type": "string" },
+    "failed_alternatives": { "type": "array", "items": { "type": "string" } },
+    "present_link": {
+      "type": "string",
+      "description": "지금 방문 가능한 장소이거나, 시청자의 일상에서 지금도 작동하는 같은 원리다 (스펙 06). 후자도 팩트시트에 사실로 실려야 한다."
+    },
+    "notes": { "type": "string" },
+    "reject_reason": { "type": "string" }
+  },
+
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "required": ["id", "claim", "numbers", "source", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^f[0-9]{2,3}$",
+          "description": "07-outline.json의 grounded_in이 이 값을 가리킨다 (ADR-0029)."
+        },
+        "claim": { "type": "string", "minLength": 1 },
+        "numbers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "대본에 쓸 수 있는 숫자의 전부다. [2] validate가 대본 숫자를 전수 추출해 이 목록과 대조한다 (ADR-0007)."
+        },
+        "source": { "type": "string", "minLength": 1 },
+        "confidence": {
+          "enum": ["high", "medium", "low"],
+          "description": "high는 단정 가능, medium은 추정 표현 필수, low는 대본 사용 금지라 [1a]에 주입조차 되지 않는다 (ADR-0016)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "사료 간 수치 이견 기록용 (스펙 06 규칙)."
+        }
+      }
+    }
+  },
+
+  "checks": {
+    "_role": "스키마로 표현되지 않는 교차 규칙의 임계값. 코드는 schemas/factsheet.py가 로드한다.",
+    "_min_numbers": "conditions.numbers가 true일 때 facts에 실제로 있어야 하는 고유 숫자 개수 (스펙 06 관측 지표 3).",
+    "min_numbers": 3
+  }
+}

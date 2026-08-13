@@ -159,27 +159,15 @@ topics/{slug}/
 
 ## [0b. research] 팩트시트 산출
 
-research.json 스키마:
+**계약은 `specs/schema/factsheet.schema.json`이다** (ADR-0034 §3). 필드 목록과 값은
+여기 다시 적지 않는다 — 코드가 그 파일을 로드하므로 두 곳에 적으면 갈라진다.
 
-```json
-{
-  "topic": "한양도성 각자성석",
-  "verdict": "pass",
-  "conditions": {"twist": true, "failed_alternative": true, "numbers": true, "present_link": true},
-  "facts": [
-    {
-      "id": "f01",
-      "claim": "1396년 태조가 한양 둘레 18.6km 성벽 공사를 시작했다",
-      "numbers": ["1396년", "18.6km"],
-      "source": "실록 태조 5년 1월",
-      "confidence": "high"
-    }
-  ],
-  "twist": "성돌의 이름은 낙서가 아니라 국가가 새기게 한 책임 표기다",
-  "failed_alternatives": ["감독관 배치 (11만 명/18.6km 감시 불가)", "포상제 (부실이 수년 뒤에야 드러남)"],
-  "present_link": "흥인지문 옆·낙산 구간에서 각자성석 실견 가능"
-}
-```
+이 문서가 적는 것은 **왜 그런가**다.
+
+- `facts[].id`는 `07-outline.json`의 `grounded_in`이 가리키는 키다 (ADR-0029)
+- `facts[].numbers`가 **대본이 쓸 수 있는 숫자의 전부다.** `[2] validate`가 대본 숫자를
+  전수 추출해 이 목록과 대조한다 (ADR-0007)
+- `confidence`는 소스 등급이 아니라 **확신도**다. 위 「confidence 판정」 표가 기준이다
 
 `conditions`의 네 값은 **관측이지 판정이 아니다** (ADR-0033 §1). `false`가 섞여 있어도
 `verdict`는 `pass`일 수 있다. 이 값을 소비하는 곳은 `[1b] score`이고, 게이트가 아니다.
