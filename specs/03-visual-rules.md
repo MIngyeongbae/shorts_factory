@@ -26,10 +26,28 @@ detail and colour fall away toward the edges into bare paper
 - 우하단 반짝이 파티클(✦) 오버레이 — 후처리 공통 레이어.
   **흰 배경에서 보이는지 아직 확인하지 않았다** — `[8] overlay`에서 실물로 판단한다
 
+## 참조 서술 (ADR-0030)
+
+`[4. refpack]`이 모은 `refs.json`의 `description`은 **`subject_anchor` 바로 뒤**에 실린다.
+프롬프트 항목 순서는 이렇다.
+
+```
+subject, subject_anchor…, refs.description, visual_goal, 구도 토큰, BASE_STYLE, MJ_COMPOSITION --ar 9:16
+```
+
+- 앵커 뒤인 이유: 앵커가 **대상이 무엇인가**를 고정하고 서술이 **그것이 어떻게 생겼는가**를
+  더한다. 둘은 같은 일의 두 단계라 붙어 있어야 한다. 앵커가 `subject` 바로 뒤인 것은
+  실측으로 정해진 자리다 (ADR-0028 G1) — 그 앞으로 끼어들지 않는다
+- **`subject`를 대체하지 않는다.** 무엇을 그릴지는 여전히 `06-script.json`이 정하고,
+  겹치면 `subject`가 이긴다 (ADR-0020: 값 하나의 출처는 하나다)
+- `refs.json`이 없거나 그 씬이 비어 있으면 **그냥 건너뛴다.** 참조 부재는 경고가 아니다
+- 사진 파일 첨부는 `[6]` 소관이고 이 표와 무관하다 — 강등 사다리는
+  `첨부+서술 → 서술 → 없음`이다 (ADR-0030)
+
 ## 구도
 
 구도는 **비트 단독이 아니라 `(beat × subject_scale)`로 결정한다** (ADR-0018). `subject_scale`은
-씬 계약의 필드이고 `[1. script]`가 `subject`와 함께 채운다 (스펙 02).
+씬 계약의 필드이고 `[1s. sceneplan]`가 `subject`와 함께 채운다 (스펙 02).
 
 | subject_scale | 뜻 |
 |---|---|

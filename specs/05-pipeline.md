@@ -11,14 +11,21 @@ topics/backlog.md
   → [0a. topic]     → topics/{slug}/ 폴더 생성 (소재 4조건 체크, 스펙 06)
   → [0b. research]  → 01-research.md → 02-verify.md → 03-critique.md → 04-factsheet.json
                        (각각 독립 헤드리스 세션, ADR-0009)
-  → [1. script]     → 05-candidates/*.json (대본+비트 태그 후보 3~5개, 팩트시트 그라운딩)
+  ┌ [1a. outline]   → 07-outline.json    (흥미 포인트 선정 + 7단 사실 배분 + 단별 글자 예산)
+  │ [1s. sceneplan] → 08-sceneplan.json  (씬 분할 + 글·그림 분담. 그림 필드 넷이 여기 소관)
+  └ [1w. write]     → 05-candidates/*.json (요지 → 자막 문장. 씬 구조를 바꾸지 않는다)
+    ↑ 셋은 순서대로다. 옛 [1. script] 한 단계를 가른 것이고 1부의 출력은 그대로다 (ADR-0029)
   → [1c. critique2] → 03-critique.md 갱신 (대본 후보 공격)
   → [1b. score]     → 06-script.json     (훅 스코어링: 비판 반영 채점 → 상위 1개)
   → [2. validate]   → 06-script.json     (구조·스키마·그라운딩 검증, 최대 3회 재생성)
+                       실패 종류에 따라 [1w]·[1s]·[1a] 중 하나로만 되돌아간다 (ADR-0029)
   → [1x. backfill-scale] → 06-script.json (subject_scale만 채움. ADR-0018 이전 대본 전용,
                        일회성 마이그레이션이라 정규 흐름에는 없다)
+  → [1y. backfill-visual-goal] → 06-script.json (visual_goal만 채움. ADR-0022 이전 대본 전용,
+                       [1x]와 같은 성격의 일회성 마이그레이션이다)
   → [2b. judge]     → judgment/ai.json   (AI 심사관 판정: go/revise/no_go, 스펙 07)
-                       revise 시 fix_directives 주입 → [1. script] 재생성 → 재심사 (상한 2회)
+                       revise 시 fix_directives 주입 → [1a]부터 재생성 → 재심사 (상한 2회).
+                       심사관이 무는 것은 서사·훅이라 문장만 고쳐서는 답이 안 나온다
 
 === 판단 게이트 (ADR-0009 → ADR-0010 이양 경로) ===
   → 자율성 레벨에 따라: L0~L1 사람 판정(judgment/human.json, AI 판정 비공개 상태에서),
@@ -27,10 +34,15 @@ topics/backlog.md
 === 2부: 영상 생산 (편당 ~$7, go 승인분만) ===
   ┌ [3. tts+sync]   → narration.wav + timing.json + scenes.timed.json
   │                    (ElevenLabs with-timestamps 문자 정렬 → 문장 경계 실측, ADR-0004)
+  ├ [4. refpack]    → refs/{scene_id}/*.jpg + refs.json  (씬별 실사 참조: 사진 + 서술, ADR-0030)
   └ [5. prompt]     → prompts.json       (씬별 이미지 프롬프트, 스펙 03 룰 적용)
-    ↑ 둘은 선후가 없다. 각자 06-script.json만 읽는다 (ADR-0020).
-      [5]→[6]은 TTS 없이 진행할 수 있다
-  → [6. imagegen]   → images/{scene_id}.jpg  (Nano Banana 2가 JPEG만 준다 — ADR-0021)
+    ↑ 셋은 선후가 없다. 각자 06-script.json만 읽는다 (ADR-0020).
+      [5]→[6]은 TTS 없이 진행할 수 있다. [5]는 refs.json이 있으면 서술을 싣고 없으면 그냥 간다
+  → [6. imagegen]   → images/{scene_id}.{ext}  (확장자는 프로바이더가 정한다 — ADR-0021.
+                       NB2는 JPEG, MJ는 PNG) + images/_cand/{scene_id}/q{0..3}
+                       (MJ가 이미 만든 4장. 씬을 동시에 제출한다 — ADR-0031)
+  → [6r. imagereview] → image_review.json  (씬별 판정: pass / 사분면 교체 / redo, ADR-0031)
+                       redo 씬만 [6]에 다시 넣는다 (상한 1회)
   → [7. motion]     → clips/{scene_id}.mp4  (이미지→비디오 or Ken Burns)
   → [8. overlay]    → 대형 텍스트·파티클 합성 (레이어 B). clips/를 덮어쓰지 않는다
   → [9. assemble]   → timeline.mp4       (FFmpeg: 디졸브 + 자막 번인)
@@ -67,9 +79,11 @@ topics/backlog.md
 | 파일 | 생산자 | 역할 | 읽는 단계 |
 |---|---|---|---|
 | `scenes.timed.json` | [3] | **씬의 유일한 출처.** 대본 속성(`beat`·`text`·`subject`·`subject_scale`·`subject_anchor`·`camera`·`motion`) + 실측 시각(`start`/`end`) | [7] 클립 길이·카메라·모션, [9] 전환·자막 |
+| `refs.json` | [4] | **씬별 실사 참조.** `description`(사진에서 읽어 낸 형태·재질·배치)과 내려받은 파일 목록. 씬이 비어 있어도 된다 — 도해 씬에는 참조가 없다 (ADR-0030) | [5] `description`을 프롬프트에 싣는다, [6] `attachable` 파일을 첨부 |
 | `prompts.json` | [5] | **씬별 이미지 지시.** 시간 정보를 담지 않는다. `style.dialect`가 어느 프로바이더 문법으로 쓰였는지 밝힌다 (ADR-0027) | [6] `prompt`·`negative_prompt`·`style`, [8] `overlays` |
 | `timing.json` | [3] | **[3]의 실행 기록.** 엔진 메타·배속·원속 길이·오디오 길이·경고. 계약이 아니라 기록이라 길이 초과로 멈출 때도 남는다 | [11] 리포트, 사람 |
 | `images.json` | [6] | **[6]의 실행 기록.** 프로바이더·앵커 수·씬별 상태/재시도/폴백. 계약이 아니라 기록이다 | [11] 리포트, 사람 |
+| `image_review.json` | [6r] | **[6r]의 실행 기록.** 씬별 판정(`pass`/`pick`/`redo`)·고른 사분면·기각 사유. 계약이 아니라 기록이다 (ADR-0031) | [11] 리포트, 사람 |
 | `clips.json` | [7] | **[7]의 실행 기록.** 씬별 모션 분기·적용 카메라·역방향 여부·재시도. 계약이 아니라 기록이다 | [11] 리포트, 사람 |
 | `subtitles.ass` | [9] | 자막 파일. `ass` 필터의 입력이라 파일로 존재해야 한다 | [9] 번인 |
 
@@ -94,8 +108,10 @@ topics/backlog.md
 | `topics/{slug}/06-script.json` | 씬 계약. 1부의 최종 산출물이자 2부의 **읽기 전용** 입력 |
 | `topics/{slug}/judgment/human.json` | 게이트. `decision: go`일 때만 2부 진입 (스펙 07 스키마) |
 
+- `07-outline.json`·`08-sceneplan.json`은 **1부 내부 파일이다** (ADR-0029). 2부는 읽지 않는다 — 경계 파일은 위 둘뿐이라는 이 규칙이 단계가 늘어도 그대로라는 뜻이다
 - **2부는 `06-script.json`을 수정하지 않는다.** 모든 2부 산출물은 `runs/{run_id}/` 아래에 쓴다
-  (`narration.wav`, `timing.json`, `scenes.timed.json`, `prompts.json`, `images/`, `images.json`,
+  (`narration.wav`, `timing.json`, `scenes.timed.json`, `refs/`, `refs.json`, `prompts.json`,
+  `images/`, `images/_cand/`, `images.json`, `image_review.json`,
   `clips/`, `subtitles.ass`, `timeline.mp4`, `final.mp4`, `report.md`).
   `runs/*`는 `.gitignore` 대상이라 미디어가 커밋되지 않는다
 - 계보는 `run_id`로 잇는다. 2부 산출물은 대본과 같은 `run_id`의 run 디렉터리에 놓인다
@@ -103,14 +119,18 @@ topics/backlog.md
 ## 단계별 규칙
 
 - **[0b. research]**: 스펙 06의 소스 등급(A~D)에 따라 웹 검색·수집. 1차 사료 필수 아님, 위키백과는 B등급 근거로 인정, 확정되지 않은 유력 학설은 `confidence: medium` (ADR-0016). 해외 소재는 영어 검색 병행. verdict: fail 시 백로그 반려하고 종료. 팩트시트는 사람 검수 지점 (유일한 수동 게이트).
-- **[1. script]**: 팩트시트 그라운딩 (ADR-0007). 팩트시트에 없는 수치·연도·인명 사용 금지. 세션은 `beat`·`text`·`subject`·`subject_scale`·`subject_anchor`(선택)만 출력하고 타임스탬프·카메라·오버레이·모션은 오케스트레이터가 룰 테이블로 채운다 (ADR-0014, ADR-0018). `subject_scale`은 연출이 아니라 피사체 서술이라 세션 몫이다. `subject_anchor`도 같은 자리다 — 재질과 고유명사는 팩트시트를 든 세션만 알 수 있고, `[5]`가 추론해 붙이면 ADR-0001 위반이다 (ADR-0028). `confidence: low` 사실은 프롬프트에 주입하지 않는다. 검증 실패 시 이 단계는 재생성하지 않는다 — 후보를 쓰고 검증 결과를 함께 넘긴다. **후보 수는 `[1b. score]` 도입 전까지 1개다** (채점기 없이 여러 개를 만들면 고를 수단이 없다).
+- **[1a. outline]**: 팩트시트만 읽는다. **씬도 문장도 만들지 않는다.** 훅 후보를 여러 개 내고 하나를 고른 이유(`why_chosen`)를 적는다 — 여기서 고르는 것은 문장이 아니라 **각도**다. 7단(스펙 01) 각각에 전달할 사실과 **글자 예산**을 배분한다. 예산 합계 545~575자, `acts[0..3]` 누적 260~310자 — **스펙 01의 분량 산수를 여기서 한 번만 한다.** 그라운딩(ADR-0007)은 단 단위로 먼저 건다 (`grounded_in`이 팩트시트 항목 키다).
+- **[1s. sceneplan]**: `07-outline.json` + 팩트시트를 읽는다. **문장을 쓰지 않는다.** 씬 23~28개로 나누고 씬마다 `beat`·`says`(말할 요지)·`char_budget`과 **그림 필드 넷**(`visual_goal`·`subject`·`subject_anchor`·`subject_scale`)을 적는다. `says`에 종결어미·수사 의문문·시그니처 문구가 들어오면 `[1w]`가 할 일이 없어진다. 비트 순서 역행 금지, `failed_solution` 2회 이상, `turning_point` 정확히 1회 등 스펙 01·02의 구조 규칙을 여기서 만족시킨다. **그림 필드가 전부 이 단계 소관인 것이 ADR-0029의 요점이다** — 배분을 먼저 정하라는 ADR-0022가 비로소 독립 단계가 된다. `subject_scale`·`subject_anchor`가 세션 몫인 근거는 그대로다 (ADR-0018·0028: 재질과 고유명사는 팩트시트를 든 세션만 알고, `[5]`가 추론해 붙이면 ADR-0001 위반이다).
+- **[1w. write]**: `08-sceneplan.json` + `07-outline.json`을 읽고 `says` → `text` 변환만 한다. 구어체 존댓말·수사 의문문·시그니처 문구·줄당 리듬이 이 단계 몫이다. **씬 구조를 바꿀 수 없다** — 씬 수·`scene_id`·`beat`·그림 필드 넷은 `08-sceneplan.json`에서 그대로 복사하고 세션은 `text`만 출력한다. 쓰기 전에 나머지 필드를 전수 대조하고 하나라도 다르면 파일을 쓰지 않고 실패한다 (`[1x]`·`[1y]` 백필이 쓴 패턴이다). 팩트시트를 직접 읽지 않는다 — 숫자는 `says`에 이미 있고 없는 숫자를 쓰면 ADR-0007 위반이다. 타임스탬프·카메라·오버레이·모션은 오케스트레이터가 룰 테이블로 채운다 (ADR-0014). `confidence: low` 사실은 프롬프트에 주입하지 않는다. 검증 실패 시 이 단계는 재생성하지 않는다 — 후보를 쓰고 검증 결과를 함께 넘긴다. **후보 수는 `[1b. score]` 도입 전까지 1개다** (채점기 없이 여러 개를 만들면 고를 수단이 없다).
 - **[1b. score]**: shorts-hook-scorer 루브릭(hook_strength / info_density / standalone) 기반 LLM 채점. 텍스트 생성 비용은 무시 가능한 수준이므로 후보 수는 비용이 아니라 채점 신뢰도로 결정. 전 후보가 기준 미달이면 주제 자체를 반려하고 리포트. 추후 실제 조회수 데이터로 루브릭 보정(피드백 루프)을 v2 과제로 둔다.
-- **[2. validate]**: 스펙 01의 검증 5항목 + 스펙 02 스키마 검증 + 그라운딩 검증(대본 숫자 전수 추출 → 팩트시트 대조, ADR-0007). 실패 시 실패 사유를 프롬프트에 피드백하여 재생성 (최대 3회, 초과 시 중단·리포트).
+- **[2. validate]**: 스펙 01의 검증 5항목 + 스펙 02 스키마 검증 + 그라운딩 검증(대본 숫자 전수 추출 → 팩트시트 대조, ADR-0007). 실패 시 실패 사유를 프롬프트에 피드백하여 재생성 (최대 3회, 초과 시 중단·리포트). **재진입 지점은 실패 종류가 정한다** (ADR-0029): 분량·문체·시그니처는 `[1w]`만, 씬 수·비트 순서·`visual_goal` 겹침은 `[1s]`부터, 그라운딩 위반과 훅 미달은 `[1a]`부터. 문장 문제로 그림 계획까지 버리지 않는다.
 - **[3. tts+sync]**: 대본 전체 단일 호출 + with-timestamps. 문자 정렬에서 씬(자막 줄) 경계 start/end 추출해 `runs/{run_id}/scenes.timed.json`을 **새로 쓴다**(ADR-0017. `06-script.json`은 건드리지 않는다) — 문장 경계를 뽑은 뒤 각 줄의 마지막 문장 끝만 취한다 (ADR-0013). 실측-추정 오차 씬당 ±1.5초 초과 시 경고. 총 길이 102초 초과 시 **대본 축약이 필요하다고 리포트하고 멈춘다** — 2부가 1부를 직접 다시 돌리지 않는다 (ADR-0017의 단방향 경계). 재생성은 사람이 1부를 다시 실행해 판단한다. atempo 1.1 적용 후 타임스탬프도 1/1.1 스케일 보정.
 - **[1x. backfill-scale]**: `subject_scale`이 없는 옛 `06-script.json`에만 쓴다 (ADR-0018). 세션에 `subject`만 보여주고 `wide`/`close`/`diagram` 판정을 받아 그 필드 하나만 끼운다. **대본을 바꾸지 않는다** — 쓰기 전에 나머지 필드를 전부 대조하고 하나라도 다르면 파일을 쓰지 않고 실패한다. 전 씬에 값이 있으면 세션을 부르지 않는다. 새 토픽은 `[1]`이 직접 채우므로 이 단계를 타지 않는다.
+- **[4. refpack]**: `06-script.json`의 `subject`·`subject_anchor`로 검색어를 만들어 씬별 실사 참조를 모은다 (ADR-0030). 산출은 둘이다 — **`description`**(사진에서 읽어 낸 형태·재질·색·배치를 한국어 구절로)과 **내려받은 파일 목록**. 도해 씬이나 실물이 없는 개념 씬은 **비운다**. 부재를 경고하지 않는다 (ADR-0028의 선택 필드와 같은 태도). 소비는 두 경로이고 **강등 사다리는 `첨부+서술 → 서술 → 없음`이다** — 한쪽이 죽어도 다른 쪽이 돈다. 라이선스가 `public-domain`·`cc0`·`cc-by` 계열인 사진만 `attachable: true`이고, 불명·저작권 있음은 서술 경로만 탄다. `source_url`·`license`·`credit`을 전부 기록한다. **참조 사진 자체가 최종 산출물에 들어가는 일은 없다** — 이미지 프롬프트는 입력이다. 이 단계의 세션에는 **웹검색 도구를 준다** (지금까지 읽기 도구만 준 것과 다르다, ADR-0011). 세션은 URL과 서술을 JSON으로 돌려주고 내려받기는 오케스트레이터가 한다.
 - **[5. prompt]**: 구도는 `(beat × subject_scale)` 표에서만 나온다 (스펙 03, ADR-0018). 다른 씬을 가리키는 구도(`@prev`/`@hook`)는 가리키는 씬의 `subject_scale`이 같을 때만 잇고, 다르면 스케일별 기본값으로 떨어진다. 오버레이는 전부 레이어 B다 — 베이스 이미지는 전 씬 클린이고 2-pass 어노테이션 경로가 없다 (ADR-0019). 출력 방언은 `--dialect {mj,nb2}`로 고르고 기본값은 `mj`다 (ADR-0027). **방언은 표기 변환일 뿐이라 `BASE_STYLE`·구도 표·배제 항목은 방언과 무관하게 같다.** MJ 방언에서는 스타일 앵커 없음을 경고하지 않는다 — 그 경로가 스타일 앵커를 쓰지 않기 때문이다 (ADR-0025 G3). 씬의 `subject_anchor`는 값이 있을 때 `subject` 뒤에 콤마 항목으로 싣고, **거르지 않는다** — 어느 명사가 그 씬에서 더 센지는 룰 테이블에 넣을 수 있는 값이 아니다 (ADR-0028 G2). 부재도 경고하지 않되 **앵커를 채운 씬 수를 요약에 낸다** (되돌릴 조건의 관측 수단).
-- **[6. imagegen]**: 시작 전에 `style.dialect`와 프로바이더가 맞는지 대조하고 어긋나면 호출 없이 멈춘다 (ADR-0027). 씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로 폴백하고 리포트에 기록. 편당 베이스 호출 = 씬 수 (2-pass 없음, ADR-0019).
-- **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용, 파라미터는 스펙 03의 "카메라 워크 파라미터" 표). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초. **클립의 로컬 0초가 씬의 `start`이고 0.6초는 전부 꼬리다** (ADR-0024) — 겹침을 앞뒤로 나누지 않는다. 같은 이미지가 두 씬에 걸리면([6] 폴백) 2회차부터 스펙 03의 역방향 워크를 쓴다. 판정은 이미지 파일 내용으로 하며 `images.json`을 읽지 않는다 (ADR-0024).
+- **[6. imagegen]**: 시작 전에 `style.dialect`와 프로바이더가 맞는지 대조하고 어긋나면 호출 없이 멈춘다 (ADR-0027). 씬당 1회 재시도. 2회 실패 시 인접 씬 이미지 재사용(카메라 워크만 변경)으로 폴백하고 리포트에 기록. 편당 베이스 호출 = 씬 수 (2-pass 없음, ADR-0019). **씬을 동시에 제출한다** (ADR-0031): 워커 기본 3, `--jobs`로 조정. relax는 제출 후 대부분 기다리는 시간이라 한 줄로 세울 이유가 없다. `images.json` 갱신은 **직렬**이다 — 씬 하나가 끝날 때마다 쓴다는 계약(ADR-0020)의 목적이 재실행 시 다시 사지 않는 것이므로 병렬이 그것을 깨면 안 된다. 429(`ImageGenRateLimited`)가 나오면 워커를 1로 줄이고 백오프한다. **MJ가 낸 4장을 전부 `images/_cand/{scene_id}/q{0..3}.png`로 남기고** `q0`을 `images/{scene_id}.png`에 복사한다 — 하류 계약은 그대로다. 사분면을 고르는 것은 `[6r]` 몫이고, 이미 산 것이라 추가 과금이 없다.
+- **[6r. imagereview]**: 헤드리스 세션이 **이미지를 직접 보고** 씬마다 판정한다 (ADR-0031). 판정 기준 넷이 곧 기각 우선순위다 — ① `subject`·`subject_anchor`의 대상이 맞는가 ② `visual_goal`이 지려던 설명을 지는가 ③ 하단 1/3이 비었는가(자막 자리, 스펙 03) ④ 글자·워터마크·기형 사고가 없는가. **스타일은 판정하지 않는다** — `BASE_STYLE`은 작동하고 있고 판정 세션에 룩을 맡기면 룰 테이블 밖에서 연출이 결정된다 (ADR-0001). 판정은 `pass` / `pick q{n}`(사분면 교체, 재생성 없음) / `redo` 셋이다. **사분면 선택이 재생성보다 먼저다.** `redo`는 4장이 전부 기준 ①②에 걸릴 때만이고 **상한 1회**다 — 재생성 결과는 다시 판정하지 않는다 (판정↔재생성 루프에는 끝나는 조건이 없다). `[6]`의 인접 씬 폴백과는 축이 다르다: 그건 호출이 실패했을 때, 이건 결과가 틀렸을 때다.
+- **[7. motion]**: `motion` 필드 분기 (ADR-0006). `kenburns` → FFmpeg zoompan(camera 값 적용, 파라미터는 스펙 03의 "카메라 워크 파라미터" 표). `kling` → v2.6 Turbo급 i2v 5초 무음, 2회 실패 시 kenburns 강등. `mj_video` → `POST /mj-fast/mj/submit/video`, 강등 사다리는 **`mj_video` → `kenburns` → `static`** (ADR-0025 §3). **이미지와 달리 fast 엔드포인트라 GPU 시간을 쓴다** — 편당 씬 수 상한은 ADR-0006의 `kling` 상한(10씬)을 그대로 쓰고, fast 소모 실측 후 조정한다. 영상 프로바이더가 없거나 상한을 넘긴 씬은 `kenburns`로 내려간다. 클립 길이 = 씬 길이 + 디졸브 겹침 0.6초. **클립의 로컬 0초가 씬의 `start`이고 0.6초는 전부 꼬리다** (ADR-0024) — 겹침을 앞뒤로 나누지 않는다. 같은 이미지가 두 씬에 걸리면([6] 폴백) 2회차부터 스펙 03의 역방향 워크를 쓴다. 판정은 이미지 파일 내용으로 하며 `images.json`을 읽지 않는다 (ADR-0024).
 - **[8. overlay]**: `prompts.json`의 `overlays`(전부 레이어 B, ADR-0019)를 `[7]`의 클립 위에 합성한다. **`clips/`를 덮어쓰지 않는다** (ADR-0024) — 별도 디렉터리에 전 씬을 내고, 오버레이가 없는 씬은 그대로 통과시켜 항상 전 씬이 갖춰지게 한다. `kling` 클립은 편당 과금 산출물이라 오버레이를 고치려고 다시 살 수 없다. 디렉터리 이름은 이 단계를 구현할 때 정한다.
 - **[9. assemble]**: 자막은 **scenes.timed.json** 기준 ASS 생성 후 번인 (ADR-0020 — 씬의 `text`·`start`·`end`를 읽는 곳은 이 파일 하나다). 전환 규칙(스펙 03)이 비트에 걸려 있어 같은 파일의 `beat`을 함께 본다. 싱크 오차 ±200ms 이내 검증.
 
@@ -126,7 +146,10 @@ topics/backlog.md
 - 대본 = 팩트시트 그라운딩 (ADR-0007)
 - TTS = ElevenLabs 본인 목소리 클로닝 (ADR-0004)
 - 이미지 = Nano Banana 2 + 스타일 앵커 (ADR-0005)
-- 모션 = Kling v2.6급 / Ken Burns 하이브리드, motion 필드 분기 (ADR-0006)
+- 모션 = Kling v2.6급 / Ken Burns 하이브리드, motion 필드 분기 (ADR-0006). MJ 전환 후 `mj_video`가 1순위 (ADR-0025 §3)
+- 대본 생산 = `[1a] outline` → `[1s] sceneplan` → `[1w] write` 3단계. 배분이 집필보다 먼저다 (ADR-0029)
+- 이미지 참조 = `[4] refpack`이 실사진과 서술을 모으고, 강등 사다리는 `첨부+서술 → 서술 → 없음` (ADR-0030)
+- 이미지 판정 = `[6r] imagereview`. 사분면 선택이 재생성보다 먼저다 (ADR-0031)
 
 ## 비용 기준선
 
