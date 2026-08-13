@@ -36,16 +36,43 @@
 `POST /mj-fast/mj/submit/video`와 강등 사다리를 적었다. **편당 상한은 ADR-0006의 kling
 상한(10씬)을 그대로 쓰고 fast GPU 소모 실측 후 조정한다** — 값을 지어내지 않았다.
 
-### 다음 세션에 먼저 잴 것 (프록시를 켜고 몇 분이면 끝난다)
+### 프록시를 직접 만들 필요가 없다 — **기능의 일부만 쓰고 있었다** (0030 G1 통과)
 
-이번 세션에 확인하려 했으나 **mjopen 프록시가 꺼져 있어 못 쟀다** (`curl` → 000).
+사람이 "프록시 오픈소스니까 그냥 만들면 안 되냐"고 물어서 실제로 재 봤다. **Docker
+Desktop이 꺼져 있었을 뿐이고**(앞선 `curl` 000의 정체다) 켜니 REST 표면이 전부 열려 있다.
+
+`/swagger/v1/swagger.json` — **115경로.** 네 프리픽스(`/mj`·`/mj-relax`·`/mj-fast`·
+`/mj-turbo`) 전부에 `imagine`·`video`·`upload-discord-images`가 있다.
+
+```
+SubmitImagineDTO → state, notifyHook, botType, prompt, base64Array, accountFilter
+SubmitVideoDTO   → state, notifyHook, prompt, motion, image, endImage,
+                   loop, action, index, taskId, videoType, batchSize
+```
+
+- **`base64Array`가 참조 이미지다.** 별도 업로드 왕복도 필요 없다 → **ADR-0030 G1 통과**
+- **`SubmitVideoDTO`가 완비돼 있다** → mj_video는 어댑터 메서드 하나다
+- 지금 어댑터는 `{"prompt": ...}` 하나만 보낸다 (`midjourney.py`의 `submit`).
+  **막혀 있던 게 아니라 안 쓰고 있었다**
+- `Midjourney.License.dll`은 리포 문서상 **Windows 개발 디버깅에만 걸리고 Linux는 무관**하다.
+  우리는 Docker(Linux)다 — 막혔던 것은 계정 모드지 API가 아니었다
+- 라이선스는 **GPL-3.0**. 배포하지 않으니 공개 의무는 없지만 코드를 포팅하면 파생저작물이다
+
+직접 만들 경우는 셋뿐이다 — 리포가 죽거나, 라이선스가 REST까지 막거나, 필요한 기능이
+없을 때. **지금은 셋 다 아니다.** 그때도 프록시 전체가 아니라 우리가 쓰는 세 동작
+(imagine / video / fetch)만 만들면 된다. 밴 회피(잡 간격·일일 상한·시간대·CAPTCHA·계정 풀)를
+다시 만드는 것이 진짜 비용이고, 그게 ADR-0025가 프록시를 고른 이유의 절반이다.
+
+### 남은 게이트 셋
 
 | 게이트 | 무엇을 | 실패하면 |
 |---|---|---|
-| 0030 G1 | 프록시에 로컬 이미지 업로드 경로가 있는가 | 첨부 버리고 서술만 — ADR 나머지는 유효 |
-| 0030 G2 | 이미지 프롬프트가 `BASE_STYLE`을 안 이기는가 | `--iw` 낮추고, 그래도 밀리면 첨부 폐기. **`--sref`가 정확히 이렇게 실패했다** (ADR-0025 G3) |
+| 0030 G2 | `base64Array` 첨부가 `BASE_STYLE`을 안 이기는가 | `--iw` 낮추고, 그래도 밀리면 첨부 폐기. **`--sref`가 정확히 이렇게 실패했다** (ADR-0025 G3) |
 | 0031 G1 | `claude -p`가 `--add-dir`로 연 PNG를 실제로 판정하는가 | 판정 단계가 성립 안 함 → 컨택트시트 반자동 |
-| 0031 G3 | relax 동시 잡 한도 (기본값 3은 추정치다) | 429 나오는 지점을 재고 기본값 수정 |
+| 0031 G3 | relax 동시 잡 한도 (기본값 3은 추정치다. ADR-0025가 잰 것은 **Fast** 동시 3잡이다) | 429 나오는 지점을 재고 기본값 수정 |
+
+**G2는 relax 1잡이면 답이 나온다 — 과금 0원이다.** 후버댐 `s06`(협곡을 메운 댐 덩어리)에
+실사진 한 장을 `base64Array`로 붙여 지금 프롬프트와 나란히 뽑아 보면 된다.
 
 ### 구현 순서 (앞 세션 목록을 이것으로 교체한다)
 

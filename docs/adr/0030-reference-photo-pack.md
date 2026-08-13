@@ -79,9 +79,10 @@ ADR-0028이 텍스트로 대상을 고정하는 데까지 갔다. **그런데도
 | **서술** | `[5] prompt` | `description`을 프롬프트에 싣는다 |
 | **첨부** | `[6] imagegen` | `attachable: true`인 파일을 MJ 이미지 프롬프트로 붙인다 |
 
-**강등 사다리: `첨부+서술 → 서술 → 없음`.** 첨부가 막히는 경우가 셋이다 — 프록시에
-업로드 경로가 없거나, 라이선스가 불명이거나, 첨부가 스타일을 이길 때(아래 G2). 어느
-경우든 서술 경로는 그대로 산다. **두 경로를 한 몸으로 만들지 않는 이유가 이것이다.**
+**강등 사다리: `첨부+서술 → 서술 → 없음`.** 첨부가 막히는 경우가 둘 남았다 — 라이선스가
+불명이거나, 첨부가 스타일을 이길 때(아래 G2). ~~프록시에 경로가 없는 경우~~는 G1에서
+해소됐다. 어느 경우든 서술 경로는 그대로 산다. **두 경로를 한 몸으로 만들지 않는 이유가
+이것이다.**
 
 ### 라이선스는 기록하고, 불명이면 첨부하지 않는다
 
@@ -112,10 +113,33 @@ ADR-0028이 텍스트로 대상을 고정하는 데까지 갔다. **그런데도
 
 | # | 확인할 것 | 상태 | 실패 시 |
 |---|---|---|---|
-| **G1** | mjopen 프록시에 로컬 이미지를 Discord CDN URL로 올리는 경로가 있는가 | **미확인** (프록시가 꺼져 있어 `/v3/api-docs` 조회 실패) | 첨부 경로를 버리고 서술 경로만 쓴다. 이 ADR의 나머지는 그대로 유효하다 |
+| **G1** | mjopen 프록시에 로컬 이미지를 실을 경로가 있는가 | **통과 (2026-08-13)** — 아래 | 첨부 경로를 버리고 서술 경로만 쓴다. 이 ADR의 나머지는 그대로 유효하다 |
 | **G2** | 이미지 프롬프트를 붙여도 `BASE_STYLE`(펜선·수채 위 극사실)이 살아남는가 | **미확인** | `--iw`를 낮춘다(0.5 → 0.25). 그래도 스타일이 밀리면 첨부를 버린다. **`--sref`가 정확히 이렇게 실패했다** (ADR-0025 G3) |
 | **G3** | 웹검색 세션이 씬에 쓸 만한 사진을 실제로 찾는가 | **미확인** | 못 찾는 씬이 많으면 `[4]`는 `description`만 내는 단계가 된다 |
 | **G4** | 참조를 붙인 씬이 안 붙인 씬보다 실제로 낫는가 | **미확인** | 이 ADR을 되돌린다 |
+
+### G1 실측 (2026-08-13, 로컬 프록시 `/swagger/v1/swagger.json` 115경로)
+
+**올릴 필요가 없다. `imagine`이 직접 받는다.**
+
+```
+SubmitImagineDTO      → state, notifyHook, botType, prompt, base64Array, accountFilter
+SubmitUploadDiscordDto → state, notifyHook, base64Array, accountFilter
+SubmitVideoDTO        → state, notifyHook, prompt, motion, image, endImage,
+                        loop, action, index, taskId, videoType, batchSize
+```
+
+네 프리픽스(`/mj`, `/mj-relax`, `/mj-fast`, `/mj-turbo`) 전부에 `imagine`·`video`·
+`upload-discord-images`가 있다. **첨부는 `base64Array`에 파일을 실어 보내는 것이고
+별도 업로드 왕복이 필요 없다.** `upload-discord-images`는 URL이 따로 필요할 때의 예비
+경로로 남는다.
+
+지금 어댑터가 `{"prompt": ...}` 하나만 보내고 있다 (`imagegen/midjourney.py`의 `submit`).
+**막혀 있던 것이 아니라 안 쓰고 있었다.** 필드 하나를 더 실으면 된다.
+
+> 같은 조회에서 `SubmitVideoDTO`가 완비돼 있음도 확인했다 — ADR-0025 §3의 `mj_video`는
+> 어댑터에 메서드 하나를 더 붙이는 일이다. `motion`·`videoType`·`batchSize`의 허용값은
+> 그 구현 세션에서 확인한다.
 
 **G2가 이 결정의 급소다.** ADR-0025 G3에서 `--sref`(스타일 참조)가 `BASE_STYLE`을 이겨
 마감이 망가졌다. 이미지 프롬프트는 스타일 참조가 아니라 내용 참조라 축이 다르지만,
@@ -131,7 +155,8 @@ ADR-0028이 텍스트로 대상을 고정하는 데까지 갔다. **그런데도
 | `specs/03-visual-rules.md` | `description`이 프롬프트 어디에 실리는지 |
 | `stages/refpack.py` | 신설. 웹검색 헤드리스 세션 + 다운로드 |
 | `stages/prompt.py` | `refs.json`을 읽어 `description`을 싣는다 |
-| `stages/imagegen.py` | `attachable` 파일을 첨부 (G1 통과 시) |
+| `stages/imagegen.py` | `attachable` 파일을 `base64Array`에 실어 보낸다 (G1 통과) |
+| `imagegen/midjourney.py` | `submit()`이 `prompt` 외에 `base64Array`도 보낸다 |
 | `schemas/refs.py` | 신설 |
 
 `[4]`는 헤드리스 세션에 **웹검색 도구를 준다.** 지금까지 세션에 읽기 도구만 준 것과
