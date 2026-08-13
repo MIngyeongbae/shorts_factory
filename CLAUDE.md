@@ -15,16 +15,22 @@ AI 파이프라인으로 "신비한 건축사전" 스타일의 지식 쇼츠(9:1
 
 ## 스펙 목록
 
-| 파일 | 내용 |
-|---|---|
-| `specs/00-overview.md` | 목표, 산출물 정의, 성공 기준 |
-| `specs/01-script-template.md` | 대본 스토리 템플릿 (7단 구조, 시그니처 문구, 분량) |
-| `specs/02-beat-schema.md` | 씬 비트 태깅 스키마 (JSON) |
-| `specs/03-visual-rules.md` | 비트 → 시각 연출 룰 테이블 |
-| `specs/04-audio-rules.md` | 비트 → TTS/SFX/BGM 룰 테이블 |
-| `specs/05-pipeline.md` | 파이프라인 단계 정의 + 단계 간 I/O 계약 |
-| `specs/06-topic-research.md` | 소재 4조건, 사료 소스, 팩트시트 스키마 |
-| `specs/07-judgment-autonomy.md` | 판정 스키마, 자율성 사다리 L0~L3, revise 루프 |
+> ⚠ **ADR-0033(2026-08-13)이 아직 스펙에 반영되지 않았다.** 아래 ⚠ 표시된 문서는
+> 폐기된 전제(고정 7단 구조, 건축 도메인, 비트 → 연출 룰 테이블) 위에 쓰여 있다.
+> **재작성 전까지는 그 부분에서 스펙보다 ADR-0033이 우선한다** — 절대 원칙 1의 유일한
+> 예외이고, 재작성이 끝나면 이 경고를 지운다. 영향 범위는
+> `docs/open-decisions-structure-and-domain.md`에 전수로 있다.
+
+| 파일 | 내용 | |
+|---|---|---|
+| `specs/00-overview.md` | 목표, 산출물 정의, 성공 기준 | ⚠ 도메인·성공기준 2 |
+| `specs/01-script-template.md` | 대본 스토리 템플릿 (분량, 시그니처 문구) | ⚠ **전면** |
+| `specs/02-beat-schema.md` | 씬 계약 스키마 (JSON) | ⚠ 시퀀스 제약 |
+| `specs/03-visual-rules.md` | 시각 연출 어휘 (구도 토큰·오버레이·카메라·전환) | ⚠ 표 → 목록 |
+| `specs/04-audio-rules.md` | TTS/SFX/BGM 룰 | ⚠ 비트 종속 |
+| `specs/05-pipeline.md` | 파이프라인 단계 정의 + 단계 간 I/O 계약 | ⚠ `[1a]`·`[2]` |
+| `specs/06-topic-research.md` | 소재 판별, 사료 소스, 팩트시트 스키마 | ⚠ 도메인·4조건 |
+| `specs/07-judgment-autonomy.md` | 판정 스키마, 자율성 사다리 L0~L3, revise 루프 | |
 
 ## 기술 스택 (확정분)
 
