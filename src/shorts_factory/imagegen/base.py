@@ -215,6 +215,19 @@ class ImageClient(ABC):
     #: 기본값이 `.jpg`인 이유는 실물(Nano Banana 2)이 JPEG만 주기 때문이다 (ADR-0021).
     output_suffix: str = ".jpg"
 
+    def concurrency(self) -> int:
+        """이 프로바이더에 동시에 던져도 되는 잡 수. `[6]`의 워커 수 기본값이다 (ADR-0031 §4).
+
+        **한도를 아는 것은 프로바이더뿐이라 여기서 묻는다.** MJ는 계정의 `relaxCoreSize`가
+        그 값이고, 그것은 구독 플랜이 정하므로 리포에 적어 둘 수 없다 — 적어 두면 플랜을
+        바꾼 날 조용히 틀린다 (ADR-0031 G3, ADR-0032).
+
+        기본 1은 "모르면 줄 세운다"이고 그것이 지금까지의 동작이다. 한도를 모르는 채 여럿
+        던지면 빨라지는 것이 아니라 429가 나고 큐만 길어진다. 호출을 할 수 있으므로
+        실패할 수 있고, **실패는 1로 떨어지는 것이지 단계를 멈추는 것이 아니다.**
+        """
+        return 1
+
     @abstractmethod
     def generate(
         self, request: ImageRequest, *, timeout: int | None = None

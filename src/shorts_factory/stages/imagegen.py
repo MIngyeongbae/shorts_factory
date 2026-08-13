@@ -32,6 +32,19 @@ specs/05-pipeline.md:
 호출 전에 막는다**(`state.json`에 blocked 기록). 페이크는 그냥 돈다. 막힌 것을 알고도
 돌리려면 `--allow-missing-anchors`로 명시한다 — 경고만 남기고 진행한다.
 
+## 씬을 동시에 제출한다 (ADR-0031 §4)
+
+relax는 제출한 뒤 대부분 **기다리는 시간**이라 한 줄로 세울 이유가 없다. 27씬을 순차로
+돌면 잡 하나가 100초여도 45분이 된다 (실측).
+
+- 워커 수는 **하드코딩하지 않는다.** `--jobs`가 없으면 프로바이더에게 묻고
+  (`ImageClient.concurrency()`), MJ는 계정의 `relaxCoreSize`를 읽어 준다. 그 값은 구독
+  플랜이 정하므로 리포에 적어 두면 플랜을 바꾼 날 조용히 틀린다 (ADR-0031 G3)
+- **기록 갱신은 직렬이다.** 씬 하나가 끝날 때마다 쓴다는 계약(ADR-0020)이 지키려는 것이
+  "죽어도 다시 사지 않는다"이므로, 병렬이 그것을 깨면 병렬로 번 시간보다 비싸다
+- 429가 나오면 워커를 1로 줄이고 쉰다. 한도에 걸린 채로 3개를 계속 던지는 것은 큐만 늘린다
+- **이어받는 씬은 워커를 쓰지 않는다.** 호출이 아니라 파일 확인이다
+
 ## 돈이 드는 단계다
 
 - 이미 만든 이미지는 다시 사지 않는다. 씬별로 요청 지문(`digest`)을 기록해 두고,
@@ -45,14 +58,19 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterator
 
 from ..config import Paths, write_text
 from ..imagegen.base import (
     ImageClient,
     ImageGenError,
+    ImageGenRateLimited,
     ImageRequest,
     ProviderNotConfigured,
     discover_style_anchors,
@@ -85,6 +103,10 @@ MAX_ATTEMPTS = 2
 
 #: 이미지 1장 생성 타임아웃(초).
 TIMEOUT = 180
+
+#: 429를 만났을 때 쉬는 시간(초). 워커를 1로 줄이는 것과 짝이다 (ADR-0031 §4) — 줄이기만
+#: 하고 안 쉬면 한도에 걸린 상태로 계속 두드리는 것은 그대로다.
+RATE_LIMIT_BACKOFF = 60
 
 #: 씬 하나의 결과 상태.
 GENERATED = "generated"  # 이번 실행에서 만들었다 (과금)
@@ -127,6 +149,8 @@ class ImagegenResult:
     warnings: list[str] = field(default_factory=list)
     skipped: bool = False
     blocked: bool = False
+    #: 실제로 쓴 워커 수 (ADR-0031 §4). 1이면 순차다.
+    workers: int = 1
 
     def count(self, status: str) -> int:
         return sum(1 for s in self.scenes if s["status"] == status)
@@ -153,6 +177,8 @@ class ImagegenResult:
     @property
     def summary(self) -> str:
         tail = " (스킵)" if self.skipped else ""
+        if self.workers > 1 and not self.skipped:
+            tail += f" · 워커 {self.workers}"
         parts = [
             f"생성 {self.count(GENERATED)}",
             f"이어받기 {self.count(CACHED)}",
@@ -239,21 +265,113 @@ def _nearest_source(scene_id: int, available: list[int]) -> int | None:
     return min(available, key=lambda cand: (abs(cand - scene_id), cand > scene_id, cand))
 
 
+def _resolve_workers(
+    client: ImageClient, jobs: int | None, *, pending_count: int
+) -> int:
+    """이번 실행에 쓸 워커 수.
+
+    **하드코딩하지 않는다** (specs/05, ADR-0031 G3). `--jobs`가 있으면 사람 말이 이기고,
+    없으면 프로바이더에게 묻는다 — MJ는 계정의 `relaxCoreSize`를 읽어 준다.
+
+    살 씬보다 많은 워커는 만들지 않는다. 스레드가 놀 뿐이지만, 실행 기록의 `workers`가
+    실제로 돈 수와 달라지면 나중에 실측을 그 숫자로 읽게 된다.
+    """
+    if jobs is not None:
+        if jobs < 1:
+            raise ImagegenStageError(f"--jobs는 1 이상이어야 한다: {jobs}")
+        workers = jobs
+    else:
+        workers = client.concurrency()
+    return max(1, min(workers, pending_count or 1))
+
+
+@contextmanager
+def _no_gate() -> Iterator[None]:
+    """게이트 없이 도는 경로(워커 1). `with` 자리를 비워 두지 않으려는 것뿐이다."""
+    yield
+
+
+class _Gate:
+    """동시에 도는 씬 수를 제한하고, 429가 나면 1로 줄인다 (ADR-0031 §4).
+
+    `ThreadPoolExecutor`의 `max_workers`로는 이걸 못 한다 — 풀을 만든 뒤에는 바꿀 수
+    없기 때문이다. 그래서 스레드는 풀이 주고 **몇 개가 동시에 프로바이더를 두드릴지는
+    이 게이트가 정한다.**
+
+    줄이기만 하고 되돌리지 않는다. 한도에 걸린 계정을 다시 떠보는 것은 이 단계가 할 일이
+    아니고, 27씬을 순차로 도는 것은 느릴 뿐 안전하다.
+    """
+
+    def __init__(self, limit: int, *, sleep: Callable[[float], None] = time.sleep) -> None:
+        self._cv = threading.Condition()
+        self._limit = max(1, limit)
+        self._active = 0
+        self._sleep = sleep
+        self.reduced = False
+
+    @property
+    def limit(self) -> int:
+        with self._cv:
+            return self._limit
+
+    @contextmanager
+    def slot(self) -> Iterator[None]:
+        with self._cv:
+            while self._active >= self._limit:
+                self._cv.wait()
+            self._active += 1
+        try:
+            yield
+        finally:
+            with self._cv:
+                self._active -= 1
+                self._cv.notify()
+
+    def rate_limited(self) -> None:
+        """429를 만났다. 워커를 1로 줄이고 백오프한다."""
+        with self._cv:
+            first = self._limit > 1
+            self._limit = 1
+            if first:
+                self.reduced = True
+        if first:
+            log.warning(
+                "[%s] 한도에 걸렸다(429). 워커를 1로 줄이고 %d초 쉰다",
+                STAGE, RATE_LIMIT_BACKOFF,
+            )
+        self._sleep(RATE_LIMIT_BACKOFF)
+
+
 def _generate_scene(
     client: ImageClient,
     request: ImageRequest,
     image_path: Path,
     *,
     timeout: int,
+    gate: _Gate | None = None,
 ) -> dict[str, Any]:
-    """씬 하나 — 최대 `MAX_ATTEMPTS`회 호출. specs/05 "씬당 1회 재시도"."""
+    """씬 하나 — 최대 `MAX_ATTEMPTS`회 호출. specs/05 "씬당 1회 재시도".
+
+    `gate`를 주면 호출이 게이트 안에서 일어난다. 슬롯을 **호출마다** 잡았다 놓는 이유는
+    429로 한도가 1로 줄었을 때 재시도가 그 축소를 따르게 하려는 것이다.
+    """
     errors: list[str] = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            image = client.generate(request, timeout=timeout)
+            with gate.slot() if gate is not None else _no_gate():
+                image = client.generate(request, timeout=timeout)
         except ProviderNotConfigured:
             # 씬의 문제가 아니다. 재시도도 폴백도 의미가 없어 위로 올린다.
             raise
+        except ImageGenRateLimited as exc:
+            errors.append(f"{attempt}회: {exc}")
+            log.warning(
+                "[%s] 씬 %d 한도 도달 (%d/%d): %s",
+                STAGE, request.scene_id, attempt, MAX_ATTEMPTS, exc,
+            )
+            if gate is not None:
+                gate.rate_limited()
+            continue
         except ImageGenError as exc:
             errors.append(f"{attempt}회: {exc}")
             log.warning(
@@ -378,6 +496,7 @@ def run_imagegen_stage(
     force: bool = False,
     allow_missing_anchors: bool = False,
     timeout: int = TIMEOUT,
+    jobs: int | None = None,
 ) -> ImagegenResult:
     paths = paths or Paths.from_env()
 
@@ -462,6 +581,10 @@ def run_imagegen_stage(
 
     previous = {} if force else _load_previous(record_path)
     records: list[dict[str, Any]] = []
+    #: `records`와 `images.json` 쓰기를 지키는 자물쇠. **기록 갱신은 직렬이다**
+    #: (ADR-0031 §4) — 씬 하나가 끝날 때마다 쓴다는 계약(ADR-0020)의 목적이 재실행 때
+    #: 다시 사지 않는 것이므로, 병렬이 그것을 깨면 병렬로 얻은 시간보다 비싸다.
+    record_lock = threading.Lock()
 
     def flush() -> None:
         """지금까지의 결과 + 아직 안 온 씬의 지난 기록.
@@ -481,38 +604,75 @@ def run_imagegen_stage(
             ),
         )
 
-    try:
-        for scene in prompts["scenes"]:
-            scene_id = scene["scene_id"]
-            request = ImageRequest.from_prompt_scene(
-                scene, style, style_anchors=anchors, label=f"{STAGE} 씬 {scene_id}"
-            )
-            image_path = images_dir / f"{scene_id}{images.output_suffix}"
-
-            prior = previous.get(scene_id)
-            if (
-                prior is not None
-                and prior.get("status") in REUSABLE
-                and prior.get("digest") == request.digest
-                and image_path.exists()
-            ):
-                # 프롬프트가 그대로다. 같은 그림을 두 번 사지 않는다.
-                records.append(
-                    {**prior, "status": CACHED, "attempts": 0, "errors": []}
-                )
-                flush()
-                continue
-
-            records.append(
-                _generate_scene(images, request, image_path, timeout=timeout)
-            )
+    def commit(record: dict[str, Any]) -> None:
+        """씬 하나의 결과를 기록에 넣고 파일로 내린다. 병렬 경로의 유일한 쓰기 지점이다."""
+        with record_lock:
+            records.append(record)
             flush()
+
+    # 이어받을 씬은 워커를 쓰지 않는다. 호출이 아니라 파일 확인이라 즉시 끝나고,
+    # 슬롯을 잡으면 실제로 살 씬이 그만큼 늦게 출발한다.
+    pending: list[tuple[ImageRequest, Path]] = []
+    for scene in prompts["scenes"]:
+        scene_id = scene["scene_id"]
+        request = ImageRequest.from_prompt_scene(
+            scene, style, style_anchors=anchors, label=f"{STAGE} 씬 {scene_id}"
+        )
+        image_path = images_dir / f"{scene_id}{images.output_suffix}"
+
+        prior = previous.get(scene_id)
+        if (
+            prior is not None
+            and prior.get("status") in REUSABLE
+            and prior.get("digest") == request.digest
+            and image_path.exists()
+        ):
+            # 프롬프트가 그대로다. 같은 그림을 두 번 사지 않는다.
+            records.append({**prior, "status": CACHED, "attempts": 0, "errors": []})
+            continue
+        pending.append((request, image_path))
+    flush()
+
+    workers = _resolve_workers(images, jobs, pending_count=len(pending))
+    gate = _Gate(workers)
+    result.workers = workers
+
+    try:
+        if workers == 1:
+            for request, image_path in pending:
+                commit(_generate_scene(images, request, image_path, timeout=timeout))
+        else:
+            log.info(
+                "[%s] 씬 %d개를 워커 %d개로 동시에 제출한다 (ADR-0031)",
+                STAGE, len(pending), workers,
+            )
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [
+                    pool.submit(
+                        _generate_scene, images, request, image_path,
+                        timeout=timeout, gate=gate,
+                    )
+                    for request, image_path in pending
+                ]
+                # 예외는 결과를 꺼낼 때 올라온다. 먼저 끝난 순서가 아니라 제출 순서로
+                # 꺼내는 이유는 `ProviderNotConfigured`가 첫 씬에서 나면 그것을 가장
+                # 먼저 보고 멈추기 위해서다.
+                for future in futures:
+                    commit(future.result())
     except ProviderNotConfigured as exc:
         message = f"이미지 프로바이더를 쓸 수 없다: {exc}"
         state.mark_failed(STAGE, message, scenes_done=len(records))
-        flush()
+        with record_lock:
+            flush()
         raise ImagegenStageError(message) from exc
 
+    if gate.reduced:
+        warnings.append(
+            "429를 만나 워커를 1로 줄였다. 남은 씬은 순차로 돌았다 (ADR-0031 §4)"
+        )
+    # 폴백은 완료 순서가 아니라 씬 순서로 본다 — 경고 문구의 순서가 실행마다 달라지면
+    # 리포트를 눈으로 비교할 수 없다.
+    records.sort(key=lambda r: r["scene_id"])
     _apply_fallbacks(records, images_dir, warnings, suffix=images.output_suffix)
     flush()
 

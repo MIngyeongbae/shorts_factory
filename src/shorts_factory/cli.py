@@ -358,6 +358,7 @@ def _cmd_imagegen(args, paths: Paths) -> int:
             paths=paths,
             force=args.force,
             allow_missing_anchors=args.allow_missing_anchors,
+            jobs=args.jobs,
         )
     except DialectMismatch as exc:
         print(f"오류: {exc}", file=sys.stderr)
@@ -558,6 +559,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_imagegen.add_argument(
         "--allow-missing-anchors", action="store_true",
         help="스타일 앵커 0장이어도 진행한다 (ADR-0005 룩 일관성 수단 없이 과금)",
+    )
+    p_imagegen.add_argument(
+        "--jobs", type=int, default=None,
+        help="동시 제출 워커 수 (기본: 프로바이더에게 묻는다 — MJ는 계정 relaxCoreSize)",
     )
     p_imagegen.set_defaults(func=_cmd_imagegen)
 

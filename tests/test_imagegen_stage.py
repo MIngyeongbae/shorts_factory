@@ -603,3 +603,162 @@ def test_cli_takes_a_run_id_and_a_provider():
 def test_cli_rejects_an_unknown_provider():
     with pytest.raises(SystemExit):
         parse(["imagegen", "--slug", "abc", "--provider", "dall-e"])
+
+
+# --- 동시 제출 (ADR-0031 §4) --------------------------------------------------
+#
+# 계약은 넷이다. 속도가 아니라 **속도를 내면서 깨지면 안 되는 것**이 계약이다.
+#   1. 워커 수를 코드가 정하지 않는다 — 프로바이더에게 묻고, --jobs가 이긴다
+#   2. 실제로 겹쳐 돈다 (안 겹치면 병렬이라 부를 수 없다)
+#   3. images.json은 완료 순서가 아니라 씬 순서다 (ADR-0020 계약)
+#   4. 429는 워커를 1로 줄인다
+
+
+class CountingFake(FakeImageClient):
+    """동시에 몇 개가 겹쳤는지 재는 페이크. `concurrency()`가 몇 번 불렸는지도 센다."""
+
+    def __init__(self, *, limit: int = 3, hold: float = 0.02, **kw) -> None:
+        super().__init__(**kw)
+        self._limit = limit
+        self._hold = hold
+        self._lock = __import__("threading").Lock()
+        self.active = 0
+        self.peak = 0
+        self.asked = 0
+
+    def concurrency(self) -> int:
+        self.asked += 1
+        return self._limit
+
+    def generate(self, request, *, timeout=None):
+        import time
+
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            time.sleep(self._hold)
+            return super().generate(request, timeout=timeout)
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+def test_worker_count_is_asked_of_the_provider_not_hardcoded(paths, prepared):
+    """specs/05·ADR-0031 G3 — 워커 수는 코드에 적지 않고 프로바이더가 준다."""
+    run_id = prepared()
+    client = CountingFake(limit=3)
+    result = run_imagegen_stage(images=client, run_id=run_id, paths=paths)
+    assert client.asked == 1
+    assert result.workers == 3
+
+
+def test_jobs_flag_beats_the_provider(paths, prepared):
+    """사람이 명시하면 프로바이더에게 묻지 않는다."""
+    run_id = prepared()
+    client = CountingFake(limit=3)
+    result = run_imagegen_stage(images=client, run_id=run_id, paths=paths, jobs=2)
+    assert client.asked == 0
+    assert result.workers == 2
+
+
+def test_scenes_actually_overlap(paths, prepared):
+    """겹쳐 돌지 않으면 병렬이 아니다 — 45분이 45분으로 남는다."""
+    run_id = prepared()
+    client = CountingFake(limit=3)
+    run_imagegen_stage(images=client, run_id=run_id, paths=paths)
+    assert client.peak > 1
+
+
+def test_one_worker_stays_sequential(paths, prepared):
+    """워커 1은 지금까지의 동작 그대로다. 프록시를 못 읽었을 때 떨어지는 자리다."""
+    run_id = prepared()
+    client = CountingFake(limit=1)
+    result = run_imagegen_stage(images=client, run_id=run_id, paths=paths)
+    assert client.peak == 1 and result.workers == 1
+
+
+def test_record_keeps_scene_order_under_parallelism(paths, prepared):
+    """ADR-0020 — images.json의 씬 순서는 prompts.json 순서다. 완료 순서가 아니다."""
+    run_id = prepared()
+    run_imagegen_stage(images=CountingFake(limit=3), run_id=run_id, paths=paths)
+    record = read_record(paths, run_id)
+    ids = [s["scene_id"] for s in record["scenes"]]
+    assert ids == sorted(ids)
+    prompts = json.loads(
+        (paths.run_dir(run_id) / PROMPTS_FILE).read_text(encoding="utf-8")
+    )
+    assert ids == [s["scene_id"] for s in prompts["scenes"]]
+
+
+def test_parallel_run_still_makes_every_image(paths, prepared):
+    """병렬로 돌아도 씬 수 = 이미지 수다 (ADR-0019)."""
+    run_id = prepared()
+    result = run_imagegen_stage(
+        images=CountingFake(limit=3), run_id=run_id, paths=paths
+    )
+    files = sorted((paths.run_dir(run_id) / IMAGES_DIR).glob("*.png"))
+    assert len(files) == result.scene_count
+    assert result.count(GENERATED) == result.scene_count
+
+
+def test_cached_scenes_do_not_take_a_worker(paths, prepared):
+    """이어받는 씬은 호출이 아니라 파일 확인이다. 워커를 잡으면 살 씬이 늦게 출발한다.
+
+    씬 하나를 실패시켜 두면 다음 실행이 스킵되지 않는다 — 나머지는 이어받고 그 한 씬만
+    산다. 그러면 워커도 1이어야 한다: 살 씬보다 많은 워커는 놀 뿐이고, 실행 기록의
+    `workers`가 실제와 달라지면 나중에 실측을 그 숫자로 읽게 된다.
+    """
+    run_id = prepared()
+    run_imagegen_stage(
+        images=FakeImageClient(fail_scenes={5: MAX_ATTEMPTS}),
+        run_id=run_id, paths=paths,
+    )
+    client = CountingFake(limit=3)
+    result = run_imagegen_stage(images=client, run_id=run_id, paths=paths)
+    assert result.count(CACHED) == result.scene_count - 1
+    assert client.peak == 1
+    assert result.workers == 1
+
+
+class RateLimitedFake(CountingFake):
+    """첫 호출만 429를 내는 페이크. 그 뒤로는 정상이다."""
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        self._first = True
+
+    def generate(self, request, *, timeout=None):
+        with self._lock:
+            first, self._first = self._first, False
+        if first:
+            from shorts_factory.imagegen.base import ImageGenRateLimited
+
+            raise ImageGenRateLimited("한도 도달")
+        return super().generate(request, timeout=timeout)
+
+
+def test_rate_limit_drops_the_workers_to_one(paths, prepared, monkeypatch):
+    """ADR-0031 §4 — 429면 워커를 1로 줄인다. 계속 3개를 던지면 큐만 늘어난다."""
+    import shorts_factory.stages.imagegen as stage
+
+    monkeypatch.setattr(stage, "RATE_LIMIT_BACKOFF", 0)
+    run_id = prepared()
+    result = run_imagegen_stage(
+        images=RateLimitedFake(limit=3), run_id=run_id, paths=paths
+    )
+    assert any("429" in w for w in result.warnings)
+    assert result.passed  # 줄었을 뿐 단계는 끝까지 간다
+
+
+def test_jobs_below_one_is_rejected(paths, prepared):
+    run_id = prepared()
+    with pytest.raises(ImagegenStageError):
+        run_imagegen_stage(
+            images=FakeImageClient(), run_id=run_id, paths=paths, jobs=0
+        )
+
+
+def test_cli_exposes_jobs():
+    assert parse(["imagegen", "--slug", "abc"]).jobs is None
+    assert parse(["imagegen", "--slug", "abc", "--jobs", "3"]).jobs == 3

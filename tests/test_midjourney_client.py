@@ -264,3 +264,84 @@ def test_the_adapter_declares_its_dialect():
 def test_style_anchors_are_not_required_on_this_path():
     """`--sref`가 BASE_STYLE을 이겨 마감을 망가뜨렸다 (ADR-0025 G3). 0장이 정상이다."""
     assert MidjourneyClient.requires_style_anchors is False
+
+
+# --- 워커 수는 프록시가 안다 (ADR-0031 §4·G3) ---------------------------------
+#
+# 이 값을 리포에 적어 두면 구독 플랜을 바꾼 날 조용히 틀린다. 그래서 계정에서 읽는다.
+# 대신 **읽기에 실패해도 단계가 멈추면 안 된다** — 얼마나 빨리 돌릴지의 문제이지
+# 그림을 만들 수 있느냐의 문제가 아니다.
+
+
+def accounts_payload(*accounts) -> dict:
+    return {"list": list(accounts), "pagination": {"total": len(accounts)}}
+
+
+def account(*, enable=True, relax=3, token="secret-token") -> dict:
+    # 실제 응답에는 userToken·cookie가 함께 온다 (실측). 그것까지 흉내 내야
+    # "비밀을 어디에도 남기지 않는다"를 확인할 수 있다.
+    return {
+        "id": "3fc4f795", "enable": enable, "relaxCoreSize": relax,
+        "coreSize": 3, "userToken": token, "cookie": None,
+    }
+
+
+def test_concurrency_reads_relax_core_size_from_the_account():
+    mj = client([("/mj/admin/accounts", (200, accounts_payload(account(relax=3))))])
+    assert mj.concurrency() == 3
+
+
+def test_concurrency_ignores_disabled_accounts():
+    """잡은 활성 계정으로만 간다. 꺼진 계정의 한도를 따르면 근거 없는 숫자다."""
+    mj = client([(
+        "/mj/admin/accounts",
+        (200, accounts_payload(account(enable=False, relax=9), account(relax=3))),
+    )])
+    assert mj.concurrency() == 3
+
+
+def test_concurrency_takes_the_smallest_of_several_accounts():
+    """잡이 어느 계정으로 갈지는 프록시가 정한다. 큰 쪽에 맞추면 작은 쪽이 429를 낸다."""
+    mj = client([(
+        "/mj/admin/accounts",
+        (200, accounts_payload(account(relax=5), account(relax=2))),
+    )])
+    assert mj.concurrency() == 2
+
+
+@pytest.mark.parametrize(
+    "response",
+    (
+        (500, {"error": "그런 거 없다"}),
+        (200, {"list": []}),
+        (200, {"list": [{"enable": True}]}),   # relaxCoreSize가 없다
+        (200, {"pagination": {}}),             # list 자체가 없다
+        (200, b"<html>login</html>"),          # JSON이 아니다
+    ),
+)
+def test_concurrency_falls_back_to_one_instead_of_raising(response):
+    """못 읽으면 1이다. 느려질 뿐 틀리지 않는다 — 여기서 예외를 올리면 그림이 안 나온다."""
+    mj = client([("/mj/admin/accounts", response)])
+    assert mj.concurrency() == 1
+
+
+def test_concurrency_does_not_leak_the_account_token(caplog):
+    """응답에 userToken이 실려 온다. 로그에 새면 리포 밖으로 나간다 (ADR-0032 §3)."""
+    mj = client([("/mj/admin/accounts", (500, {"userToken": "secret-token"}))])
+    with caplog.at_level("WARNING"):
+        assert mj.concurrency() == 1
+    assert "secret-token" not in caplog.text
+
+
+def test_concurrency_uses_the_admin_endpoint_not_the_relax_prefix():
+    """`/mj-relax/` 프리픽스는 제출 전용이다. 관리 API에 붙이면 404가 난다."""
+    transport = fake_transport([
+        ("/mj/admin/accounts", (200, accounts_payload(account())))
+    ])
+    MidjourneyClient(
+        base_url="http://proxy:8086", secret="admin", transport=transport
+    ).concurrency()
+    method, url, _ = transport.calls[0]
+    assert method == "POST"
+    assert url.endswith("/mj/admin/accounts")
+    assert "/mj-relax/" not in url

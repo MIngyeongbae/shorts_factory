@@ -33,6 +33,7 @@ MJ 방언은 `--ar`·`--no`까지 한 줄에 담긴다 (ADR-0027). 이 조합이
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -58,11 +59,20 @@ SECRET_ENV = "MJ_API_SECRET"
 DEFAULT_BASE_URL = "http://127.0.0.1:8086"
 DEFAULT_SECRET = "admin"
 
+log = logging.getLogger(__name__)
+
 AUTH_HEADER = "mj-api-secret"
 
 #: 이미지는 relax, 영상은 fast (ADR-0025). 이 어댑터는 이미지 전용이다.
 SUBMIT_PATH = "/mj-relax/mj/submit/imagine"
 FETCH_PATH = "/mj/task/{task_id}/fetch"
+
+#: 계정 목록. `[6]`의 워커 수를 여기서 읽는다 (ADR-0031 G3). 응답은
+#: `{"list": [...], "pagination": ...}`이고 계정 오브젝트에 `relaxCoreSize`가 있다 (실측).
+#: **응답에는 `userToken`·`cookie` 같은 비밀이 함께 온다** — 이 어댑터는 숫자 한 개만
+#: 꺼내고 나머지는 어디에도 남기지 않는다 (ADR-0032 §3).
+ACCOUNTS_PATH = "/mj/admin/accounts"
+ACCOUNTS_TIMEOUT = 15
 
 #: 제출 성공으로 치는 응답 코드. 1=제출됨, 21=같은 잡이 이미 큐에 있음(둘 다 `result`에
 #: taskId를 준다), 22=큐 대기. 그 외는 실패다.
@@ -248,6 +258,42 @@ class MidjourneyClient(ImageClient):
         if status != 200:
             raise _fail(status, raw, what=f"태스크 {task_id} 조회")
         return _load(raw, what="태스크 응답")
+
+    def concurrency(self) -> int:
+        """활성 계정의 `relaxCoreSize`. `[6]`의 워커 수 기본값이다 (ADR-0031 §4·G3).
+
+        **한 번도 예외를 올리지 않는다.** 이 값은 얼마나 빨리 돌릴지를 정할 뿐이고,
+        못 읽었다고 그림을 못 만드는 것이 아니다. 못 읽으면 1로 떨어져 지금까지의
+        순차 동작이 된다 — 느려질 뿐 틀리지 않는다.
+
+        활성 계정이 여럿이면 **가장 작은 값**을 쓴다. 잡이 어느 계정으로 갈지는
+        프록시가 정하므로, 큰 쪽에 맞추면 작은 쪽 계정이 429를 낸다.
+        """
+        try:
+            status, raw = self.transport(
+                "POST", f"{self.base_url}{ACCOUNTS_PATH}", self.headers,
+                b"{}", ACCOUNTS_TIMEOUT,
+            )
+            if status != 200:
+                raise ImageGenError(f"HTTP {status}")
+            accounts = _load(raw, what="계정 목록").get("list")
+            if not isinstance(accounts, list):
+                raise ImageGenError("응답에 list가 없다")
+            sizes = [
+                int(a["relaxCoreSize"])
+                for a in accounts
+                if isinstance(a, dict) and a.get("enable") and a.get("relaxCoreSize")
+            ]
+            if not sizes:
+                raise ImageGenError("활성 계정에 relaxCoreSize가 없다")
+        except (ImageGenError, OSError, KeyError, TypeError, ValueError) as exc:
+            # 비밀이 섞인 응답이라 본문을 로그에 싣지 않는다 (ADR-0032 §3).
+            log.warning(
+                "relaxCoreSize를 읽지 못해 워커 1로 간다 (%s: %s). "
+                "--jobs로 직접 줄 수 있다", type(exc).__name__, exc,
+            )
+            return 1
+        return max(1, min(sizes))
 
     def download(self, url: str, *, timeout: int) -> bytes:
         """산출 이미지 바이트. 인증 헤더를 붙이지 않는다 — CDN 주소다."""
