@@ -1,0 +1,549 @@
+{
+  "topic": "후버댐 콘크리트 냉각",
+  "scenes": [
+    {
+      "scene_id": 1,
+      "act": 1,
+      "beat": "hook_twist",
+      "says": "후버댐이 하나의 콘크리트 덩어리가 아니라는 것",
+      "char_budget": 19,
+      "visual_goal": "이음매 하나 없어 보이는 완성된 댐 외벽의 인상 — 본문이 부정하려는 '통짜'라는 눈의 착각 자체",
+      "subject": "콜로라도강 협곡을 가로막은 후버댐의 매끈한 상류면 전경",
+      "subject_anchor": [
+        "후버댐",
+        "아치 중력식 댐",
+        "회색 콘크리트"
+      ],
+      "subject_scale": "wide",
+      "framing": "drone_wide",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 2,
+      "act": 1,
+      "beat": "hook_fact",
+      "says": "따로 붓고 따로 식힌 기둥을 쌓아 올린 구조라는 것",
+      "char_budget": 19,
+      "visual_goal": "그 기둥들이 댐 안에서 어떤 격자로 나뉘어 쌓였는지 — 말로는 그려지지 않는 내부 분할 형태",
+      "subject": "블록 기둥으로 나뉜 후버댐 몸체 절단 투시도",
+      "subject_anchor": [
+        "후버댐",
+        "콘크리트 블록",
+        "협곡 암반"
+      ],
+      "subject_scale": "diagram",
+      "framing": "cross_section",
+      "transition": "hard_cut",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 3,
+      "act": 1,
+      "beat": "context_number",
+      "says": "그 기둥 수가 약 215개로 추정된다는 것",
+      "char_budget": 19,
+      "visual_goal": "기둥 하나의 크기와 협곡을 메운 개수의 대비 — 거푸집 사이에 선 사람으로만 잡히는 규모",
+      "subject": "협곡 바닥에 격자로 늘어선 목재 거푸집 블록과 그 사이의 인부들",
+      "subject_anchor": [
+        "후버댐 건설 현장",
+        "목재 거푸집",
+        "1930년대 인부"
+      ],
+      "subject_scale": "wide",
+      "framing": "aerial_diorama",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "215개"
+      }
+    },
+    {
+      "scene_id": 4,
+      "act": 1,
+      "beat": "context",
+      "says": "완성된 표면에는 그 경계가 어디에도 보이지 않는다는 것",
+      "char_budget": 19,
+      "visual_goal": "경계가 사라진 벽면이 사람 키에 비해 얼마나 큰지 — 본문이 다루지 않는 현재의 스케일",
+      "subject": "후버댐 마루 난간에 선 사람과 그 아래로 떨어지는 하류면 콘크리트 벽",
+      "subject_anchor": [
+        "후버댐",
+        "댐 마루 도로",
+        "콘크리트 벽면"
+      ],
+      "subject_scale": "wide",
+      "framing": "present_wide",
+      "transition": "dissolve",
+      "camera": "tilt_down",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 5,
+      "act": 2,
+      "beat": "context",
+      "says": "굳는 콘크리트가 스스로 열을 낸다는 것",
+      "char_budget": 19,
+      "visual_goal": "그 열이 실제로 어느 정도인지 — 갓 부은 표면에서 김이 오르는 상태",
+      "subject": "갓 타설된 콘크리트 표면에서 김이 피어오르는 근접",
+      "subject_anchor": [
+        "타설 직후 콘크리트",
+        "목재 거푸집"
+      ],
+      "subject_scale": "close",
+      "framing": "problem_closeup",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 6,
+      "act": 2,
+      "beat": "failure_reason",
+      "says": "문제는 뜨거운 것 자체가 아니라 식으면서 부피가 줄어든다는 것",
+      "char_budget": 20,
+      "visual_goal": "수축이 어느 방향으로 얼마나 일어나는지 — 가장자리가 안쪽으로 당겨지며 벌어지는 간격",
+      "subject": "식으면서 사방으로 오그라드는 콘크리트 블록과 벌어진 가장자리 간격 도해",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "수축 간격"
+      ],
+      "subject_scale": "diagram",
+      "framing": "failure_diagram",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 7,
+      "act": 2,
+      "beat": "failure_reason",
+      "says": "바깥은 먼저 식고 안쪽은 오래 뜨겁게 남는다는 것",
+      "char_budget": 20,
+      "visual_goal": "겉과 속의 온도 차가 블록 안에서 몇 겹의 층으로 갈리는지",
+      "subject": "겉면은 식고 중심부만 뜨거운 콘크리트 블록의 온도 층 단면 도해",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "온도 분포"
+      ],
+      "subject_scale": "diagram",
+      "framing": "problem_diagram",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 8,
+      "act": 2,
+      "beat": "failure_reason",
+      "says": "다른 속도로 줄어드는 두 부분이 서로를 잡아당겨 금이 간다는 것",
+      "char_budget": 20,
+      "visual_goal": "그 힘이 어디서 시작해 어느 방향으로 갈라져 들어가는지 — 균열의 진행 경로",
+      "subject": "표면에서 안쪽으로 갈라져 들어가는 콘크리트 인장 균열 단면 도해",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "인장 균열"
+      ],
+      "subject_scale": "diagram",
+      "framing": "failure_diagram",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 9,
+      "act": 2,
+      "beat": "failed_solution",
+      "says": "한 번에 통으로 부으면 댐이 갈라지고 부서진다는 계산으로 그 안이 설계 단계에서 폐기됐다는 것, 그래서 열이 적게 나는 시멘트를 골랐다는 것",
+      "char_budget": 21,
+      "visual_goal": "본문이 한 단어로 넘기는 '조사'의 실제 범위 — 시멘트 조성과 분말도, 양생 온도, 골재 치수까지 따진 시험실 기록",
+      "subject": "1930년대 콘크리트 시험실의 시멘트 시료 병과 골재 표본, 손으로 적은 온도 기록지",
+      "subject_anchor": [
+        "콘크리트 시험실",
+        "시멘트 시료",
+        "골재 표본"
+      ],
+      "subject_scale": "close",
+      "framing": "detail_closeup",
+      "transition": "hard_cut",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 10,
+      "act": 3,
+      "beat": "context_number",
+      "says": "한 번의 연속 타설로 지었다면 주위 온도까지 식는 데 걸렸을 시간 125년",
+      "char_budget": 24,
+      "visual_goal": "하지 않기로 한 그 선택이 어떤 모습이었을지 — 이음매 없이 협곡을 통째로 채운 한 덩어리",
+      "subject": "협곡을 이음매 없이 가득 채운 단일 콘크리트 덩어리 상상 단면도",
+      "subject_anchor": [
+        "콜로라도강 협곡",
+        "콘크리트 덩어리"
+      ],
+      "subject_scale": "diagram",
+      "framing": "cross_section",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "125년"
+      }
+    },
+    {
+      "scene_id": 11,
+      "act": 3,
+      "beat": "context",
+      "says": "실제로 흐른 시간도 아니고 냉각 장비가 줄인 공사 기간도 아닌데 두 뜻이 뒤섞여 유통된다는 것",
+      "char_budget": 24,
+      "visual_goal": "그 값이 기록이 아니라 계산지 위의 가정에서 나왔다는 출처 — 조건절이 적힌 손계산 노트",
+      "subject": "1930년대 개척국 엔지니어의 냉각 계산 노트와 손으로 그린 온도 곡선",
+      "subject_anchor": [
+        "미 개척국 설계 사무실",
+        "제도용 방안지",
+        "연필 계산"
+      ],
+      "subject_scale": "diagram",
+      "framing": "frontal_diagram",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 12,
+      "act": 3,
+      "beat": "dilemma_peak",
+      "says": "물리적으로는 더 빨리 부을 수 있었지만 열 때문에 속도를 규제로 묶었다는 것",
+      "char_budget": 24,
+      "visual_goal": "규제가 없었다면 나왔을 속도 — 케이블웨이에서 쉴 새 없이 내려와 쏟아지는 콘크리트 버킷",
+      "subject": "케이블웨이에 매달려 블록 위로 내려오며 콘크리트를 쏟는 8입방야드 강철 버킷",
+      "subject_anchor": [
+        "후버댐 공사 현장",
+        "강철 콘크리트 버킷",
+        "케이블웨이"
+      ],
+      "subject_scale": "wide",
+      "framing": "attempt_medium",
+      "transition": "hard_cut",
+      "camera": "tilt_down",
+      "motion": "mj_video"
+    },
+    {
+      "scene_id": 13,
+      "act": 3,
+      "beat": "context_number",
+      "says": "블록당 5피트 리프트, 72시간에 한 켜, 30일에 일곱 켜 상한",
+      "char_budget": 23,
+      "visual_goal": "한 켜 5피트가 블록 안에서 차지하는 두께와 그것이 켜켜이 쌓여 올라간 흔적",
+      "subject": "5피트씩 켜켜이 쌓인 리프트 층이 드러난 콘크리트 블록 측면 도해",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "리프트 층"
+      ],
+      "subject_scale": "diagram",
+      "framing": "section_diagram",
+      "camera": "tilt_up",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "5피트"
+      }
+    },
+    {
+      "scene_id": 14,
+      "act": 4,
+      "beat": "turning_point",
+      "says": "파이프 냉각을 후버댐에 곧바로 적용한 것이 아니라는 것",
+      "char_budget": 20,
+      "visual_goal": "그 검증이 벌어진 장소의 정체 — 후버댐이 아닌 다른 협곡에 선 낯선 댐",
+      "subject": "오리건주 오와이히강 협곡에 선 오와이히댐 전경",
+      "subject_anchor": [
+        "오와이히댐",
+        "오와이히강 협곡",
+        "콘크리트 댐"
+      ],
+      "subject_scale": "wide",
+      "framing": "drone_wide",
+      "transition": "dissolve",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 15,
+      "act": 4,
+      "beat": "context",
+      "says": "타설 시작 2년 전인 1931년 여름 오리건주 오와이히댐에서 먼저 거친 실물 시험",
+      "char_budget": 20,
+      "visual_goal": "시험 구간이 공사 중인 댐의 어느 부분에 놓였는지와 당시 현장의 상태",
+      "subject": "1931년 공사 중인 오와이히댐 상부의 시험 타설 구간",
+      "subject_anchor": [
+        "오와이히댐",
+        "콘크리트 블록",
+        "1931년 공사 현장"
+      ],
+      "subject_scale": "wide",
+      "framing": "aerial_diorama",
+      "transition": "hard_cut",
+      "camera": "static",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1931년"
+      }
+    },
+    {
+      "scene_id": 16,
+      "act": 4,
+      "beat": "context",
+      "says": "시험 구간이 28피트×210피트 규모에 4피트 리프트로 전해진다는 것",
+      "char_budget": 20,
+      "visual_goal": "그 구간 안에 냉각관이 실제로 어떤 모양으로 감겨 깔렸는지 — 본문이 치수만 말하고 넘어가는 배치",
+      "subject": "시험 구간 콘크리트 안에 감겨 깔린 냉각용 강관 코일 배치 평면 도해",
+      "subject_anchor": [
+        "냉각용 강관 코일",
+        "콘크리트 시험 구간"
+      ],
+      "subject_scale": "diagram",
+      "framing": "section_diagram",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 17,
+      "act": 4,
+      "beat": "context",
+      "says": "후버댐에 쓴 냉각 시스템이 그것을 조금 손본 수준이었다는 것",
+      "char_budget": 20,
+      "visual_goal": "두 댐의 냉각 계통이 얼마나 닮았는지 — 나란히 놓았을 때 겹치는 배관 경로",
+      "subject": "오와이히댐과 후버댐의 냉각관 계통을 나란히 놓은 비교 도해",
+      "subject_anchor": [
+        "오와이히댐",
+        "후버댐",
+        "냉각 파이프 계통"
+      ],
+      "subject_scale": "diagram",
+      "framing": "frontal_diagram",
+      "transition": "hard_cut",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 18,
+      "act": 5,
+      "beat": "solution_step",
+      "says": "블록 안에 1인치 강관을 약 5피트 간격 그물처럼 묻었다는 것",
+      "char_budget": 20,
+      "visual_goal": "타설 전 바닥에 깔린 관의 실제 밀도와 인부들이 그 위를 밟고 서 있는 상태",
+      "subject": "타설 전 블록 바닥에 격자로 깔린 1인치 냉각 강관과 그 위에 선 인부들",
+      "subject_anchor": [
+        "후버댐 블록 거푸집",
+        "1인치 강관",
+        "1930년대 인부"
+      ],
+      "subject_scale": "close",
+      "framing": "detail_closeup",
+      "transition": "dissolve",
+      "camera": "pan_right",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 19,
+      "act": 5,
+      "beat": "solution_number",
+      "says": "그 관의 총연장 582마일 이상, 약 937km",
+      "char_budget": 20,
+      "visual_goal": "출처인 미 개척국 표기와 함께, 그 길이가 댐 몸체 안에서 차지하는 그물의 전체 부피감",
+      "subject": "댐 몸체 전체를 채운 냉각 강관 그물망 투시 도해",
+      "subject_anchor": [
+        "후버댐 콘크리트 몸체",
+        "1인치 강관 그물망"
+      ],
+      "subject_scale": "diagram",
+      "framing": "cross_section",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "937km"
+      }
+    },
+    {
+      "scene_id": 20,
+      "act": 5,
+      "beat": "solution_step",
+      "says": "1단계는 하천수를 그대로 돌린 공랭수, 냉각탑은 1933년 8월 가동",
+      "char_budget": 20,
+      "visual_goal": "냉각탑 설비의 크기와 그것이 협곡 아래 어디에 세워졌는지",
+      "subject": "협곡 바닥 가물막이 위에 세워진 후버댐 공사용 냉각탑",
+      "subject_anchor": [
+        "후버댐 공사 현장",
+        "냉각탑",
+        "콜로라도강 가물막이"
+      ],
+      "subject_scale": "wide",
+      "framing": "solution_medium",
+      "transition": "hard_cut",
+      "camera": "tilt_up",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 21,
+      "act": 5,
+      "beat": "solution_step",
+      "says": "그것만으로 부족해 1933년 10월부터 냉동 플랜트의 냉수를 같은 관에 돌렸다는 것",
+      "char_budget": 20,
+      "visual_goal": "한 관에 두 종류의 물이 차례로 흐른다는 계통 — 강물 경로와 냉동수 경로가 만나는 지점",
+      "subject": "하천수 경로와 냉동 플랜트 냉수 경로가 같은 매설관으로 합쳐지는 계통 도해",
+      "subject_anchor": [
+        "냉각 파이프",
+        "냉동 플랜트",
+        "콘크리트 블록"
+      ],
+      "subject_scale": "diagram",
+      "framing": "solution_diagram",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 22,
+      "act": 5,
+      "beat": "solution_number",
+      "says": "그 냉동 플랜트가 24시간에 만들어낸 얼음 1,000톤",
+      "char_budget": 20,
+      "visual_goal": "댐 공사장 한복판에 들어선 얼음 공장의 내부 규모와 하루치 얼음이 쌓인 양",
+      "subject": "후버댐 현장 냉동 플랜트 내부에 쌓인 얼음 블록 더미와 강철 배관",
+      "subject_anchor": [
+        "후버댐 현장 냉동 플랜트",
+        "얼음 블록",
+        "강철 배관"
+      ],
+      "subject_scale": "wide",
+      "framing": "solution_medium",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_in",
+      "motion": "mj_video",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "1,000톤"
+      }
+    },
+    {
+      "scene_id": 23,
+      "act": 6,
+      "beat": "solution_step",
+      "says": "블록끼리 키웨이라는 홈으로 서로 맞물리게 시공했다는 것",
+      "char_budget": 20,
+      "visual_goal": "그 홈이 어떤 모양으로 파여 이웃 블록과 물리는지 — 말로는 잡히지 않는 접합 형상",
+      "subject": "이웃한 콘크리트 블록이 맞물리는 키웨이 홈 접합면",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "키웨이 홈",
+        "회색 콘크리트 표면"
+      ],
+      "subject_scale": "close",
+      "framing": "detail_closeup",
+      "transition": "dissolve",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 24,
+      "act": 6,
+      "beat": "solution_step",
+      "says": "높이 50피트 구간이 목표 온도까지 식을 때마다 수축 조인트를 그라우팅했다는 것",
+      "char_budget": 20,
+      "visual_goal": "그라우트가 어느 틈으로 어떻게 밀려 들어가는지 — 주입관과 벌어진 조인트의 관계",
+      "subject": "수축 조인트 틈으로 그라우트가 압력 주입되는 주입관과 블록 사이 단면 도해",
+      "subject_anchor": [
+        "콘크리트 블록",
+        "수축 조인트",
+        "그라우트 주입관"
+      ],
+      "subject_scale": "diagram",
+      "framing": "solution_diagram",
+      "camera": "static",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 25,
+      "act": 6,
+      "beat": "solution_number",
+      "says": "벌어진 틈에 밀어넣은 그라우트 422,000입방피트, 일체 구조는 그렇게 사후에 만들어졌다는 것",
+      "char_budget": 20,
+      "visual_goal": "따로 서 있던 기둥들이 하나의 벽으로 이어지는 마지막 상태 — 경계선이 지워지는 순간",
+      "subject": "그라우트로 이어 붙어 블록 경계가 사라진 후버댐 몸체 단면 도해",
+      "subject_anchor": [
+        "후버댐",
+        "콘크리트 블록",
+        "그라우트"
+      ],
+      "subject_scale": "diagram",
+      "framing": "cross_section",
+      "transition": "hard_cut",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns",
+      "emphasis": {
+        "type": "big_red_text",
+        "value": "422,000입방피트"
+      }
+    },
+    {
+      "scene_id": 26,
+      "act": 7,
+      "beat": "present_link",
+      "says": "냉각을 마친 강관을 뽑아내지 않고 잘라낸 뒤 그라우트로 채웠다는 것",
+      "char_budget": 19,
+      "visual_goal": "속이 막힌 관의 절단면이 굳은 콘크리트 속에서 어떤 모습으로 남았는지",
+      "subject": "콘크리트 속에서 잘린 채 그라우트로 채워진 1인치 강관 절단면",
+      "subject_anchor": [
+        "1인치 강관",
+        "굳은 그라우트",
+        "콘크리트"
+      ],
+      "subject_scale": "close",
+      "framing": "present_closeup",
+      "transition": "dissolve",
+      "camera": "slow_zoom_in",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 27,
+      "act": 7,
+      "beat": "present_link",
+      "says": "식는 일은 1935년에 끝났지만 그 937km는 지금도 안에 있다는 것",
+      "char_budget": 18,
+      "visual_goal": "그 관을 품은 채 지금 그대로 서 있는 구조물의 현재 모습",
+      "subject": "오늘날 콜로라도강을 막고 선 후버댐 하류면 전경",
+      "subject_anchor": [
+        "후버댐",
+        "콘크리트 하류면",
+        "콜로라도강"
+      ],
+      "subject_scale": "wide",
+      "framing": "present_wide",
+      "transition": "dissolve",
+      "camera": "slow_zoom_out",
+      "motion": "kenburns"
+    },
+    {
+      "scene_id": 28,
+      "act": 7,
+      "beat": "ending_echo",
+      "says": "우리가 보는 그 벽이 따로 식힌 기둥들을 나중에 붙여 세운 것이라는 것",
+      "char_budget": 18,
+      "visual_goal": "첫 장면과 같은 각도의 매끈한 외벽 위로 되살아나는 기둥 경계선",
+      "subject": "블록 경계선이 겹쳐 드러난 후버댐 상류면 전경",
+      "subject_anchor": [
+        "후버댐",
+        "콘크리트 상류면",
+        "블록 경계선"
+      ],
+      "subject_scale": "wide",
+      "framing": "frontal_symmetric",
+      "transition": "dissolve",
+      "camera": "static",
+      "motion": "kenburns"
+    }
+  ]
+}

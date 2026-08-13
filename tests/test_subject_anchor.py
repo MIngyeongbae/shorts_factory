@@ -32,7 +32,7 @@ from shorts_factory.stages.prompt import SCRIPT_FILE, run_prompt_stage
 from shorts_factory.schemas.sceneplan import validate_sceneplan
 from shorts_factory.stages.write import build_scenes
 
-from conftest import HOOVER, load_script
+from conftest import HOOVER, PISA, load_script
 
 #: 탐침에서 0/4로 무너졌다가 `콘크리트`를 붙여 4/4가 된 그 씬이다 (`s17`).
 SUBJECT = "홈이 파인 블록 접합면 클로즈업"
@@ -44,8 +44,12 @@ SHOT = "tight detail close-up of the solution"
 
 
 def test_the_real_scripts_satisfy_the_contract_without_the_field():
-    """옛 대본이 그대로 통과해야 한다. 백필 단계를 또 만들지 않기 위한 조건이다."""
-    script = load_script(HOOVER)
+    """옛 대본이 그대로 통과해야 한다. 백필 단계를 또 만들지 않기 위한 조건이다.
+
+    표본이 후버댐에서 피사로 옮겨 갔다 — 후버댐 편은 `[1s]`가 앵커를 채운 새 대본이라
+    이제 '필드가 없는 대본'의 표본이 아니다 (ADR-0029).
+    """
+    script = load_script(PISA)
     assert all("subject_anchor" not in s for s in script["scenes"])
 
     errors, _ = validate_scenes(script)
@@ -225,10 +229,17 @@ def test_a_blank_item_is_rejected_by_the_plan_contract():
 
 @pytest.fixture
 def anchored(paths):
-    """실물 대본의 앞 두 씬에만 앵커를 넣어 격리된 루트에 놓는다."""
+    """실물 대본의 앞 두 씬에**만** 앵커를 넣어 격리된 루트에 놓는다.
+
+    나머지 씬의 앵커는 지운다 — 후버댐 편은 이제 `[1s]`가 전 씬을 채운 대본이라
+    (ADR-0029) 지우지 않으면 "몇 씬이 앵커를 가졌나"를 세는 테스트가 대본 내용에
+    끌려다닌다.
+    """
 
     def _install(anchors: list[str]) -> dict:
         script = load_script(HOOVER)
+        for scene in script["scenes"]:
+            scene.pop("subject_anchor", None)
         for scene in script["scenes"][:2]:
             scene["subject_anchor"] = anchors
         write_text(paths.topic_dir(HOOVER) / SCRIPT_FILE, dump_json(script))

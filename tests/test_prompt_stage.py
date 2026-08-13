@@ -347,8 +347,11 @@ def test_close_and_diagram_subjects_no_longer_get_a_drone_shot(paths, install):
         if entry["subject_scale"] in ("close", "diagram"):
             assert entry["framing"] not in wide_only
 
-    assert scenes[0]["subject_scale"] == "close"
-    assert scenes[0]["framing"] == "subject_closeup"
+    # 축이 실제로 갈라지는지 — 세 값이 다 쓰이고 각자 다른 구도를 받는다.
+    # 특정 씬 번호를 못박지 않는다: 대본을 다시 뽑으면 그 씬이 다른 자리로 간다.
+    by_scale = {e["subject_scale"]: e["framing"] for e in scenes}
+    assert set(by_scale) == {"wide", "close", "diagram"}
+    assert len(set(by_scale.values())) == 3
 
 
 @pytest.mark.parametrize("slug", REAL_SLUGS)

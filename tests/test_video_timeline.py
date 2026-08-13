@@ -144,11 +144,20 @@ def test_pisa_cuts_land_on_the_three_rule_beats():
     ]
 
 
-def test_hoover_cuts_land_on_the_three_rule_beats():
+def test_hoover_cuts_come_from_the_scene_contract():
+    """후버댐 편은 `[1s]`가 전환을 직접 골랐다 (ADR-0033 §3).
+
+    비트 기본값 표가 아니라 씬 계약의 `transition`이 하드컷의 출처다. 피사 편은
+    아직 그 필드가 없는 옛 대본이라 위 테스트가 기본값 경로를 그대로 지킨다.
+    """
     document = timed_document(HOOVER)
     timeline = build_timeline(document["scenes"])
+    chosen = tuple(
+        s["scene_id"] for s in document["scenes"][1:] if s.get("transition") == "hard_cut"
+    )
 
-    assert timeline.cut_scene_ids == (2, 3, 14, 15)
+    assert chosen, "이 편은 전환을 고른 대본이다"
+    assert timeline.cut_scene_ids == chosen
 
 
 def test_counts_cover_every_junction():
