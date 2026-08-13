@@ -42,20 +42,43 @@
     "enableVideo": {
       "value": true,
       "why": "ADR-0025 §3의 mj_video 경로. 현재도 true이고 꺼지면 영상 단계가 죽는다"
+    },
+    "alertNotify.enable": {
+      "value": true,
+      "why": "경고/에러 카운터. 꺼져 있으면 세지도 않는다 — 발견 당시 warningCount·errorCount·availableAccountCount가 전부 0인데 활성 계정은 1개였다. 밴은 보통 경고 다음에 오므로 이 숫자가 유일한 조기 신호다. 훅은 안 쓴다(받을 서버가 없다) — [6]이 폴링해서 읽는다"
+    },
+    "enableAutoCollectOfficialBannedWords": {
+      "value": true,
+      "why": "MJ 공식 금지어를 자동 수집해 제출 전에 막는다. 이 채널 소재가 붕괴·재난·사고이고 subject가 한국어 그대로 프롬프트에 들어간다 (ADR-0001·0014) — '무너져 내리는 파비아 시민탑' 같은 문구가 필터에 닿을 수 있고, 걸리면 경고가 쌓인다"
+    },
+    "bannedLimiting.enable": {
+      "value": true,
+      "why": "금지어가 걸린 제출을 제한한다. 위 항목의 짝이다 — 수집만 하고 막지 않으면 목록이 하는 일이 없다"
     }
   },
 
   "not_declared": {
     "$comment": "선언하지 않은 키는 검사하지 않는다. 전부를 관리하려 들면 프록시 업그레이드마다 깨지고, 그러면 아무도 안 본다 (ADR-0032).",
     "relaxCoreSize": "손대지 않는다. MJ 플랜이 정하는 동시 잡 한도(실측 3)라 올려 봐야 큐에 쌓일 뿐이다. [6]의 워커 수는 하드코딩하지 않고 이 값을 읽는다 (ADR-0031 G3)",
-    "workTime": "ADR-0025가 '작업 시간대 제한을 켠다'고 했으나 구체 시간을 정하지 않았다. 값을 지어내지 않는다 — 정할 때 여기로 올린다",
-    "fishingTime": "위와 같다",
+    "workTime": "비작업 시간대에는 어떤 태스크도 받지 않는다(프록시 소스 주석). ADR-0025가 '켠다'고만 하고 시간을 안 정했고, 문자열 형식이 소스 주석·스키마·UI 번들 어디에도 없다 — 프록시 계정 편집 폼의 placeholder로 확인한 뒤 올린다",
+    "fishingTime": "그 시간대에는 변형(variation) 태스크만 받고 새 그림은 안 받는다. 우리는 변형을 쓰지 않으므로 사실상 workTime과 같은 효과다 — 둘 중 하나만 정하면 된다",
     "secrets": "userToken / cookie / botToken / loginPassword / licenseKey / twoCaptchaKey 는 이 파일에 담지 않는다"
   },
 
   "watch": {
-    "$comment": "되돌릴 조건의 관측 수단 (ADR-0025 정정). 대조 게이트가 이 값을 함께 읽어 리포트에 남긴다.",
-    "riskControlUnlockTime": "비어 있지 않으면 계정이 risk control에 걸린 것이다. 한 번이라도 걸리면 간격 정정을 폐기하고 원안(30~180초)으로 간다"
+    "$comment": "되돌릴 조건의 관측 수단. [6]의 정책 대조가 이 값들을 함께 읽어 images.json에 남긴다 — 알림 훅을 쓰지 않는 이유는 받을 서버가 없어서다 (배치 파이프라인).",
+    "account.riskControlUnlockTime": "비어 있지 않으면 계정이 risk control에 걸린 것이다. 한 번이라도 걸리면 간격 정정을 폐기하고 원안(30~180초)으로 간다 (ADR-0025)",
+    "setting.alertNotify.warningCount": "0보다 커지면 MJ가 경고를 준 것이다. 밴의 선행 신호이므로 다음 편을 돌리기 전에 사람이 본다",
+    "setting.alertNotify.errorCount": "위와 같다",
+    "account.dayRelaxDrawCount": "상한(200)에 얼마나 가까운지. 편당 27잡이라 하루 7편이면 닿는다"
+  },
+
+  "not_adopted": {
+    "$comment": "검토했으나 채택하지 않은 것. 다시 꺼내지 않도록 이유를 남긴다.",
+    "enableRiskControlAutoCaptcha": "CAPTCHA 자동 처리. twoCaptchaKey(유료 서비스)가 필요하고, 사람이 풀어야 할 신호를 자동으로 지워 버린다 — CAPTCHA는 속도를 줄이라는 뜻이지 자동화할 대상이 아니다",
+    "captchaNotifyHook / notifyHook": "받을 서버가 없다. 위 watch 폴링으로 대신한다",
+    "isVerticalDomain / verticalDomainIds": "여러 계정에 주제를 갈라 보내는 라우팅 기능이다. 계정이 1개라 무의미하다",
+    "accounts pool rotation": "계정이 1개다. ADR-0025가 프록시의 장점으로 꼽았지만 우리는 못 쓴다"
   },
 
   "observed_2026_08_13": {

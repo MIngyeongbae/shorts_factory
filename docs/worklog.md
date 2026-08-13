@@ -122,11 +122,41 @@ SubmitVideoDTO   → state, notifyHook, prompt, motion, image, endImage,
 **되돌릴 조건**: 계정이 한 번이라도 risk control에 걸리면(계정의 `riskControlUnlockTime`)
 이 정정을 폐기하고 원안으로 간다.
 
-### 프록시 상태는 아직 안 맞췄다
+### 다른 MJ 오픈소스에는 배울 게 없었다 — **우리 프록시의 방어 기능이 꺼져 있었다**
 
-policy 파일은 새 값을 선언했지만 **프록시는 그대로다.** 맞추는 것은 `sf mj-policy apply`
-구현 후이거나, 사람이 웹 UI(`http://127.0.0.1:8086`)에서 네 값을 고치는 것이다 —
-`afterIntervalMin`=1, `afterIntervalMax`=10, `dayDrawLimit`=200, `dayRelaxDrawLimit`=200.
+`novicezk/midjourney-proxy`(⭐5.3k)는 회피 설정을 거의 노출하지 않고 README가 "작도가
+잦으면 경고가 뜰 수 있다"고만 적는다. `erictik`은 더 원시적이다. **이 방면에서는
+`trueai-org`가 가장 앞서 있다.** 전역 211키를 훑어 꺼져 있는 것을 찾았다.
+
+| 설정 | 발견 | 채택 | 이유 |
+|---|---|---|---|
+| `alertNotify.enable` | **False** | True | `warningCount`·`errorCount`·`availableAccountCount`가 전부 0인데 활성 계정은 1개다 — **꺼져 있어서 세지도 않는다.** 밴은 경고 다음에 오므로 유일한 조기 신호다 |
+| `enableAutoCollectOfficialBannedWords` | **False** | True | MJ 금지어를 수집해 제출 전 차단 |
+| `bannedLimiting.enable` | **False** | True | 위의 짝. 수집만 하고 안 막으면 목록이 하는 일이 없다 |
+| `enableRiskControlAutoCaptcha` | False | **안 켠다** | 2captcha 유료 키가 필요하고 **사람이 봐야 할 신호를 자동으로 지운다** |
+| 알림 훅 (`notifyHook` 류) | None | **안 쓴다** | 받을 서버가 없다(배치). `[6]`의 정책 대조가 폴링으로 읽는다 |
+| `isVerticalDomain` | False | **안 켠다** | 다계정 라우팅이다. 계정 1개라 무의미 |
+
+**금지어가 이 채널의 실질 위험이다.** 소재가 붕괴·재난·사고이고 `subject`가 한국어
+그대로 프롬프트에 들어간다 — ADR-0022 예시부터 "무너져 내리는 파비아 시민탑"이다.
+
+`workTime`/`fishingTime`은 의미만 확인했다(전자는 모든 태스크, 후자는 새 그림만 차단.
+우리는 변형을 안 쓰니 효과가 같다). **문자열 형식이 소스·스키마·UI 번들 어디에도 없어**
+계정 편집 폼 placeholder로 확인해야 한다.
+
+### 프록시 상태는 아직 안 맞췄다 — 사람이 고칠 값 목록
+
+policy 파일은 선언만 했고 **프록시는 그대로다.** `sf mj-policy apply` 구현 전이라면
+웹 UI(`http://127.0.0.1:8086`)에서 아래를 고친다.
+
+```
+계정:  afterIntervalMin = 1     afterIntervalMax = 10
+       dayDrawLimit = 200       dayRelaxDrawLimit = 200
+       enableRelaxToFast = false (지금 미설정)
+전역:  alertNotify.enable = true
+       enableAutoCollectOfficialBannedWords = true
+       bannedLimiting.enable = true
+```
 
 ### 남은 게이트 셋
 

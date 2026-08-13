@@ -420,6 +420,32 @@ ADR-0032를 쓰며 프록시 실제 값을 읽었더니 **활성 계정이 이 A
 **되돌릴 조건**: 계정이 한 번이라도 risk control(CAPTCHA 요구·일시 정지)에 걸리면 이
 정정을 폐기하고 원안(30~180초)으로 간다. 관측 수단은 계정의 `riskControlUnlockTime`이다.
 
+### 다른 MJ 오픈소스에서 더 가져올 것이 있는가 (2026-08-13 조사)
+
+**없다.** `novicezk/midjourney-proxy`(⭐5.3k)는 회피 설정을 거의 노출하지 않고 README가
+"작도가 잦으면 경고가 뜰 수 있다"고만 적는다. `erictik/midjourney-api`는 더 원시적이다.
+**이 방면에서는 `trueai-org`가 가장 앞서 있고, 우리는 그 기능을 안 켜고 있었다.**
+
+전역 설정 211키를 훑어 꺼져 있는 방어 기능을 찾았다.
+
+| 설정 | 발견 당시 | 채택 | 이유 |
+|---|---|---|---|
+| `alertNotify.enable` | **False** | **True** | `warningCount`·`errorCount`·`availableAccountCount`가 전부 0인데 활성 계정은 1개다 — **꺼져 있어서 세지도 않는다.** 밴은 보통 경고 다음에 오므로 이 숫자가 유일한 조기 신호다 |
+| `enableAutoCollectOfficialBannedWords` | **False** | **True** | MJ 공식 금지어를 수집해 제출 전에 막는다 |
+| `bannedLimiting.enable` | **False** | **True** | 위의 짝. 수집만 하고 막지 않으면 목록이 하는 일이 없다 |
+| `enableRiskControlAutoCaptcha` | False | **안 켠다** | 2captcha 유료 키가 필요하고, **사람이 봐야 할 신호를 자동으로 지운다.** CAPTCHA는 속도를 줄이라는 뜻이지 자동화할 대상이 아니다 |
+| `captchaNotifyHook`·`notifyHook` | None | **안 쓴다** | 받을 서버가 없다(배치 파이프라인). `[6]`의 정책 대조가 폴링으로 읽는다 |
+| `isVerticalDomain` | False | **안 켠다** | 여러 계정에 주제를 갈라 보내는 라우팅이다. 계정이 1개라 무의미하다 |
+
+**금지어가 이 채널의 실질 위험이다.** 소재가 붕괴·재난·사고이고 `subject`는 한국어
+그대로 프롬프트에 들어간다 (ADR-0001·0014). ADR-0022의 예시부터가 "무너져 내리는 파비아
+시민탑"이다. 필터에 닿으면 경고가 쌓이고, 경고가 밴의 선행 신호다.
+
+**`workTime`/`fishingTime`은 아직 못 정한다.** 의미는 확인했다 — `workTime`은 비작업
+시간대에 **모든** 태스크를 막고, `fishingTime`은 **새 그림만** 막고 변형은 통과시킨다.
+우리는 변형을 쓰지 않으므로 둘의 효과가 같아 하나만 정하면 된다. 다만 **문자열 형식이
+소스 주석·스키마·UI 번들 어디에도 없어서** 계정 편집 폼의 placeholder로 확인해야 한다.
+
 ## 검토한 대안
 
 | 대안 | 장점 | 단점 | 탈락 사유 |
