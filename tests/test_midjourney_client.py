@@ -345,3 +345,24 @@ def test_concurrency_uses_the_admin_endpoint_not_the_relax_prefix():
     assert method == "POST"
     assert url.endswith("/mj/admin/accounts")
     assert "/mj-relax/" not in url
+
+
+def test_none_falls_back_to_the_adapter_own_budget():
+    """ADR-0035 — 단계가 상한을 안 주면 어댑터가 자기 값을 쓴다.
+
+    이 어댑터만이 relax 큐를 보고 있다. `DEFAULT_TIMEOUT`은 "짧게 잡으면 멀쩡한 잡을
+    죽이고 재시도해 큐를 두 배로 만든다"는 이유로 크게 잡은 값이라, 아무도 상한을 주지
+    않았을 때 여기로 떨어져야 한다.
+    """
+    from shorts_factory.imagegen.midjourney import DEFAULT_TIMEOUT
+
+    ticks = iter([0.0, 0.0, DEFAULT_TIMEOUT - 1, DEFAULT_TIMEOUT + 1])
+    c = client(
+        [
+            ("submit", (200, {"code": 1, "result": "task-1"})),
+            ("/fetch", (200, {"status": "IN_PROGRESS"})),
+        ],
+        clock=lambda: next(ticks),
+    )
+    with pytest.raises(ImageGenTimeout, match=str(DEFAULT_TIMEOUT)):
+        c.generate(REQUEST, timeout=None)

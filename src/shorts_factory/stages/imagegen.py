@@ -45,6 +45,21 @@ relax는 제출한 뒤 대부분 **기다리는 시간**이라 한 줄로 세울
 - 429가 나오면 워커를 1로 줄이고 쉰다. 한도에 걸린 채로 3개를 계속 던지는 것은 큐만 늘린다
 - **이어받는 씬은 워커를 쓰지 않는다.** 호출이 아니라 파일 확인이다
 
+## 대기 상한도 선언하지 않는다 (ADR-0035)
+
+워커 수와 같은 종류의 값이다 — **잡 하나를 얼마나 기다릴지는 relax 큐가 정하고, 그것을
+아는 것은 프로바이더뿐이다.** 그래서 이 단계에 숫자가 없고 `timeout=None`이 기본이다.
+`ImageClient.generate(timeout=None)`은 "프로바이더가 정한다"이고, MJ 어댑터는 자기
+`DEFAULT_TIMEOUT`을 쓴다.
+
+단계가 숫자를 선언하면 두 가지가 같이 일어난다. 어댑터가 이유까지 적어 둔 값이 죽고,
+짧게 잡힌 상한이 **이미 성공한 잡을 버린 뒤 재시도로 큐를 두 배로 만든다.** 실측
+(2026-08-19): 상한 180초로 4씬을 돌려 전부 `failed`로 기록했는데 프록시에서는 같은
+태스크가 전부 `SUCCESS` 100%였다. 같은 날 relax 잡 소요는 241.8·418.3·552.1초였고
+닷새 전 실측은 평균 95.6초였다 — **편차 5배를 상수 하나로 맞출 수 없다.**
+
+사람이 정해야 하면 `--timeout`이 이긴다 (`--jobs`가 `concurrency()`를 이기는 것과 같다).
+
 ## 돈이 드는 단계다
 
 - 이미 만든 이미지는 다시 사지 않는다. 씬별로 요청 지문(`digest`)을 기록해 두고,
@@ -100,9 +115,6 @@ SCRIPT_FILE = "06-script.json"
 
 #: specs/05 "씬당 1회 재시도" = 최초 1회 + 재시도 1회
 MAX_ATTEMPTS = 2
-
-#: 이미지 1장 생성 타임아웃(초).
-TIMEOUT = 180
 
 #: 429를 만났을 때 쉬는 시간(초). 워커를 1로 줄이는 것과 짝이다 (ADR-0031 §4) — 줄이기만
 #: 하고 안 쉬면 한도에 걸린 상태로 계속 두드리는 것은 그대로다.
@@ -347,7 +359,7 @@ def _generate_scene(
     request: ImageRequest,
     image_path: Path,
     *,
-    timeout: int,
+    timeout: int | None,
     gate: _Gate | None = None,
 ) -> dict[str, Any]:
     """씬 하나 — 최대 `MAX_ATTEMPTS`회 호출. specs/05 "씬당 1회 재시도".
@@ -495,7 +507,7 @@ def run_imagegen_stage(
     paths: Paths | None = None,
     force: bool = False,
     allow_missing_anchors: bool = False,
-    timeout: int = TIMEOUT,
+    timeout: int | None = None,
     jobs: int | None = None,
 ) -> ImagegenResult:
     paths = paths or Paths.from_env()

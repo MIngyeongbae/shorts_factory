@@ -762,3 +762,41 @@ def test_jobs_below_one_is_rejected(paths, prepared):
 def test_cli_exposes_jobs():
     assert parse(["imagegen", "--slug", "abc"]).jobs is None
     assert parse(["imagegen", "--slug", "abc", "--jobs", "3"]).jobs == 3
+
+
+# --- 대기 상한 (ADR-0035) ------------------------------------------------------
+#
+# 계약은 하나다. **단계는 숫자를 선언하지 않는다** — 워커 수와 같은 종류의 값이고,
+# 잡을 얼마나 기다릴지 아는 것은 relax 큐를 보는 프로바이더뿐이다. 짧게 잡힌 상한은
+# 이미 성공한 잡을 버린 뒤 재시도로 큐를 두 배로 만든다 (2026-08-19 실측).
+
+
+def test_the_stage_does_not_declare_a_wait_budget():
+    """ADR-0035 — `TIMEOUT` 상수가 다시 생기면 이 테스트가 걸린다."""
+    import shorts_factory.stages.imagegen as stage
+
+    assert not hasattr(stage, "TIMEOUT")
+
+
+def test_the_provider_decides_the_wait_budget_by_default(paths, prepared):
+    """기본값은 `None` = "프로바이더가 정한다". 단계가 숫자를 끼워 넣지 않는다."""
+    run_id = prepared()
+    client = FakeImageClient()
+    run_imagegen_stage(images=client, run_id=run_id, paths=paths)
+
+    assert client.calls
+    assert {call["timeout"] for call in client.calls} == {None}
+
+
+def test_an_explicit_timeout_reaches_the_provider(paths, prepared):
+    """사람이 정하면 그 값이 그대로 어댑터까지 간다 (`--jobs`와 같은 구조)."""
+    run_id = prepared()
+    client = FakeImageClient()
+    run_imagegen_stage(images=client, run_id=run_id, paths=paths, timeout=900)
+
+    assert {call["timeout"] for call in client.calls} == {900}
+
+
+def test_cli_exposes_timeout():
+    assert parse(["imagegen", "--slug", "abc"]).timeout is None
+    assert parse(["imagegen", "--slug", "abc", "--timeout", "900"]).timeout == 900

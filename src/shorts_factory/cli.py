@@ -359,6 +359,7 @@ def _cmd_imagegen(args, paths: Paths) -> int:
             force=args.force,
             allow_missing_anchors=args.allow_missing_anchors,
             jobs=args.jobs,
+            timeout=args.timeout,
         )
     except DialectMismatch as exc:
         print(f"오류: {exc}", file=sys.stderr)
@@ -563,6 +564,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_imagegen.add_argument(
         "--jobs", type=int, default=None,
         help="동시 제출 워커 수 (기본: 프로바이더에게 묻는다 — MJ는 계정 relaxCoreSize)",
+    )
+    p_imagegen.add_argument(
+        "--timeout", type=int, default=None,
+        help="잡 하나를 기다리는 상한(초) (기본: 프로바이더가 정한다 — ADR-0035)",
     )
     p_imagegen.set_defaults(func=_cmd_imagegen)
 
