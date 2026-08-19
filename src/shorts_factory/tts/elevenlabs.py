@@ -22,6 +22,13 @@ SDK(`elevenlabs`)를 쓰지 않는 이유는 `imagegen/nano_banana.py`와 같다
    `subscription_required`가 온다. 그래서 기본값이 `pcm_24000`이다 (24kHz 16bit 모노).
    나레이션 음성이라 24kHz로 충분하고, 플랜을 올리면 `output_format`만 바꾸면 된다
 
+## 목소리가 다르게 들리면 `voice_id`를 의심하지 말 것 (2026-08-13)
+
+`ELEVEN_VOICE_ID`는 맞다. **다르게 들리는 이유는 속도다** — ADR-0004가 "원속 생성 후
+FFmpeg atempo 1.1 후처리"를 기본으로 정했고(specs/04는 1.1~1.2배속), 그래서 원속 출력만
+들어 보면 기억보다 느리다. 클론을 다시 만들거나 `voice_id`를 바꾸는 것으로 답이 나오지
+않는다. 배속 값 자체의 확정은 별도 ADR로 남아 있다.
+
 ## 정렬은 `alignment`만 쓴다
 
 응답의 `normalized_alignment`는 숫자·단위를 읽는 대로 풀어 쓴 배열이라 문자 수가 원문과
