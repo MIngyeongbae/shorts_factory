@@ -7,8 +7,6 @@
     python run.py write     --slug SLUG           # [1w] 씬 계획 → 자막 문장 (대본 후보)
     python run.py draft     --slug SLUG           # 1a + 1s + 1w 연속 실행
     python run.py validate  --slug SLUG           # 후보 검증 → 실패 종류에 따라 재진입 (최대 3회)
-    python run.py backfill-scale --slug SLUG      # 확정 대본에 subject_scale만 채움 (ADR-0018)
-    python run.py backfill-visual-goal --slug SLUG # 확정 대본에 visual_goal만 채움 (ADR-0022)
     python run.py tts       --slug SLUG           # [2부] 대본 → narration.wav + 실측 타임스탬프
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.jpg
@@ -41,8 +39,6 @@ from .stages.assemble import (
     resolve_run_id,
     run_assemble_stage,
 )
-from .stages.backfill_scale import BackfillStageError, run_backfill_scale_stage
-from .stages.backfill_visual_goal import run_backfill_visual_goal_stage
 from .stages.imagegen import (
     DialectMismatch,
     ImagegenStageError,
@@ -219,36 +215,6 @@ def _cmd_validate(args, paths: Paths) -> int:
             file=sys.stderr,
         )
         return 5
-    return 0
-
-
-def _cmd_backfill_scale(args, paths: Paths) -> int:
-    """[1x] 확정된 대본에 subject_scale만 채운다 (ADR-0018 일회성 마이그레이션).
-
-    run_id는 대본에 적혀 있지만 이 단계는 run 상태를 남기지 않는다 — 대본 파일 하나를
-    제자리에서 고치는 마이그레이션이라 재실행 판단은 필드 유무로 충분하다.
-    """
-    run_id, _ = find_run_for_slug(paths, args.slug)
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
-    result = run_backfill_scale_stage(
-        args.slug, llm=client, paths=paths, force=args.force,
-    )
-    print(result.summary)
-    return 0
-
-
-def _cmd_backfill_visual_goal(args, paths: Paths) -> int:
-    """[1y] 확정된 대본에 visual_goal만 채운다 (ADR-0022 일회성 마이그레이션).
-
-    [1x]와 같은 계열이라 run 상태를 남기지 않는다 — 대본 파일 하나를 제자리에서
-    고치는 마이그레이션이라 재실행 판단은 필드 유무로 충분하다.
-    """
-    run_id, _ = find_run_for_slug(paths, args.slug)
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
-    result = run_backfill_visual_goal_stage(
-        args.slug, llm=client, paths=paths, force=args.force,
-    )
-    print(result.summary)
     return 0
 
 
@@ -506,20 +472,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--run-id", default=None)
     p_validate.set_defaults(func=_cmd_validate)
 
-    p_backfill = sub.add_parser(
-        "backfill-scale", parents=[common],
-        help="[1x] 확정 대본에 subject_scale만 채운다 (ADR-0018 마이그레이션)",
-    )
-    p_backfill.add_argument("--slug", required=True)
-    p_backfill.set_defaults(func=_cmd_backfill_scale)
-
-    p_backfill_goal = sub.add_parser(
-        "backfill-visual-goal", parents=[common],
-        help="[1y] 확정 대본에 visual_goal만 채움 (ADR-0022, 일회성)",
-    )
-    p_backfill_goal.add_argument("--slug", required=True)
-    p_backfill_goal.set_defaults(func=_cmd_backfill_visual_goal)
-
     p_tts = sub.add_parser(
         "tts", parents=[common],
         help="[3] 대본 → narration.wav + 실측 타임스탬프 (2부, 편당 과금)",
@@ -639,7 +591,7 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args, paths)
     except (
         TopicStageError, ResearchStageError, ScriptSessionError, ValidateStageError,
-        PromptStageError, BackfillStageError, AssembleStageError,
+        PromptStageError, AssembleStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1
