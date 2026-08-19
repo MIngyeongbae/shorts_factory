@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="shorts-factory 파이프라인 21단계의 가동 현황과 다음 착수 순서 — 2026-08-19 스냅숏">
+<title>파이프라인 공정 원장</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Song+Myung&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* ── 팔레트: 제도용지 · 흑연 · 제도 잉크블루 ───────────────────────── */
+  :root {
+    --paper:      #F5F7F9;
+    --card:       #FFFFFF;
+    --ink:        #16181D;
+    --ink-2:      #59616F;
+    --ink-3:      #868E9C;
+    --rule:       #D2D8E1;
+    --rule-soft:  #E6EAF0;
+    --accent:     #2C4C82;
+    --accent-bg:  #E8EEF8;
+
+    --ok:         #226B55;
+    --ok-bg:      #E2F0EA;
+    --partial:    #91621A;
+    --partial-bg: #F7EEDC;
+    --none:       #737B89;
+    --none-bg:    #E9ECF1;
+    --alert:      #A93A26;
+    --alert-bg:   #FAE8E4;
+
+    --shadow: 0 1px 2px rgba(22,24,29,.05), 0 8px 24px -16px rgba(22,24,29,.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #13151A;
+      --card:       #1A1D24;
+      --ink:        #E9EBEF;
+      --ink-2:      #9AA2B0;
+      --ink-3:      #737B89;
+      --rule:       #2B303A;
+      --rule-soft:  #22262E;
+      --accent:     #8DACE0;
+      --accent-bg:  #1D2637;
+
+      --ok:         #58B294;
+      --ok-bg:      #172A24;
+      --partial:    #D6A254;
+      --partial-bg: #2C2317;
+      --none:       #7E8695;
+      --none-bg:    #23272F;
+      --alert:      #E4816C;
+      --alert-bg:   #2E1D19;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #13151A;
+    --card:       #1A1D24;
+    --ink:        #E9EBEF;
+    --ink-2:      #9AA2B0;
+    --ink-3:      #737B89;
+    --rule:       #2B303A;
+    --rule-soft:  #22262E;
+    --accent:     #8DACE0;
+    --accent-bg:  #1D2637;
+
+    --ok:         #58B294;
+    --ok-bg:      #172A24;
+    --partial:    #D6A254;
+    --partial-bg: #2C2317;
+    --none:       #7E8695;
+    --none-bg:    #23272F;
+    --alert:      #E4816C;
+    --alert-bg:   #2E1D19;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", -apple-system, "Malgun Gothic", sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* ── 마스트헤드 ────────────────────────────────────────────────── */
+  .masthead { padding: 52px 0 0; }
+
+  .masthead-rule {
+    border-top: 2px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+    height: 5px;
+    margin: 18px 0 0;
+  }
+
+  .masthead h1 {
+    font-family: "Song Myung", "Nanum Myeongjo", serif;
+    font-weight: 400;
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .masthead-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    align-items: baseline;
+    padding: 10px 0 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .74rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  .masthead-meta strong { color: var(--ink); font-weight: 600; }
+
+  /* ── 리드 ──────────────────────────────────────────────────────── */
+  .lead { padding: 34px 0 0; display: grid; gap: 30px; grid-template-columns: 1fr; }
+  @media (min-width: 800px) { .lead { grid-template-columns: 1.55fr 1fr; gap: 44px; } }
+
+  .lead h2 {
+    font-family: "Song Myung", "Nanum Myeongjo", serif;
+    font-weight: 400;
+    font-size: clamp(1.5rem, 3.2vw, 2.05rem);
+    line-height: 1.28;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .lead p { margin: 0 0 12px; max-width: 62ch; color: var(--ink-2); }
+  .lead p:last-child { margin-bottom: 0; }
+  .lead strong { color: var(--ink); font-weight: 600; }
+
+  /* ── 숫자판 ────────────────────────────────────────────────────── */
+  .scoreboard {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+  }
+
+  .scoreboard-head {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .68rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .stat {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .stat:last-child { border-bottom: 0; }
+  .stat-label { font-size: .86rem; color: var(--ink-2); }
+  .stat-val {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 1.02rem;
+    white-space: nowrap;
+  }
+  .stat-val.is-ok { color: var(--ok); }
+  .stat-val.is-none { color: var(--none); }
+  .stat-val.is-alert { color: var(--alert); }
+
+  /* ── 섹션 ──────────────────────────────────────────────────────── */
+  section { padding: 54px 0 0; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 9px;
+    margin-bottom: 4px;
+  }
+
+  .sec-num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .1em;
+    color: var(--accent);
+    padding-top: 4px;
+  }
+
+  .sec-head h3 {
+    font-family: "Song Myung", "Nanum Myeongjo", serif;
+    font-weight: 400;
+    font-size: clamp(1.28rem, 2.6vw, 1.62rem);
+    margin: 0;
+    flex: 1;
+    text-wrap: balance;
+  }
+
+  .sec-tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .7rem;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    text-align: right;
+  }
+
+  .sec-intro {
+    color: var(--ink-2);
+    font-size: .94rem;
+    max-width: 68ch;
+    padding: 14px 0 0;
+  }
+  .sec-intro strong { color: var(--ink); font-weight: 600; }
+
+  /* ── 공정 원장 ─────────────────────────────────────────────────── */
+  .ledger { padding: 20px 0 0; display: flex; flex-direction: column; gap: 9px; }
+
+  .row {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--none);
+    padding: 14px 16px 15px 17px;
+    display: grid;
+    gap: 4px 18px;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 760px) {
+    .row { grid-template-columns: 132px 1fr; padding-left: 19px; }
+  }
+
+  .row.s-ok { border-left-color: var(--ok); }
+  .row.s-partial { border-left-color: var(--partial); }
+  .row.s-none { border-left-color: var(--none); border-style: dashed; border-left-style: solid; }
+  .row.s-alert { border-left-color: var(--alert); }
+
+  .row-id {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: .92rem;
+    color: var(--ink);
+    letter-spacing: -.01em;
+  }
+  .row-id small {
+    display: block;
+    font-weight: 400;
+    font-size: .72rem;
+    letter-spacing: .03em;
+    color: var(--ink-3);
+    padding-top: 1px;
+  }
+
+  .row-body > * { margin: 0; }
+  .row-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding-bottom: 3px;
+  }
+  .row-name { font-weight: 600; font-size: 1rem; }
+  .row-job { color: var(--ink-2); font-size: .92rem; max-width: 66ch; }
+
+  .row-out {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .76rem;
+    color: var(--accent);
+    padding-top: 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .row-todo {
+    font-size: .88rem;
+    color: var(--ink-2);
+    border-top: 1px dashed var(--rule);
+    margin-top: 9px;
+    padding-top: 8px;
+  }
+  .row-todo b {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    display: block;
+    padding-bottom: 1px;
+  }
+
+  /* 상태 배지 */
+  .pill {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill.ok      { color: var(--ok);      background: var(--ok-bg);      border-color: var(--ok); }
+  .pill.partial { color: var(--partial); background: var(--partial-bg); border-color: var(--partial); }
+  .pill.none    { color: var(--none);    background: var(--none-bg);    border-color: var(--none); }
+  .pill.alert   { color: var(--alert);   background: var(--alert-bg);   border-color: var(--alert); }
+  .pill.cli     { color: var(--accent);  background: var(--accent-bg);  border-color: var(--accent); }
+
+  /* ── 경고 카드 ─────────────────────────────────────────────────── */
+  .findings { padding: 20px 0 0; display: flex; flex-direction: column; gap: 14px; }
+
+  .finding {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--alert);
+    padding: 16px 18px 17px;
+    box-shadow: var(--shadow);
+  }
+  .finding.is-warn { border-top-color: var(--partial); }
+
+  .finding h4 {
+    font-size: 1.02rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .finding p { margin: 0 0 9px; color: var(--ink-2); font-size: .93rem; max-width: 70ch; }
+  .finding p:last-child { margin-bottom: 0; }
+  .finding strong { color: var(--ink); font-weight: 600; }
+
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .86em;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 1px 5px;
+    overflow-wrap: anywhere;
+  }
+
+  /* ── 표 ────────────────────────────────────────────────────────── */
+  .table-scroll { overflow-x: auto; padding: 20px 0 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .9rem;
+    min-width: 560px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  td.mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  td.dim { color: var(--ink-2); }
+
+  /* ── 다음 판 (우선순위 = 실제 순서) ─────────────────────────────── */
+  .queue { padding: 20px 0 0; display: flex; flex-direction: column; gap: 12px; counter-reset: q; }
+
+  .task {
+    display: grid;
+    gap: 2px 16px;
+    grid-template-columns: 1fr;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    padding: 15px 17px;
+  }
+  @media (min-width: 700px) { .task { grid-template-columns: 40px 1fr; } }
+
+  .task-n {
+    counter-increment: q;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+  .task-n::before { content: counter(q, decimal-leading-zero); }
+
+  .task h4 { margin: 0 0 5px; font-size: 1rem; font-weight: 600; text-wrap: balance; }
+  .task p { margin: 0; color: var(--ink-2); font-size: .92rem; max-width: 70ch; }
+  .task-why {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .68rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-top: 7px;
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 18px;
+    border-top: 2px solid var(--ink);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem;
+    letter-spacing: .04em;
+    color: var(--ink-3);
+    line-height: 1.9;
+  }
+
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+<style>
+  /* 독립 문서용 최소 리셋 — 아티팩트 호스트가 주던 것을 대신한다 */
+  h1, h2, h3, h4, p, ul, ol, table, figure { margin: 0; }
+  img, svg, video { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>파이프라인 공정 원장</h1>
+    <div class="masthead-rule"></div>
+    <div class="masthead-meta">
+      <span>2026년 8월 19일 현황</span>
+      <span>단계 <strong>21</strong>개 중 <strong>13</strong>개 가동</span>
+      <span>테스트 <strong>979</strong> 통과</span>
+      <span>감사 <strong>0</strong>건</span>
+      <span>완성 영상 <strong>0</strong>편</span>
+    </div>
+  </header>
+
+  <div class="lead">
+    <div>
+      <h2>대본까지는 끝까지 돈다. 영상은 아직 한 편도 나온 적이 없다.</h2>
+      <p>1부(대본 생산)는 <strong>백로그에서 확정 대본까지 실제로 완주한다</strong> — 후버댐 편이 28씬 574자로 나왔다. 2부(영상 생산)는 <strong>클립까지 가고 거기서 멈춘다.</strong> 마지막 조립 단계 <code>[10] mix</code>가 없어서 <code>final.mp4</code>는 아직 한 번도 만들어지지 않았다.</p>
+      <p>오늘 두 가지가 바뀌었다. <strong>이미지 단계가 실운영 불가 상태였다는 것이 드러나 고쳤고</strong>(단계가 성공한 잡을 타임아웃으로 버리고 있었다), <strong><code>mj_video</code>의 입력 경로가 열렸다</strong> — 막혀 있던 마지막 칸을 확인했다.</p>
+      <p>남은 병목은 개수가 아니라 위치다. 미구현 8개 중 <strong>최종 산출물을 막고 있는 것은 <code>[8]</code>·<code>[10]</code>·<code>[11]</code> 셋</strong>이고, 나머지 다섯은 품질을 올리는 자리다.</p>
+    </div>
+
+    <aside class="scoreboard">
+      <div class="scoreboard-head">계기판</div>
+      <div class="stat"><span class="stat-label">가동 중인 단계</span><span class="stat-val is-ok">13 / 21</span></div>
+      <div class="stat"><span class="stat-label">CLI 서브커맨드</span><span class="stat-val">16</span></div>
+      <div class="stat"><span class="stat-label">미구현 단계</span><span class="stat-val is-none">8</span></div>
+      <div class="stat"><span class="stat-label">ADR (승인 / 전체)</span><span class="stat-val">31 / 35</span></div>
+      <div class="stat"><span class="stat-label">토픽 재고 (go 대기)</span><span class="stat-val">2</span></div>
+      <div class="stat"><span class="stat-label">확정 대본</span><span class="stat-val">2</span></div>
+      <div class="stat"><span class="stat-label"><code>timeline.mp4</code></span><span class="stat-val is-alert">0</span></div>
+      <div class="stat"><span class="stat-label"><code>final.mp4</code></span><span class="stat-val is-alert">0</span></div>
+    </aside>
+  </div>
+
+  <!-- ══ 1부 ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">1부</span>
+      <h3>토픽 패키지 생산 — 한계비용 0, 완전 자동</h3>
+      <span class="sec-tag">9 / 11 가동</span>
+    </div>
+    <p class="sec-intro">백로그의 소재 한 줄에서 <strong>검증된 씬 계약</strong>까지. 전부 Claude Code 헤드리스 세션이라 구독 플랜 안에서 돌고 <strong>호출당 과금이 없다</strong> (ADR-0008). 각 단계는 파일로만 통신하고, 세션에는 쓰기 권한을 주지 않는다 (ADR-0011).</p>
+
+    <div class="ledger">
+
+      <article class="row s-ok">
+        <div class="row-id">[0a]<small>topic</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">토픽 패키지 생성</span><span class="pill ok">가동</span><span class="pill cli">topic</span></div>
+          <p class="row-job">백로그 항목을 폴더로 승격하고 <strong>매체 적합성</strong>을 판별한다 — 판별 기준은 도메인이 아니라 "그림이 설명의 일부를 질 수 있는가" 하나다 (ADR-0033).</p>
+          <p class="row-out">topics/{slug}/ · runs/{run_id}/topic.json</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[0b]<small>research</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">조사 → 검증 → 비판 → 팩트시트</span><span class="pill ok">가동</span><span class="pill cli">research</span></div>
+          <p class="row-job">네 개의 <strong>독립 헤드리스 세션</strong>이 차례로 돈다 (ADR-0009). 소재 4조건을 못 채우면 여기서 자동 반려된다 — 한양도성 편이 '통념 뒤집기' 불충족으로 그렇게 걸렸다.</p>
+          <p class="row-out">01-research.md · 02-verify.md · 03-critique.md · 04-factsheet.json</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[1a]<small>outline</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">훅 각도 + 단 구성</span><span class="pill ok">가동</span><span class="pill cli">outline</span></div>
+          <p class="row-job">흥미 포인트를 고르고 서사 구조를 <strong>소재마다 새로 설계한다</strong> — 고정 단 구성은 폐기됐다 (ADR-0033). 단별로 사실과 글자 수를 배분하며, <strong>분량 산수는 여기서 한 번만 일어난다</strong>.</p>
+          <p class="row-out">07-outline.json</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[1s]<small>sceneplan</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">씬 분할 + 글·그림 분담</span><span class="pill ok">가동</span><span class="pill cli">sceneplan</span></div>
+          <p class="row-job">씬을 가르고 <strong>어디까지 글이 설명하고 어디부터 그림이 지는지</strong>를 <code>visual_goal</code>로 적는다 (ADR-0022). 구도·전환·카메라는 <code>vocab.json</code>의 닫힌 어휘에서 고른다 — 자유 기술이 아니다.</p>
+          <p class="row-out">08-sceneplan.json</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[1w]<small>write</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">요지 → 자막 문장</span><span class="pill ok">가동</span><span class="pill cli">write</span></div>
+          <p class="row-job">계획된 씬마다 실제 문장을 쓴다. <strong><code>scene_id</code>와 <code>text</code>만 낸다</strong> — 다른 키를 얹어 보내면 무시된다. 씬 구조를 여기서 바꿀 수 없다는 것이 <code>[1s]</code>와 나눈 이유다.</p>
+          <p class="row-out">05-candidates/*.json</p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[1c]<small>critique2</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">대본 후보 공격</span><span class="pill none">미구현</span></div>
+          <p class="row-job">완성된 후보를 다시 비판해 <code>03-critique.md</code>를 갱신한다. 조사 단계의 비판은 <em>소재</em>를 겨눴고, 이쪽은 <em>대본</em>을 겨눈다.</p>
+          <p class="row-todo"><b>지금은</b>후보가 비판 없이 곧장 검증으로 간다.</p>
+        </div>
+      </article>
+
+      <article class="row s-alert">
+        <div class="row-id">[1b]<small>score</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">훅 스코어링 → 상위 1개 선발</span><span class="pill alert">미구현 · 우회 중</span></div>
+          <p class="row-job">후보 여럿을 채점해 <code>06-script.json</code>으로 뽑는 자리다.</p>
+          <p class="row-todo"><b>우회 경로가 돌고 있다</b><strong>후보가 1개뿐이라 채점 없이 그대로 확정된다.</strong> <code>[2]</code>가 <code>06-script.json</code>이 아니라 <code>05-candidates/01.json</code>을 직접 읽는 임시 배선이고, <code>stages/validate.py</code>에 그 사실과 되돌릴 조건이 적혀 있다. <code>[1b]</code>가 들어오면 이 입력을 바꿔야 한다.</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[2]<small>validate</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">검증 → 실패 종류별 재진입</span><span class="pill ok">가동</span><span class="pill cli">validate</span></div>
+          <p class="row-job">구조·스키마·그라운딩을 검증하고, 실패하면 <strong>실패 종류에 따라 되돌아갈 지점을 고른다</strong> (ADR-0029) — 분량이 틀렸다고 그림 계획을 버리지 않는다. 분량·문체는 <code>[1w]</code>만, 씬 수·연출은 <code>[1s]</code>부터, 그라운딩과 <strong>모르는 오류</strong>는 <code>[1a]</code>부터. 상한 3회.</p>
+          <p class="row-out">06-script.json <span style="color:var(--ink-3)">← 1부↔2부 경계면 (ADR-0017)</span></p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[2b]<small>judge</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">AI 심사관 판정</span><span class="pill none">미구현</span></div>
+          <p class="row-job"><code>go</code> / <code>revise</code> / <code>no_go</code>를 낸다. <code>revise</code>면 지시를 주입해 <code>[1a]</code>부터 재생성하고 다시 심사한다 (상한 2회). <strong>심사관이 무는 것은 서사와 훅이라 문장만 고쳐서는 답이 안 나온다</strong>는 것이 재진입 지점을 <code>[1a]</code>로 잡은 이유다.</p>
+          <p class="row-todo"><b>막힌 결과</b>ADR-0010의 자율성 사다리가 L0에서 올라가지 못한다 — 섀도우 모드로 비교할 AI 판정이 없다.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ 게이트 ═══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">게이트</span>
+      <h3>사람이 go를 누르는 자리</h3>
+      <span class="sec-tag">L0 · 수동</span>
+    </div>
+    <p class="sec-intro">1부와 2부 사이의 판단 게이트다. <strong>go는 사람만 기록한다</strong> (ADR-0009). ADR-0010이 L0에서 L3까지 이양 경로를 정해 뒀지만, <code>[2b] judge</code>가 없으므로 <strong>지금은 L0 — 전건 수동</strong>이다.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>토픽</th><th>대본</th><th>상태</th><th>사유</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>후버댐 콘크리트 냉각</td>
+            <td class="mono">28씬 / 574자</td>
+            <td class="mono" style="color:var(--partial)">보류</td>
+            <td class="dim">조사 통과. <strong>사람 판정 대기</strong> — 2부 진입 후보 1순위</td>
+          </tr>
+          <tr>
+            <td>피사의 사탑 지반 보강</td>
+            <td class="mono">25씬</td>
+            <td class="mono" style="color:var(--partial)">보류</td>
+            <td class="dim">조사 통과. 사람 판정 대기. <strong>옛 구조 대본</strong>이라 <code>framing</code>·<code>visual_goal</code>이 비어 있다</td>
+          </tr>
+          <tr>
+            <td>한양도성 각자성석</td>
+            <td class="mono dim">없음</td>
+            <td class="mono" style="color:var(--none)">no-go</td>
+            <td class="dim"><code>[0b]</code> 자동 반려 — 뒤집을 통념이 존재하지 않는다고 판정됐다</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 2부 ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">2부</span>
+      <h3>영상 생산 — MJ 정액이라 변동비 0</h3>
+      <span class="sec-tag">4 / 10 가동</span>
+    </div>
+    <p class="sec-intro">Midjourney Standard 월 $30 정액으로 옮긴 뒤(ADR-0025) <strong>편당 변동비가 사라졌다.</strong> 이미지는 relax(과금 0), 영상만 fast GPU 시간을 쓴다 — 편수를 묶는 것은 그 GPU 시간이고, 지금 <strong>월 14.42시간 중 남은 전부</strong>가 그대로 있다.</p>
+
+    <div class="ledger">
+
+      <article class="row s-ok">
+        <div class="row-id">[3]<small>tts+sync</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">나레이션 + 실측 타임스탬프</span><span class="pill ok">가동</span><span class="pill cli">tts</span></div>
+          <p class="row-job">ElevenLabs 본인 목소리 클로닝(ADR-0004). <strong>문자 단위 타임스탬프로 문장 경계를 실측</strong>해 씬마다 실제 시각을 붙인다 — 추정이 아니다. <code>--provider fake</code>는 무음 wav를 내므로 기본값이 아니다.</p>
+          <p class="row-out">narration.wav · timing.json · scenes.timed.json</p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[4]<small>refpack</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">씬별 실사 참조</span><span class="pill none">미구현</span><span class="pill partial">ADR 제안 상태</span></div>
+          <p class="row-job">씬마다 실물 사진을 모아 <strong>첨부와 서술 두 경로</strong>로 프롬프트에 싣는다 (ADR-0030). 있으면 <code>[5]</code>가 서술을 얹고, 없으면 그냥 지나간다 — <strong>없어도 파이프라인은 돈다.</strong></p>
+          <p class="row-todo"><b>오늘 알게 된 것</b>ADR-0030이 "업로드 경로가 없을 수 있다"를 강등 사유로 적었는데, <strong>경로는 있고 반환 주소가 막혀 있었다</strong>. 오늘 <code>UPSCALE</code>로 그 우회로가 확인됐으니 이 ADR의 전제를 다시 볼 수 있다.</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[5]<small>prompt</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">씬별 이미지 프롬프트</span><span class="pill ok">가동</span><span class="pill cli">prompt</span></div>
+          <p class="row-job">씬 계약 + 스펙 03 룰 → 프롬프트 문자열. <strong>방언을 하나만 낸다</strong> (ADR-0027) — MJ 문법과 NB2 문법을 섞으면 과금이 끝난 뒤에 드러난다. 무료이고 순수 룰 변환이라 몇 번이든 다시 돌릴 수 있다.</p>
+          <p class="row-out">prompts.json</p>
+        </div>
+      </article>
+
+      <article class="row s-partial">
+        <div class="row-id">[6]<small>imagegen</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">씬별 베이스 이미지</span><span class="pill partial">가동 · 스펙 미달</span><span class="pill cli">imagegen</span></div>
+          <p class="row-job">MJ relax로 씬마다 한 장. <strong>씬을 동시에 제출한다</strong>(ADR-0031 §4) — 27씬 45분이 ~16분이 된다. 워커 수와 대기 상한 둘 다 <strong>코드에 숫자가 없다</strong>: 프로바이더에게 묻는다. 이미 산 이미지는 지문으로 이어받아 다시 사지 않는다.</p>
+          <p class="row-out">images/{scene_id}.png</p>
+          <p class="row-todo"><b>스펙이 요구하는데 없는 것 둘</b>① 사분면 4장을 <code>images/_cand/{scene_id}/q{0..3}</code>로 남기는 것 — <code>[6r]</code>이 고를 재료다. 지금은 <code>q0</code>만 잘라 쓰고 <strong>이미 산 3장을 버린다</strong>. ② <code>config/mj-proxy.policy.json</code>과 프록시 실제 상태 대조(ADR-0032) — 정책이 어긋난 채 돌면 계정을 태운다.</p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[6r]<small>imagereview</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">이미지 판정 게이트</span><span class="pill none">미구현</span><span class="pill partial">ADR §1~3 제안</span></div>
+          <p class="row-job">헤드리스 세션이 <strong>이미지를 직접 보고</strong> 씬마다 판정한다 — 대상이 맞는가, <code>visual_goal</code>을 지는가, 하단 1/3이 비었는가, 글자·기형 사고가 없는가. 결과는 <code>pass</code> / 사분면 교체 / <code>redo</code>이고 <strong>교체가 재생성보다 먼저다</strong> (이미 산 것이라 무료).</p>
+          <p class="row-todo"><b>없어서 생기는 일</b>후버댐 편은 <code>[6]</code>→<code>[9]</code>를 다 통과해 86초 영상이 나왔고 <strong>사람이 재생해 보고서야 댐이 한 장도 없다는 것이 드러났다.</strong> 지금 <code>[6]</code>이 검사하는 것은 "바이트가 왔는가"뿐이다 — 브루탈리즘 건물이 와도 성공이다.</p>
+        </div>
+      </article>
+
+      <article class="row s-partial">
+        <div class="row-id">[7]<small>motion</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">이미지 → 클립</span><span class="pill partial">Ken Burns만</span><span class="pill cli">motion</span></div>
+          <p class="row-job"><code>kenburns</code>는 FFmpeg zoompan으로 돈다 — 느린 줌·틸트·팬만 쓴다(AI 영상 왜곡 방지). 클립 길이는 씬 길이 + 디졸브 겹침 0.6초이고 <strong>0.6초는 전부 꼬리다</strong> (ADR-0024). 같은 이미지가 두 씬에 걸리면 카메라를 뒤집는데, 그 판정을 <code>images.json</code>이 아니라 <strong>파일 내용으로</strong> 한다.</p>
+          <p class="row-out">clips/{scene_id}.mp4</p>
+          <p class="row-todo"><b>세 갈래 중 하나만 있다</b><code>kling</code>은 호출 경로를 몰라 <code>kenburns</code>로 강등하며 <strong>경고를 남긴다</strong>. <code>mj_video</code>는 아래 「잠복」 항목 참조 — 경고조차 없다.</p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[8]<small>overlay</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">대형 텍스트 · 파티클 합성</span><span class="pill none">미구현</span><span class="pill alert">최종 산출물 차단</span></div>
+          <p class="row-job">레이어 B를 얹는다. <strong><code>clips/</code>를 덮어쓰지 않는다</strong> — 단계 독립 원칙이다. 한국어가 화면에 나오는 경로는 전부 여기를 타야 한다: 이미지 생성 모델에 정확한 한국어 렌더링을 기대하지 않는다 (ADR-0002).</p>
+        </div>
+      </article>
+
+      <article class="row s-ok">
+        <div class="row-id">[9]<small>assemble</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">타임라인 조립 + 자막 번인</span><span class="pill ok">가동</span><span class="pill cli">assemble</span></div>
+          <p class="row-job">FFmpeg로 클립을 디졸브로 잇고 자막을 태운다. 자막은 <strong>검정 글자 + 흰 외곽선</strong>인데 그 전제가 "하단이 흰 종이"라는 것이고 — <a href="#findings">그 전제가 실측에서 깨졌다</a>.</p>
+          <p class="row-out">timeline.mp4 <span style="color:var(--alert)">← 현재 0개</span></p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[10]<small>mix</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">음향 믹스 → 최종본</span><span class="pill none">미구현</span><span class="pill alert">최종 산출물 차단</span></div>
+          <p class="row-job">나레이션 + SFX + BGM (스펙 04). <strong>이 단계가 없어서 <code>final.mp4</code>가 존재하지 않는다.</strong> 파이프라인 전체에서 최종 산출물을 정의상 막고 있는 단 하나의 자리다.</p>
+          <p class="row-out">final.mp4 <span style="color:var(--alert)">← 한 번도 만들어진 적 없음</span></p>
+        </div>
+      </article>
+
+      <article class="row s-none">
+        <div class="row-id">[11]<small>report</small></div>
+        <div class="row-body">
+          <div class="row-title"><span class="row-name">실행 리포트</span><span class="pill none">미구현</span></div>
+          <p class="row-job">실패 씬, 재시도 이력, 소요 시간과 비용. 읽을 재료는 이미 다 있다 — <code>images.json</code>·<code>timing.json</code>·<code>state.json</code>이 각 단계의 기록을 남기고 있다. <strong>모으는 자리만 없다.</strong></p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ 잠복 ═════════════════════════════════════════════════════ -->
+  <section id="findings">
+    <div class="sec-head">
+      <span class="sec-num">잠복</span>
+      <h3>조용히 틀릴 자리 — 지금 터지지 않아서 안 보이는 것</h3>
+      <span class="sec-tag">3건</span>
+    </div>
+    <p class="sec-intro">전부 <strong>실패로 보고되지 않는다</strong>는 공통점이 있다. 그래서 원장에 따로 세웠다.</p>
+
+    <div class="findings">
+
+      <div class="finding">
+        <h4><code>mj_video</code>는 어휘에 있지만 <code>[7]</code>이 그 값을 모른다 — 경고 없이 Ken Burns가 된다</h4>
+        <p><code>vocab.json</code>의 <code>motion</code> enum은 <code>['kenburns', 'mj_video', 'kling']</code> 셋이다. 그런데 <code>stages/motion.py</code>의 분기는 <code>kling</code>만 알아본다 — <strong><code>mj_video</code>는 어느 분기에도 걸리지 않아 그대로 Ken Burns로 렌더된다.</strong></p>
+        <p><code>kling</code>은 강등될 때 <code>demoted_from</code>을 남기고 경고를 찍는다. <code>mj_video</code>는 <strong>둘 다 없다</strong> — <code>demoted_from</code>이 <code>None</code>이라 강등 수를 세는 리포트에 잡히지 않는다. 기록에 <code>motion</code>과 <code>motion_used</code>가 따로 남으니 대조하면 보이기는 하지만, <em>보러 가야</em> 보인다.</p>
+        <p>worklog가 "<code>mj_video</code>를 enum에만 추가하면 <code>[7]</code>이 모르는 값을 만나 <strong>깨진다</strong>"고 경고해 뒀는데, 실제 코드는 깨지지 않고 <strong>조용히 다른 것을 만든다.</strong> 후자가 더 나쁘다. <span style="color:var(--ink-3)">— 코드 대조로 확인, 실행 실측은 아니다</span></p>
+      </div>
+
+      <div class="finding is-warn">
+        <h4>자막이 그림을 가린다 — 하단 1/3이 안 비워진다</h4>
+        <p>스펙과 <code>[9]</code>는 "이 화법은 여백으로 끝나므로 하단이 저절로 비워진다"를 전제로 자막을 <strong>검정 글자 + 흰 외곽선</strong>으로 정했다. <strong>그 전제가 틀렸다</strong> — 피사체가 조밀하면 하단이 콘크리트·물·블록으로 꽉 찬다.</p>
+        <p>오늘 프롬프트로 밀 수 있는지 재 봤다. 명령형(<code>bottom third left empty</code>)을 서술형으로 바꾸니 빈 종이 비율이 <strong>14.6% → 34.3%로 2.3배</strong> 늘었다. 방향은 확인됐지만 <strong>어휘에 넣지 않았다</strong> — 34.3%는 "비었다"가 아니고 4장 중 1장은 여전히 0%다. 표본이 4장이라 문구를 확정할 근거로 얇다.</p>
+        <p>사후로 잡을 자리는 <code>[6r]</code>의 판정 기준 ③인데 <strong>그 단계가 미구현이다.</strong> 즉 지금은 앞에서도 뒤에서도 못 잡는다.</p>
+      </div>
+
+      <div class="finding is-warn">
+        <h4>480p 영상의 룩이 최종 해상도에서 버티지 못한다 (첫 관측)</h4>
+        <p>MJ 영상은 <code>464×832</code>로 나오고 최종 출력은 <code>1080×1920</code>이라 <strong>2.33배 업스케일</strong>이 붙는다. 오늘 클립 프레임을 1:1로 확인했더니 트레이서리가 뭉개지고 <strong>펜 언더드로잉이 사라져</strong> "약간 흐린 사진"으로 읽혔다.</p>
+        <p>다만 원인이 둘 섞여 있다 — 업스케일만이 아니라 <strong>MJ 영상 모델 자체가 그림을 사진 쪽으로 재해석했다.</strong> 소스 이미지에는 그린 질감이 있었는데 영상 프레임에는 없다. <strong>표본은 클립 1개·프레임 1장이므로 판정이 아니라 관측이다.</strong> ADR-0025가 검증 게이트를 폐기하며 "첫 실제 편에서 판단한다"로 넘긴 위험의 첫 신호다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 다음 판 ══════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">순서</span>
+      <h3>다음에 할 일 — 이 순서를 권한다</h3>
+      <span class="sec-tag">우선순위 = 실제 착수 순서</span>
+    </div>
+    <p class="sec-intro">기준은 <strong>"한 편을 끝까지 뽑아 보는 것"</strong>에 가까운 순서다. 품질을 올리는 일은 완성본이 한 편 있어야 판단할 수 있고, 지금은 그 한 편이 없다.</p>
+
+    <div class="queue">
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4><code>[10] mix</code> + <code>[8] overlay</code> — 최종본을 한 편 뽑는다</h4>
+          <p>미구현 8개 중 <strong>최종 산출물을 정의상 막고 있는 것은 이 둘</strong>이다. <code>[9]</code>까지 이미 돌아가므로 여기만 채우면 <code>final.mp4</code>가 처음으로 나온다. 완성본 한 편이 생기면 위 「잠복」 3건이 전부 <em>추정</em>에서 <em>관측</em>으로 바뀐다 — 특히 480p 룩은 눈으로만 보이는 종류다.</p>
+          <p class="task-why">과금 0 (relax + FFmpeg) · 후버댐 대본이 대기 중</p>
+        </div>
+      </div>
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4><code>[7]</code>의 <code>mj_video</code> 갈래 — 입력이 열렸으니 막힌 것이 없다</h4>
+          <p>오늘 사슬이 실물로 닫혔다: <code>IMAGINE</code>(relax·무료) → <code>UPSCALE</code>(relax·무료) → <code>VIDEO</code>(fast·GPU 7.8분) → <code>U1</code>(무료) → mp4. 구현할 때 <strong>ADR-0025에 적어 둔 정정 3건을 반드시 반영</strong>해야 한다 — mp4가 <code>videoUrl</code>이 아니라 <code>imageUrl</code>에 오고, relax 접두어로 던져도 <code>mode=FAST</code>로 돌고, U 추출이 10초가 아니라 405초다.</p>
+          <p class="task-why">동시에 「잠복 1」의 조용한 강등도 사라진다 · 씬당 GPU 7.8분이 편수 상한을 정한다</p>
+        </div>
+      </div>
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4><code>[6r] imagereview</code> — 틀린 그림을 완성 후에 발견하는 구조를 끝낸다</h4>
+          <p>ADR-0031 §1~3. <strong>이미 산 4장 중에서 고르는 것이라 추가 과금이 없고</strong>, 선행 작업은 <code>[6]</code>이 사분면 4장을 <code>_cand/</code>에 남기게 하는 것 하나다. 지금은 <code>q0</code>만 쓰는데 실측에서 <strong><code>q0</code>가 가장 약했다</strong> — 매번 제일 약한 것을 골라 쓰고 있다는 뜻이다.</p>
+          <p class="task-why">과금 0 · 사슬과 독립이라 언제든 · 「잠복 2」의 사후 방어도 여기서 생긴다</p>
+        </div>
+      </div>
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4><code>[1b] score</code> — 임시 배선을 정리한다</h4>
+          <p><code>[2]</code>가 <code>05-candidates/01.json</code>을 직접 읽는 우회를 없앤다. 후보를 여럿 만들어 채점하면 <strong>훅의 품질에 선택압이 생긴다</strong> — 지금은 첫 후보가 무조건 확정본이다. 이어서 <code>[1c] critique2</code>, 그리고 <code>[2b] judge</code>로 가면 ADR-0010의 자율성 사다리가 L0에서 올라갈 수 있다.</p>
+          <p class="task-why">과금 0 (헤드리스 세션) · 대본 품질의 유일한 선택압</p>
+        </div>
+      </div>
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4>사람 몫 둘 — 계정 간격, 그리고 go 판정</h4>
+          <p><strong>프록시 계정 간격이 목표값이 아니다.</strong> 지금 <code>interval 1.2 / min 1.2 / max 3.6</code>, 목표는 <code>3.6 / 1 / 10</code>. API로 바꾸면 Discord 재연결이 걸려 이미지 생성이 멈출 수 있어 웹 UI 손작업으로 남겨 둔 건이고, <strong>worklog에 다섯 세션 연속 남아 있다</strong> — 이제 동시 3으로 던지니 전보다 급하다. 그리고 후버댐 편의 <strong>go 판정</strong>이 2부 진입을 막고 있다.</p>
+          <p class="task-why">정본은 config/mj-proxy.policy.json · 코드가 대신할 수 없는 자리</p>
+        </div>
+      </div>
+
+      <div class="task">
+        <div class="task-n"></div>
+        <div>
+          <h4>살림 — worklog 아카이브와 ADR 승격</h4>
+          <p>worklog가 <strong>9개</strong>다 (규칙은 5개). 세 세션 연속 초과인데, 옮기기 전에 <code>2026-08-13 (5)</code>·<code>(6)</code>에만 있는 운영 정보를 <strong>ADR로 승격</strong>해야 한다 — 프록시 자체 구현 불필요, 공식 웹 모드 금지, 목소리 ID는 속도 문제라는 함정 목록이 그 후보다. 훅이 맨 위 항목만 주입하므로 <strong>길이가 곧 비용</strong>이다.</p>
+          <p class="task-why">미루면 인계가 새는 자리 · ADR-0034의 worklog 운영 규칙</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 결정 재고 ════════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">결정</span>
+      <h3>아직 안 정한 것 · 제안에 머문 것</h3>
+      <span class="sec-tag">ADR 35건 중</span>
+    </div>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>항목</th><th>상태</th><th>내용</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">ADR-0030</td>
+            <td class="mono" style="color:var(--partial)">제안</td>
+            <td class="dim"><code>[4] refpack</code>. 오늘 <code>UPSCALE</code> 확인으로 <strong>전제 하나가 바뀌었다</strong> — 업로드 반환 주소가 막힌 문제에 우회로가 생겼다</td>
+          </tr>
+          <tr>
+            <td class="mono">ADR-0031 §1~3</td>
+            <td class="mono" style="color:var(--partial)">제안</td>
+            <td class="dim"><code>[6r]</code> 판정 게이트. §4(동시 제출)만 승인·구현됐다 — 사람이 속도만 먼저 가져갔다</td>
+          </tr>
+          <tr>
+            <td class="mono">ADR-0032</td>
+            <td class="mono" style="color:var(--partial)">제안</td>
+            <td class="dim">프록시 정책을 리포가 소유한다. <code>enableRelaxToFast</code>는 <strong>API 스키마에 아예 없어</strong> 선언한 값을 넣을 수 없다는 것이 나중에 드러났다</td>
+          </tr>
+          <tr>
+            <td class="mono">D5</td>
+            <td class="mono" style="color:var(--ok)">닫힘 · 오늘</td>
+            <td class="dim"><code>architectural</code>을 <strong>빼지 않는다.</strong> 빼면 사진 쪽으로 끌려간다 — 이 단어는 "건축 소재"가 아니라 "건축 도면의 화법"을 뜻하므로 도메인이 열려도 유효하다</td>
+          </tr>
+          <tr>
+            <td class="mono">D6</td>
+            <td class="mono" style="color:var(--none)">미결</td>
+            <td class="dim">레퍼런스 채널 중복 검사를 유지할 것인가. <code>[0b]</code>를 손댈 때 같이 본다</td>
+          </tr>
+          <tr>
+            <td class="mono">하드컷 13/27</td>
+            <td class="mono" style="color:var(--none)">관측만</td>
+            <td class="dim">레퍼런스 실측(3~4회)의 3~4배다. ADR-0033을 되돌릴 조건 1번인데 <strong>"한 편은 한 점"</strong>이라 다음 편을 보고 판단하기로 했다</td>
+          </tr>
+          <tr>
+            <td class="mono">하단 1/3 문구</td>
+            <td class="mono" style="color:var(--none)">보류 · 오늘</td>
+            <td class="dim">2.3배 개선을 확인했으나 <strong>어휘에 넣지 않기로 했다.</strong> 표본을 더 쌓은 뒤 PR + ADR</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <div>정본 — CLAUDE.md(헌법) · specs/(설계) · docs/adr/(결정·근거·실측) · README.md(구현 현황) · docs/worklog.md(인계)</div>
+    <div>이 원장은 2026-08-19 기준 스냅숏이다. 값이 어긋나면 위 정본이 이긴다.</div>
+  </footer>
+
+</div>
+</body>
+</html>
