@@ -2,15 +2,25 @@
 
 ADR-0025가 프로바이더를, ADR-0027이 프롬프트 방언을 정했다.
 
-- 제출 `POST {base}/mj-relax/mj/submit/imagine`, 인증 헤더 `mj-api-secret`
+- 제출 `POST {base}/mj-fast/mj/submit/imagine`, 인증 헤더 `mj-api-secret`
 - 폴링 `GET {base}/mj/task/{id}/fetch` — 잡이 끝날 때까지
-- 결과 4장 중 **`imageUrls[0]` 고정** (ADR-0025, 계약 공백 #1)
+- 결과 **4장을 전부 돌려준다** (`GeneratedImage.variants`, ADR-0031 §2).
+  `data`는 그중 첫 장이라 하류 계약은 그대로다 — 고르는 것은 `[6r]` 몫이다.
+  ADR-0025의 `imageUrls[0]` 고정(계약 공백 #1)은 "고를 근거가 없어서"였고,
+  근거를 만드는 단계가 생겨 풀렸다
 
-## Relax는 프롬프트가 아니라 URL 프리픽스로 고른다
+## 모드는 프롬프트가 아니라 URL 프리픽스로 고른다 — 이미지는 fast다
 
-`--relax` 플래그를 붙이지 않는다. 프록시가 `/mj-relax/` 엔드포인트에 붙인다 (G1 실측).
-**프리픽스를 틀리면 잘못된 프롬프트가 아니라 아예 다른 엔드포인트가 되므로** 조용히
-Fast로 새지 않는다 — 이미지 27잡이 Fast로 가면 GPU 27분을 태워 월 산출이 반토막 난다.
+`--relax`·`--fast` 플래그를 붙이지 않는다. 프록시가 엔드포인트 프리픽스를 보고 붙인다
+(G1 실측). **이미지는 `/mj-fast/`다** — ADR-0039이 ADR-0025 §2("이미지 relax, 영상
+fast")를 뒤집었다. 1잡이 relax 180.4초에서 **7.0초**가 되고 GPU는 0.6~0.8분뿐이라
+Pro 30시간이면 월 80편이다. GPU를 쓰는 쪽이 이제 이미지고, **영상이 relax로 빠져
+GPU 0**이다 (`videogen/midjourney.py`) — 전 씬 영상을 가능하게 한 것이 그 교환이다.
+
+**프리픽스를 프록시의 자동 변환에 맡기지 않는다.** 같은 영상 호출이 2026-08-19 오전에는
+`/mj-relax/`로 던졌는데 조용히 fast로 바뀌어 성공했고 오후에는 거절됐다 (ADR-0039 §4).
+프리픽스를 틀리면 잘못된 프롬프트가 아니라 **아예 다른 엔드포인트**가 되므로, 모드가
+어긋나는 경로는 이 한 줄뿐이다.
 
 ## 보내는 문자열 = `prompt` + 공백 + `negative_prompt`
 
@@ -63,12 +73,14 @@ log = logging.getLogger(__name__)
 
 AUTH_HEADER = "mj-api-secret"
 
-#: 이미지는 relax, 영상은 fast (ADR-0025). 이 어댑터는 이미지 전용이다.
-SUBMIT_PATH = "/mj-relax/mj/submit/imagine"
+#: **이미지는 fast, 영상은 relax** (ADR-0039이 ADR-0025 §2를 뒤집었다).
+#: 이 어댑터는 이미지 전용이고, 영상은 `videogen/midjourney.py`가 relax로 던진다.
+SUBMIT_PATH = "/mj-fast/mj/submit/imagine"
 FETCH_PATH = "/mj/task/{task_id}/fetch"
 
 #: 계정 목록. `[6]`의 워커 수를 여기서 읽는다 (ADR-0031 G3). 응답은
-#: `{"list": [...], "pagination": ...}`이고 계정 오브젝트에 `relaxCoreSize`가 있다 (실측).
+#: `{"list": [...], "pagination": ...}`이고 계정 오브젝트에 `coreSize`(fast 동시
+#: 한도)·`relaxCoreSize`(relax 동시 한도)가 있다 (실측).
 #: **응답에는 `userToken`·`cookie` 같은 비밀이 함께 온다** — 이 어댑터는 숫자 한 개만
 #: 꺼내고 나머지는 어디에도 남기지 않는다 (ADR-0032 §3).
 ACCOUNTS_PATH = "/mj/admin/accounts"
@@ -125,8 +137,13 @@ def build_prompt(request: ImageRequest) -> str:
     return f"{prompt} {negative}" if negative else prompt
 
 
-def result_image(payload: dict[str, Any]) -> tuple[str, bool]:
-    """`(내려받을 URL, 4분할이 필요한가)`. 계정 모드마다 응답 모양이 다르다 (실측).
+def result_images(payload: dict[str, Any]) -> tuple[tuple[str, ...], bool]:
+    """`(내려받을 URL들, 4분할이 필요한가)`. 계정 모드마다 응답 모양이 다르다 (실측).
+
+    **네 장을 전부 돌려준다** (ADR-0031 §2). 잡 하나가 네 장을 내는데 지금까지 한 장만
+    쓰고 셋을 버렸다 — 이미 산 것이라 고르는 데 추가 과금이 0이고, 실측에서 `q0`이
+    넷 중 제일 약했다(ADR-0031 사분면 실측). 고르는 것은 `[6r]` 몫이고 어댑터는
+    버리지만 않는다.
 
     **공식 웹 모드**는 `imageUrls`에 4장을 개별 URL로 준다
     (`{url, thumbnail}` 객체 배열, `url`은 `cdn.midjourney.com/<uuid>/0_0.png`).
@@ -142,44 +159,63 @@ def result_image(payload: dict[str, Any]) -> tuple[str, bool]:
     """
     items = payload.get("imageUrls") or []
     if items:
-        first = items[0]
-        url = first.get("url") if isinstance(first, dict) else first
-        if not isinstance(url, str) or not url:
-            raise ImageGenError(f"imageUrls[0]에서 url을 읽을 수 없다: {first!r}")
-        return url, False
+        urls: list[str] = []
+        for index, item in enumerate(items):
+            url = item.get("url") if isinstance(item, dict) else item
+            if not isinstance(url, str) or not url:
+                raise ImageGenError(f"imageUrls[{index}]에서 url을 읽을 수 없다: {item!r}")
+            urls.append(url)
+        return tuple(urls), False
 
     url = payload.get("imageUrl")
     if not isinstance(url, str) or not url:
         raise ImageGenError(
             f"태스크가 SUCCESS인데 이미지 URL이 없다 (키: {sorted(payload)})"
         )
-    return url, True
+    return (url,), True
 
 
-def crop_first_quadrant(
+#: 2×2 그리드의 사분면 → `crop` 표현식. 순서는 읽는 순서다 (좌상·우상·좌하·우하).
+#: `iw/2`는 정수 나눗셈이 아니라 FFmpeg 표현식이라 홀수 픽셀에서도 안전하다.
+#: 실측 그리드는 1632×2912라 나머지가 없다.
+QUADRANT_CROPS = (
+    "crop=iw/2:ih/2:0:0",
+    "crop=iw/2:ih/2:iw/2:0",
+    "crop=iw/2:ih/2:0:ih/2",
+    "crop=iw/2:ih/2:iw/2:ih/2",
+)
+
+
+def crop_quadrants(
     data: bytes, *, suffix: str = ".webp", ffmpeg: str = FFMPEG
-) -> bytes:
-    """2×2 그리드에서 왼쪽 위 한 장을 PNG로 잘라 낸다.
+) -> tuple[bytes, ...]:
+    """2×2 그리드를 네 장의 PNG로 나눈다. 순서는 `q0`~`q3`이다 (ADR-0031 §2).
 
     FFmpeg를 쓰는 이유는 **이미 이 프로젝트의 필수 의존이고**(조립·자막 번인) webp를
     읽을 수 있는 유일한 수단이기 때문이다. Pillow를 새로 들이지 않는다.
 
-    `crop=iw/2:ih/2:0:0`은 정수 나눗셈이 아니라 FFmpeg 표현식이라 홀수 픽셀에서도
-    안전하다. 실측 그리드는 1632×2912라 나머지가 없다.
+    한 번에 네 번 자른다. U 버튼(사분면 분리) 잡을 던지지 않는 이유는 그대로다 —
+    같은 픽셀을 얻자고 잡 수를 27 → 54로 늘리게 된다 (`result_images` 독스트링).
+    여기는 로컬 FFmpeg라 잡도 과금도 늘지 않는다.
     """
     with tempfile.TemporaryDirectory(prefix="mj-grid-") as tmp:
         source = Path(tmp) / f"grid{suffix}"
-        target = Path(tmp) / "quadrant.png"
         source.write_bytes(data)
-        result = subprocess.run(
-            [ffmpeg, "-y", "-loglevel", "error", "-i", str(source),
-             "-vf", "crop=iw/2:ih/2:0:0", "-frames:v", "1", str(target)],
-            capture_output=True, timeout=CROP_TIMEOUT,
-        )
-        if result.returncode != 0 or not target.exists():
-            detail = result.stderr.decode("utf-8", "replace")[:300]
-            raise ImageGenError(f"그리드 4분할에 실패했다 (ffmpeg): {detail}")
-        return target.read_bytes()
+        quadrants: list[bytes] = []
+        for index, crop in enumerate(QUADRANT_CROPS):
+            target = Path(tmp) / f"q{index}.png"
+            result = subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-i", str(source),
+                 "-vf", crop, "-frames:v", "1", str(target)],
+                capture_output=True, timeout=CROP_TIMEOUT,
+            )
+            if result.returncode != 0 or not target.exists():
+                detail = result.stderr.decode("utf-8", "replace")[:300]
+                raise ImageGenError(
+                    f"그리드 4분할에 실패했다 (ffmpeg, q{index}): {detail}"
+                )
+            quadrants.append(target.read_bytes())
+        return tuple(quadrants)
 
 
 def _fail(status: int, body: bytes, *, what: str) -> ImageGenError:
@@ -260,7 +296,10 @@ class MidjourneyClient(ImageClient):
         return _load(raw, what="태스크 응답")
 
     def concurrency(self) -> int:
-        """활성 계정의 `relaxCoreSize`. `[6]`의 워커 수 기본값이다 (ADR-0031 §4·G3).
+        """활성 계정의 `coreSize`. `[6]`의 워커 수 기본값이다 (ADR-0031 §4·G3).
+
+        이미지는 fast로 제출한다 (ADR-0039 §2) — 그 큐의 동시 한도가 `coreSize`다.
+        relax 한도인 `relaxCoreSize`는 relax로 가는 `[7]` 영상이 쓴다.
 
         **한 번도 예외를 올리지 않는다.** 이 값은 얼마나 빨리 돌릴지를 정할 뿐이고,
         못 읽었다고 그림을 못 만드는 것이 아니다. 못 읽으면 1로 떨어져 지금까지의
@@ -280,16 +319,16 @@ class MidjourneyClient(ImageClient):
             if not isinstance(accounts, list):
                 raise ImageGenError("응답에 list가 없다")
             sizes = [
-                int(a["relaxCoreSize"])
+                int(a["coreSize"])
                 for a in accounts
-                if isinstance(a, dict) and a.get("enable") and a.get("relaxCoreSize")
+                if isinstance(a, dict) and a.get("enable") and a.get("coreSize")
             ]
             if not sizes:
-                raise ImageGenError("활성 계정에 relaxCoreSize가 없다")
+                raise ImageGenError("활성 계정에 coreSize가 없다")
         except (ImageGenError, OSError, KeyError, TypeError, ValueError) as exc:
             # 비밀이 섞인 응답이라 본문을 로그에 싣지 않는다 (ADR-0032 §3).
             log.warning(
-                "relaxCoreSize를 읽지 못해 워커 1로 간다 (%s: %s). "
+                "coreSize를 읽지 못해 워커 1로 간다 (%s: %s). "
                 "--jobs로 직접 줄 수 있다", type(exc).__name__, exc,
             )
             return 1
@@ -329,17 +368,26 @@ class MidjourneyClient(ImageClient):
                 )
             self.sleep(self.poll_interval)
 
-        url, is_grid = result_image(payload)
-        data = self.download(url, timeout=budget)
+        urls, is_grid = result_images(payload)
         if is_grid:
+            # 그리드 하나를 받아 로컬에서 넷으로 나눈다. 내려받기는 여전히 1회다.
+            url = urls[0]
             suffix = ".webp" if url.lower().split("?")[0].endswith(".webp") else ".png"
-            data = crop_first_quadrant(data, suffix=suffix, ffmpeg=self.ffmpeg)
+            variants = crop_quadrants(
+                self.download(url, timeout=budget), suffix=suffix, ffmpeg=self.ffmpeg
+            )
+        else:
+            # 개별 URL 모드는 네 장이 따로 온다. 넷을 다 받는다 — 잡은 이미 샀고
+            # 남는 비용은 내려받기뿐인데, 그것을 아끼려고 셋을 버려 온 것이 ADR-0031이
+            # 되돌린 결정이다.
+            variants = tuple(self.download(u, timeout=budget) for u in urls)
 
         return GeneratedImage(
-            data=data,
+            data=variants[0],
             mime_type="image/png",
             request_id=task_id,
             model_id=self.name,
+            variants=variants,
             raw={
                 "progress": payload.get("progress"),
                 "status": status,

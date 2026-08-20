@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "refs.schema.json",
+  "title": "[4] refpack 산출 — 씬별 실사 참조 (ADR-0030)",
+  "description": "산출은 둘이다 — description(사진에서 읽어 낸 형태·재질·색·배치)과 내려받은 파일 목록. 소비는 두 경로이고 강등 사다리는 `첨부+서술 → 서술 → 없음`이다. 씬이 비어 있어도 계약 위반이 아니다 — 도해 씬과 실물이 없는 개념 씬에는 참조가 없고, 부재는 경고하지 않는다 (specs/05 D-3).",
+  "type": "object",
+  "required": ["run_id", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "계보는 run_id로 잇는다 (ADR-0017). 대본에 적힌 값을 그대로 쓴다."
+    },
+    "source_script": {
+      "type": "string",
+      "description": "이 참조가 어느 대본에서 나왔는지. 리포지토리 루트 기준 경로다."
+    },
+    "scenes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/scene_refs"}
+    }
+  },
+  "meta": {
+    "attachable_licenses": ["public-domain", "cc0", "cc-by", "cc-by-sa"],
+    "max_images_per_scene": 3,
+    "_max_images_per_scene": "씬 하나가 들 수 있는 참조 사진 수. 같은 것을 보여 주는 사진을 여러 장 받아도 프롬프트가 길어질 뿐이다. 프롬프트에 손으로 적지 않고 여기서 주입한다 (ADR-0034 §3).",
+    "_attachable_licenses": "이 목록에 있는 라이선스만 attachable: true가 될 수 있다 (ADR-0030 '라이선스는 기록하고, 불명이면 첨부하지 않는다'). 불명·저작권 있음은 서술 경로만 탄다. 코드는 이 목록을 로드하고 손으로 옮겨 적지 않는다 (ADR-0034 §3).",
+    "_file_layout": "내려받은 파일은 runs/{run_id}/refs/{scene_id}/ 아래에 놓인다 (specs/05 단계 목록). 이 스키마는 경로 문자열만 보고 배치는 단계가 정한다.",
+    "_not_an_output": "참조 사진 자체가 최종 산출물에 들어가는 일은 없다 — 이미지 프롬프트는 입력이다 (ADR-0030)."
+  },
+  "$defs": {
+    "scene_refs": {
+      "type": "object",
+      "required": ["scene_id", "query", "description", "images"],
+      "additionalProperties": false,
+      "properties": {
+        "scene_id": {"type": "integer", "minimum": 1},
+        "query": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "실제로 검색한 말. 사후에 왜 이 사진이 걸렸는지 되짚는 자리다. 한국어와 현지어를 함께 쓸 수 있다."
+        },
+        "description": {
+          "type": "string",
+          "description": "사진에서 눈으로 읽어 낸 것을 한국어 구절로. subject_anchor가 명사 몇 개로 하던 일을 구절로 한다. subject를 대체하지 않는다 — 겹치면 subject가 이긴다 (ADR-0020·0030)."
+        },
+        "images": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/image"}
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["source_url", "license", "attachable"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "내려받은 파일의 run 디렉터리 기준 경로. 첨부하지 않는 사진은 내려받지 않으므로 이 값이 없다."
+        },
+        "source_url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "이미지 파일 자체의 주소. 내려받는 것도 되짚는 것도 이 값이다. 누구의 것인지는 credit에 적는다."
+        },
+        "license": {"$ref": "#/$defs/license"},
+        "credit": {"type": "string"},
+        "attachable": {
+          "type": "boolean",
+          "description": "MJ 이미지 프롬프트에 붙일 수 있는가. 라이선스가 정한다 — 판단이 아니라 대조이고 기계가 한다."
+        },
+        "shows": {"type": "string", "description": "이 사진이 무엇을 보여 주는가. 한 구절."}
+      }
+    },
+    "license": {
+      "enum": [
+        "public-domain",
+        "cc0",
+        "cc-by",
+        "cc-by-sa",
+        "copyrighted",
+        "unknown"
+      ],
+      "description": "unknown은 '확인하지 못했다'이고 copyrighted는 '확인했고 저작권이 있다'다. 둘 다 첨부하지 않지만 서술 경로는 그대로 탄다 — 사람이 사진을 보고 말로 옮기는 것은 스타일 모방이 아니라 사실 확인이다 (ADR-0030)."
+    }
+  }
+}

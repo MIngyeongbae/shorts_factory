@@ -19,6 +19,9 @@ env/
 runs/*
 !runs/.gitkeep
 
+# 전체 검사 보고서 (로컬 전용)
+reports/
+
 # 미디어 바이너리 (생성 산출물은 재생성 가능하므로 커밋하지 않음)
 *.mp4
 *.mov
@@ -39,6 +42,9 @@ runs/*
 # 레퍼런스 채널 대본 (남의 저작물). 분석 결과와 실측 수치만 docs/에 남긴다.
 신비한 건축사전 대본/
 *.srt
+
+# 외부 참고 자료 (로컬 전용 — 남이 쓴 워크플로 문서·링크)
+공학용쇼츠제작/
 
 # 원본 대본 전문을 담은 골든 픽스처. tools/srt_to_scenes.py로 로컬에서 생성한다.
 tests/fixtures/scenes_golden_baegak.json

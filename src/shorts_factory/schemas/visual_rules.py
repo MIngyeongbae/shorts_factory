@@ -201,17 +201,21 @@ def flatten_clauses(text: str) -> str:
 def _mj_composition(composition: str) -> str:
     """구도 문구에서 MJ가 쓸 부분만 남긴다. `COMPOSITION`이 유일한 출처다.
 
-    두 절을 뗀다.
+    **종횡비 절은 뗀다** — `--ar`가 정하므로 프롬프트 본문에 남기면 같은 것을 두 곳에서
+    말하게 된다. 지금은 그것이 전부라 **남는 것이 없고 빈 문자열이 정상이다**
+    (ADR-0038이 레이아웃 지시를 걷어냈다).
 
-    - `vertical 9:16` — `--ar`가 정한다. 프롬프트 본문에 남기면 종횡비를 두 곳에서 말한다
-    - `for subtitles` — `--no`에 `burned-in subtitles`가 있다. **같은 낱말을 그리라고 하면서
-      그리지 말라고 하게 된다.** 자막을 위해 비운다는 것은 스펙의 이유이지 모델에게 할 말이
-      아니다 (ADR-0027)
+    옛 버전은 `" for subtitles"`도 잘라 냈다. *"자막을 위해 비운다는 것은 스펙의 이유이지
+    모델에게 할 말이 아니다"*가 그 이유였는데, **이유만 지우고 지시는 남겨 둔 것**이
+    문제였다 — 지금은 지시 자체가 없어져 우회가 필요 없다.
     """
-    _aspect, rest = composition.split("; ", 1)
-    return flatten_clauses(rest.replace(" for subtitles", ""))
+    rest = "; ".join(
+        clause for clause in composition.split("; ") if not clause.startswith("vertical ")
+    )
+    return flatten_clauses(rest)
 
 
+#: 지금은 빈 문자열이다. `[5]`가 프롬프트를 조립할 때 걸러 낸다.
 MJ_COMPOSITION = _mj_composition(COMPOSITION)
 
 
@@ -235,7 +239,9 @@ def build_mj_prompt(
     if visual_goal.strip():
         parts.append(visual_goal.strip())
     parts.extend((shot, flatten_clauses(BASE_STYLE), MJ_COMPOSITION))
-    return ", ".join(parts) + f" --ar {ASPECT_RATIO}"
+    # 빈 절을 거른다 — 레이아웃 지시가 없어져 MJ_COMPOSITION이 비었다 (ADR-0038).
+    # 그대로 이으면 프롬프트 끝에 쉼표만 남는다.
+    return ", ".join(p for p in parts if p.strip()) + f" --ar {ASPECT_RATIO}"
 
 
 def build_mj_negative(overlay_types: tuple[str, ...]) -> str:

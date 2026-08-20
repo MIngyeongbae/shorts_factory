@@ -126,10 +126,7 @@ def format_vocab() -> str:
         "\n".join(f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("camera"))
     )
 
-    blocks.append("\n## motion (움직임)\n")
-    blocks.append(
-        "\n".join(f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("motion"))
-    )
+    # motion은 여기 없다 — [1s]는 motion을 고르지 않는다 (ADR-0039 결정 1, 전 씬 영상)
 
     blocks.append("\n## transition (이 씬으로 진입하는 전환, 선택)\n")
     blocks.append(

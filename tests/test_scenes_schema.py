@@ -163,7 +163,7 @@ def test_video_motion_at_limit_is_allowed(motion):
 
 @pytest.mark.parametrize("motion", VIDEO_MOTIONS)
 def test_video_motion_over_limit_is_rejected(motion):
-    """specs/02 + ADR-0006: 영상은 편당 최대 10씬. mj_video도 같은 상한이다 (ADR-0025 §3)."""
+    """specs/02 + ADR-0039: 편당 상한은 과금 차선(kling)에만 남았다. 값은 vocab이 든다."""
     data = _with_video_count(load_fixture("scenes_pass.json"), MAX_VIDEO_SCENES + 1, motion)
     errors, _ = validate_scenes(data)
     assert any(str(MAX_VIDEO_SCENES) in e for e in errors)

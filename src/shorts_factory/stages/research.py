@@ -23,6 +23,7 @@ from .. import runstate
 from ..backlog import STATUS_REJECTED
 from ..config import Paths, write_text
 from ..jsonio import JSONExtractionError, dump_json, extract_json_object
+from ..schemas import script_rules
 from ..knowledge import KnowledgeStore, extract_contract
 from ..llm.base import LLMClient
 from ..runstate import RunState
@@ -205,7 +206,13 @@ def _run_substep(
                         output=out_path.relative_to(paths.root).as_posix())
         return out_path.read_text(encoding="utf-8")
 
-    context = {"topic": topic, "knowledge": ""}
+    context = {
+        "topic": topic,
+        "knowledge": "",
+        # 분량 값은 script-rules.json에서 온다 (ADR-0034 §3) — 프롬프트에 손으로 적지 않는다
+        "total_seconds": "%d~%d" % script_rules.TOTAL_SECONDS,
+        "total_chars": "%d~%d" % script_rules.TOTAL_CHARS,
+    }
     for need in step.needs:
         source = topic_dir / _SOURCE_FILES[need]
         if not source.exists():

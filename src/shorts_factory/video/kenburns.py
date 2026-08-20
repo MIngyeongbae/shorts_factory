@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import math
 
+from ..schemas import vocab
 from .ffmpeg import FPS, HEIGHT, PIXEL_FORMAT, VIDEO_CODEC, WIDTH
 
 #: specs/03 "이동량 = 프레임의 10%". 줌 깊이와 팬·틸트 이동 폭을 함께 정하는 상수다 —
@@ -82,7 +83,7 @@ REVERSE_CAMERA: dict[str, str] = {
     "static": "slow_zoom_in",
 }
 
-STATIC = "static"
+STATIC = vocab.require("camera", "static")
 
 #: zoompan에 물리기 전에 크로마 서브샘플링을 없앤다 (위 docstring "format=gbrp").
 #: 이 한 줄이 느린 팬의 정지 프레임을 없앤다. `static`에도 같이 걸어 두 경로의
@@ -92,6 +93,15 @@ WORKING_FORMAT = "gbrp"
 
 class KenBurnsError(Exception):
     """카메라 워크를 필터로 옮길 수 없음."""
+
+
+#: specs/03 역방향 표는 camera 어휘 전체를 덮어야 한다 — 어휘가 늘었는데 표가 안
+#: 따라오면 렌더 도중 KeyError가 아니라 여기서(로드 시점) 멈춘다 (ADR-0034 §3).
+if set(REVERSE_CAMERA) != set(vocab.values("camera")):
+    raise KenBurnsError(
+        "REVERSE_CAMERA가 camera 어휘와 갈렸다: "
+        f"{sorted(set(REVERSE_CAMERA) ^ set(vocab.values('camera')))}"
+    )
 
 
 def frame_count(length: float, *, fps: int = FPS) -> int:

@@ -324,6 +324,18 @@ def test_mj_dialect_does_not_warn_about_anchors(paths, install):
 # --- 구도가 피사체를 따라간다 (ADR-0018) -------------------------------------
 
 
+def test_a_scene_without_motion_gets_the_default_in_the_record(paths, install):
+    """`motion`은 선택 필드다 — 비면 기본값이 영상으로 채운다 (ADR-0039 결정 1)."""
+
+    def drop_motion(script):
+        script["scenes"][0].pop("motion", None)
+
+    install(PISA, mutate=drop_motion)
+
+    entry = run_prompt_stage(PISA, paths=paths).prompts["scenes"][0]
+    assert entry["motion"] == vocab.default_motion(entry["beat"])
+
+
 @pytest.mark.parametrize("slug", REAL_SLUGS)
 def test_fallback_framing_follows_the_scale_the_script_declared(paths, install, slug):
     """기본값으로 떨어질 때도 씬의 스케일과 어긋날 수 없다 (ADR-0018)."""

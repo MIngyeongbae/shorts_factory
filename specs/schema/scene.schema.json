@@ -3,21 +3,35 @@
   "$id": "scene.schema.json",
   "title": "06-script.json (씬 계약)",
   "description": "1부의 최종 산출물이자 2부의 읽기 전용 입력 (ADR-0017). 사람이 읽는 근거는 specs/02-beat-schema.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3).",
-
   "type": "object",
-  "required": ["run_id", "topic", "total_duration", "scenes"],
+  "required": [
+    "run_id",
+    "topic",
+    "total_duration",
+    "scenes"
+  ],
   "additionalProperties": false,
   "properties": {
-    "run_id": { "type": "string", "minLength": 1 },
-    "topic": { "type": "string", "minLength": 1 },
-    "total_duration": { "type": "number", "exclusiveMinimum": 0 },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1
+    },
+    "total_duration": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
     "scenes": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/scene" }
+      "items": {
+        "$ref": "#/$defs/scene"
+      }
     }
   },
-
   "$defs": {
     "scene": {
       "type": "object",
@@ -31,8 +45,7 @@
         "visual_goal",
         "subject",
         "subject_scale",
-        "camera",
-        "motion"
+        "camera"
       ],
       "additionalProperties": false,
       "properties": {
@@ -45,14 +58,19 @@
           "$ref": "vocab.json#/$defs/beat",
           "description": "서사 기능의 라벨. 연출의 분기 기준이 아니다 (ADR-0033 §4)."
         },
-        "text": { "type": "string", "minLength": 1 },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
         "est_start": {
           "type": "number",
           "minimum": 0,
           "description": "TTS 이전 추정치. 갱신되지 않는다 — 실측은 scenes.timed.json의 start/end다 (ADR-0017)."
         },
-        "est_end": { "type": "number", "minimum": 0 },
-
+        "est_end": {
+          "type": "number",
+          "minimum": 0
+        },
         "visual_goal": {
           "type": "string",
           "minLength": 1,
@@ -65,11 +83,16 @@
         },
         "subject_anchor": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1, "pattern": "\\S" },
-          "description": "선택. 대상을 고정하는 짧은 한국어 명사구 목록 (ADR-0028). 부재는 경고가 아니다. 공백뿐인 항목은 막는다 — [5]가 subject 뒤에 콤마로 잇기 때문에 빈 항목이 프롬프트에 ', ,'로 남는다."
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "description": "선택. 대상을 고정하는 짧은 명사구 목록 (ADR-0028). 고유명사는 소재의 1차 자료 언어로, 재질·정체 같은 일반 명사는 한국어로 적는다 (ADR-0042 — 한국어 「일본 …」은 한옥을 부른다). 부재는 경고가 아니다. 공백뿐인 항목은 막는다 — [5]가 subject 뒤에 콤마로 잇기 때문에 빈 항목이 프롬프트에 ', ,'로 남는다."
         },
-        "subject_scale": { "$ref": "vocab.json#/$defs/subject_scale" },
-
+        "subject_scale": {
+          "$ref": "vocab.json#/$defs/subject_scale"
+        },
         "framing": {
           "$ref": "vocab.json#/$defs/framing",
           "description": "선택. [1s]가 구도 토큰 어휘에서 고른다 (ADR-0033 §3). 없으면 [5]가 beat-defaults.json의 기본값으로 떨어지고 그 씬 수를 요약에 낸다."
@@ -78,20 +101,52 @@
           "$ref": "vocab.json#/$defs/transition",
           "description": "선택. 이 씬으로 **진입**하는 전환. 없으면 beat-defaults.json의 기본값이다. 첫 씬에서는 무시한다."
         },
-        "camera": { "$ref": "vocab.json#/$defs/camera" },
-        "motion": { "$ref": "vocab.json#/$defs/motion" },
-
+        "camera": {
+          "$ref": "vocab.json#/$defs/camera"
+        },
+        "motion": {
+          "$ref": "vocab.json#/$defs/motion"
+        },
         "emphasis": {
           "type": "object",
           "description": "선택. 화면 강조 요소 (레이어 B). 숫자를 화면에 세울 씬에 [1s]가 단다.",
-          "required": ["type", "value"],
+          "required": [
+            "type",
+            "value"
+          ],
           "additionalProperties": false,
           "properties": {
-            "type": { "$ref": "vocab.json#/$defs/overlay_type" },
-            "value": { "type": "string", "minLength": 1 }
+            "type": {
+              "$ref": "vocab.json#/$defs/overlay_type"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
-        "notes": { "type": "string" }
+        "info": {
+          "type": "object",
+          "description": "선택. 인포씬 표시 + 화면에 그려질 라벨 문구·수치 (ADR-0043). 존재하면 인포씬이다 — [6i]가 NB2 편집으로 INFO 이미지를 만들고 [7]이 Veo first/last로 영상을 만든다. labels는 화면에 그려질 문자열 그대로이고, 문자열 속 수치는 팩트시트 그라운딩 대상이다 (ADR-0007). 배치·색·지시선은 계약하지 않는다 — NB2 재량이다.",
+          "required": [
+            "labels"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
       }
     }
   }

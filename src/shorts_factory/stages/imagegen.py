@@ -38,12 +38,23 @@ relax는 제출한 뒤 대부분 **기다리는 시간**이라 한 줄로 세울
 돌면 잡 하나가 100초여도 45분이 된다 (실측).
 
 - 워커 수는 **하드코딩하지 않는다.** `--jobs`가 없으면 프로바이더에게 묻고
-  (`ImageClient.concurrency()`), MJ는 계정의 `relaxCoreSize`를 읽어 준다. 그 값은 구독
-  플랜이 정하므로 리포에 적어 두면 플랜을 바꾼 날 조용히 틀린다 (ADR-0031 G3)
+  (`ImageClient.concurrency()`), MJ는 계정의 `coreSize`(fast 동시 한도)를 읽어 준다.
+  그 값은 구독 플랜이 정하므로 리포에 적어 두면 플랜을 바꾼 날 조용히 틀린다 (ADR-0031 G3)
 - **기록 갱신은 직렬이다.** 씬 하나가 끝날 때마다 쓴다는 계약(ADR-0020)이 지키려는 것이
   "죽어도 다시 사지 않는다"이므로, 병렬이 그것을 깨면 병렬로 번 시간보다 비싸다
 - 429가 나오면 워커를 1로 줄이고 쉰다. 한도에 걸린 채로 3개를 계속 던지는 것은 큐만 늘린다
 - **이어받는 씬은 워커를 쓰지 않는다.** 호출이 아니라 파일 확인이다
+
+## 네 장을 다 남긴다 — 고르는 것은 이 단계가 아니다 (ADR-0031 §2)
+
+MJ는 잡 하나에 4장을 낸다. 지금까지 첫 장만 쓰고 셋을 버렸는데, 실측에서 그 첫 장이
+넷 중 제일 약했다 (ADR-0031 사분면 실측). **이미 산 것이라 고르는 데 추가 과금이 0이다.**
+
+- 네 장을 `images/_cand/{scene_id}/q{0..3}{suffix}`로 남기고 `q0`을
+  `images/{scene_id}{suffix}`에 쓴다. **하류 계약은 그대로다** (ADR-0020)
+- **이 단계는 고르지 않는다.** 판정 없는 선택은 `imageUrls[0]` 고정과 같은 자리다 —
+  바꿔 끼우는 것은 `[6r] imagereview` 몫이다
+- 후보가 없는 프로바이더는 빈 목록이고 **부재를 경고하지 않는다** (specs/05 D-3)
 
 ## 대기 상한도 선언하지 않는다 (ADR-0035)
 
@@ -92,6 +103,7 @@ from ..imagegen.base import (
 )
 from ..jsonio import dump_json
 from ..runstate import RunState
+from ..schemas.image_source import build_document as build_image_source
 from ..schemas.visual_rules import schema_errors
 
 log = logging.getLogger(__name__)
@@ -104,11 +116,27 @@ PROMPTS_FILE = "prompts.json"
 #: 산출물 — specs/05가 못박은 경로
 IMAGES_DIR = "images"
 
+#: 후보 사분면 보관소 (ADR-0031 §2, specs/05 `[6]`). 잡 하나가 낸 네 장을 전부
+#: `images/_cand/{scene_id}/q{0..3}{suffix}`로 남긴다. **하류 계약은 그대로다** —
+#: `[7]`·`[8]`은 여전히 `images/{scene_id}{suffix}` 한 장만 안다 (ADR-0020).
+#:
+#: 판정이 끝나도 지우지 않는다. 다시 사지 않고 사분면을 바꿔 낄 수 있는 유일한 수단이고,
+#: relax 큐를 다시 기다리는 것보다 디스크가 싸다.
+CAND_DIR = "_cand"
+
 #: 이 단계의 **실행 기록**. `timing.json`이 `[3]`에 대해 갖는 역할과 같다 (ADR-0020) —
 #: 하류가 판단 근거로 읽는 계약이 아니라 무슨 일이 있었는지의 기록이고, `[11. report]`가
 #: "실패 씬, 재시도 이력"을 여기서 읽는다. `[7]`은 이 파일 없이 `images/{scene_id}.jpg`
 #: 규약만으로 돈다.
 RECORD_FILE = "images.json"
+
+#: `[7]`의 영상 입력 **계약** (ADR-0041, 정본 `specs/schema/image-source.schema.json`).
+#: `images.json`과 성격이 다르다 — 이쪽은 기록이고 저쪽은 계약이다.
+#:
+#: `[7]`이 영상을 만들려면 잡 id와 사분면이 필요한데 **이미지 파일 내용에서 복원되지
+#: 않는다.** 그 값을 들고 있는 `images.json`은 기록이라 `[7]`이 열지 않으므로
+#: (ADR-0024 §2), 기록을 계약으로 승격하는 대신 값 둘만 담은 사이드카를 낸다.
+SOURCE_FILE = "image_source.json"
 
 #: 1부↔2부 경계면 파일 (ADR-0017). run_id를 슬러그로 찾을 때만 연다.
 SCRIPT_FILE = "06-script.json"
@@ -254,6 +282,27 @@ def _write_bytes(path: Path, data: bytes) -> None:
     path.write_bytes(data)
 
 
+def _write_candidates(image: Any, image_path: Path) -> list[str]:
+    """후보 사분면을 `images/_cand/{scene_id}/q{n}{suffix}`로 남긴다 (ADR-0031 §2).
+
+    **`images/{scene_id}`는 건드리지 않는다.** 이 함수가 쓰는 것은 `_cand/` 아래뿐이고,
+    본 파일을 바꿔 끼우는 것은 `[6r]` 몫이다 — `[6]`이 고르기 시작하면 판정 없는 선택이
+    되고, 그것이 ADR-0031이 되돌린 `imageUrls[0]` 고정과 같은 자리다.
+
+    후보가 없는 프로바이더는 빈 목록이다. **부재를 경고하지 않는다** (specs/05 D-3).
+    """
+    if not image.variants:
+        return []
+
+    scene_dir = image_path.parent / CAND_DIR / image_path.stem
+    saved: list[str] = []
+    for index, data in enumerate(image.variants):
+        target = scene_dir / f"q{index}{image_path.suffix}"
+        _write_bytes(target, data)
+        saved.append(f"{IMAGES_DIR}/{CAND_DIR}/{image_path.stem}/{target.name}")
+    return saved
+
+
 def _load_previous(record_path: Path) -> dict[int, dict[str, Any]]:
     """앞선 실행의 씬별 기록. 없거나 깨졌으면 빈 채로 시작한다(다시 사는 쪽이 안전하다)."""
     if not record_path.exists():
@@ -283,7 +332,7 @@ def _resolve_workers(
     """이번 실행에 쓸 워커 수.
 
     **하드코딩하지 않는다** (specs/05, ADR-0031 G3). `--jobs`가 있으면 사람 말이 이기고,
-    없으면 프로바이더에게 묻는다 — MJ는 계정의 `relaxCoreSize`를 읽어 준다.
+    없으면 프로바이더에게 묻는다 — MJ는 계정의 `coreSize`(fast 동시 한도)를 읽어 준다.
 
     살 씬보다 많은 워커는 만들지 않는다. 스레드가 놀 뿐이지만, 실행 기록의 `workers`가
     실제로 돈 수와 달라지면 나중에 실측을 그 숫자로 읽게 된다.
@@ -393,10 +442,12 @@ def _generate_scene(
             continue
 
         _write_bytes(image_path, image.data)
+        candidates = _write_candidates(image, image_path)
         return {
             "scene_id": request.scene_id,
             "status": GENERATED,
             "file": f"{IMAGES_DIR}/{image_path.name}",
+            "candidates": candidates,
             "digest": request.digest,
             "attempts": attempt,
             "errors": errors,
@@ -407,6 +458,7 @@ def _generate_scene(
         "scene_id": request.scene_id,
         "status": FAILED,
         "file": None,
+        "candidates": [],
         "digest": request.digest,
         "attempts": MAX_ATTEMPTS,
         "errors": errors,
@@ -463,6 +515,38 @@ def _merge_records(
         if entry is not None:
             merged.append(entry)
     return merged
+
+
+def _video_sources(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`image_source.json`의 `scenes` — 영상 입력이 있는 씬만 (ADR-0041).
+
+    빠지는 씬이 둘이다.
+
+    - **인접 씬 폴백 씬** (`status: fallback`). 그 그림은 옆 씬의 복사본이라 자기 잡이
+      없다. 원본의 잡 id를 빌려 주지 않는 이유는 ADR-0041 결정 2에 있다 — 같은 그림으로
+      영상이 두 번 나오면 스펙 03의 역방향 워크를 걸 자리가 없어진다
+    - **잡 id를 내지 않는 프로바이더.** `engine.request_id`가 비면 그 씬은 담지 않는다
+
+    널 필드를 두지 않는 것이 요점이다. `[7]`의 규칙이 "항목이 없으면 강등" 한 줄이 된다.
+    """
+    sources: list[dict[str, Any]] = []
+    for record in records:
+        if record.get("status") not in REUSABLE:
+            continue
+        task_id = (record.get("engine") or {}).get("request_id")
+        if not task_id:
+            continue
+        sources.append(
+            {
+                "scene_id": record["scene_id"],
+                "task_id": str(task_id),
+                # `[6]`은 항상 q0을 `images/{scene_id}`에 복사한다 (specs/05).
+                # 바꿔 끼우는 것은 `[6r]` 몫이고 그때 이 값이 갱신된다.
+                "quadrant": 0,
+                "set_by": STAGE,
+            }
+        )
+    return sources
 
 
 def _record_document(
@@ -525,6 +609,7 @@ def run_imagegen_stage(
     style = prompts["style"]
     images_dir = run_dir / IMAGES_DIR
     record_path = run_dir / RECORD_FILE
+    source_path = run_dir / SOURCE_FILE
 
     # slug는 편의 인자라 없을 수 있다. state.json에 slug: null을 심지 않는다.
     seed: dict[str, Any] = {"topic": topic}
@@ -605,14 +690,23 @@ def run_imagegen_stage(
         씬만 쓰면, 3번 씬에서 죽는 순간 4~27번의 지문이 사라진다 — 이미지는 디스크에
         멀쩡히 있는데 다음 실행이 전부 다시 산다.
         """
+        merged = _merge_records(prompts, records, previous)
         write_text(
             record_path,
             dump_json(
                 _record_document(
-                    prompts, _merge_records(prompts, records, previous),
+                    prompts, merged,
                     client=images, anchors=anchors, anchor_dir=anchor_dir,
                     warnings=warnings,
                 )
+            ),
+        )
+        # 계약과 기록을 같은 자리에서 쓴다 (ADR-0041). 갈라지면 `[7]`이 없는 그림의
+        # 잡 id로 영상을 만들게 되는데, 그것은 실패가 아니라 **다른 그림**이다.
+        write_text(
+            source_path,
+            dump_json(
+                build_image_source(run_id, images.name, _video_sources(merged))
             ),
         )
 
@@ -705,6 +799,7 @@ def run_imagegen_stage(
         "warnings": warnings,
         "outputs": [
             record_path.relative_to(paths.root).as_posix(),
+            source_path.relative_to(paths.root).as_posix(),
             f"{run_dir.relative_to(paths.root).as_posix()}/{IMAGES_DIR}/",
         ],
     }

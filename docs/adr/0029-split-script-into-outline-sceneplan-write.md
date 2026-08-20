@@ -2,7 +2,7 @@
 
 - 상태: **승인** (2026-08-13. 스펙·계약·구현 반영 완료. `stages/script.py`와
   `prompts/05-script.md`는 지웠다 — 코드는 소모품이다, ADR-0034 §1)
-- 날짜: 2026-08-13 (**같은 날 개정** — 아래 «개정 이력»)
+- 날짜: 2026-08-13 (**같은 날 개정** — 아래 «개정 이력». **재진입 규칙은 ADR-0044가 대체** — 3분할 자체는 유지)
 - 관련 스펙: specs/01-script-template.md, specs/02-beat-schema.md, specs/05-pipeline.md
 - 관련 ADR: ADR-0003(대본+태그 한 번에), ADR-0014(세션 3필드), ADR-0018, ADR-0022(visual_goal), ADR-0028(subject_anchor)
 - **이 ADR을 개정한 것**: ADR-0033(구조·연출 자유화), ADR-0034(계약을 `specs/schema/`로)

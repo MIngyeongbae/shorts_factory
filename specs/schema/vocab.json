@@ -147,42 +147,48 @@
       }
     },
     "camera": {
-      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다.",
+      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다. `video_prompt`는 `[7]`이 영상 프로바이더에 보내는 영어 구절이다 (ADR-0039) — 같은 워크를 FFmpeg zoompan과 i2v 양쪽에 쓰므로 출처가 하나여야 한다. 느린 줌·틸트·팬만인 것은 그대로다.",
       "slow_zoom_in": {
-        "gloss": "느린 줌 인"
+        "gloss": "느린 줌 인",
+        "video_prompt": "slow push in toward the subject"
       },
       "slow_zoom_out": {
-        "gloss": "느린 줌 아웃"
+        "gloss": "느린 줌 아웃",
+        "video_prompt": "slow pull back from the subject"
       },
       "tilt_down": {
-        "gloss": "느린 틸트 다운"
+        "gloss": "느린 틸트 다운",
+        "video_prompt": "slow downward tilt"
       },
       "tilt_up": {
-        "gloss": "느린 틸트 업"
+        "gloss": "느린 틸트 업",
+        "video_prompt": "slow upward tilt"
       },
       "pan_left": {
-        "gloss": "느린 팬 좌"
+        "gloss": "느린 팬 좌",
+        "video_prompt": "slow pan to the left"
       },
       "pan_right": {
-        "gloss": "느린 팬 우"
+        "gloss": "느린 팬 우",
+        "video_prompt": "slow pan to the right"
       },
       "static": {
-        "gloss": "고정"
+        "gloss": "고정",
+        "video_prompt": "locked-off camera, only the subject's own motion"
       }
     },
     "motion": {
-      "_role": "씬 이미지를 화면 움직임으로 옮기는 방식. 유체 모션(물·비·안개·불)이 서사상 필요한 씬에만 영상을 쓴다 (ADR-0006).",
+      "_role": "씬 이미지를 화면 움직임으로 옮기는 방식. **전 씬을 영상으로 만든다** (ADR-0039이 ADR-0006 하이브리드를 폐기했다) — relax 엔드포인트라 GPU를 쓰지 않아 편당 상한이 없다. 기본값은 beat-defaults.json이 들고 있고, 씬이 값을 비우면 영상이 된다. kenburns는 선택지가 아니라 강등 결과다.",
       "kenburns": {
-        "gloss": "이미지 + FFmpeg zoompan (기본값)",
+        "gloss": "이미지 + FFmpeg zoompan. 선택지가 아니라 mj_video의 강등 결과다 (ADR-0039)",
         "degrade": []
       },
       "mj_video": {
-        "gloss": "MJ 프록시 fast 엔드포인트 (ADR-0025 §3). 이미지(relax)와 달리 GPU 시간을 쓴다",
+        "gloss": "MJ 프록시 relax 엔드포인트 (ADR-0039). GPU를 쓰지 않아 편당 상한이 없다 — 전 씬 기본값이다",
         "degrade": [
           "kenburns",
           "static"
-        ],
-        "max_scenes": 10
+        ]
       },
       "kling": {
         "gloss": "Kling v2.6급 i2v. MJ가 막혔을 때 돌아갈 곳이라 남긴다 (ADR-0006, ADR-0025)",
@@ -340,18 +346,25 @@
       }
     },
     "style": {
-      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0023, ADR-0033 '무엇이 채널 일관성을 지키는가' 1번). 실호출로 검증한 값이라 글자 하나를 바꾸면 재검증이 필요하다 — D5(architectural 중립화)가 그 이유로 미결이다.",
-      "base_style": "photorealistic architectural rendering on white paper, mixed media: the focal subject rendered with true-to-life detail, materials and lighting; colour laid in as controlled watercolour washes over fine graphite and technical-pen underdrawing, with construction and guide lines left visible; realism dominant over painterly looseness; detail and colour fall away toward the edges into bare paper",
-      "composition": "vertical 9:16; subject placed in the centre to upper third; bottom third left empty for subtitles",
+      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0023, ADR-0033 '무엇이 채널 일관성을 지키는가' 1번). 실호출로 검증한 값이라 글자 하나를 바꾸면 재검증이 필요하다 — D5(architectural 중립화)가 그 이유로 미결이다. 2026-08-19에 ADR-0038이 종이 절 둘을 걷었다 — `on white paper` 삭제, 가장자리 페이드 → 배경 채움. 수채·흑연·펜 절은 건드리지 않았다 (그 절이 스케치 느낌의 유일한 출처다).",
+      "base_style": "photorealistic architectural rendering, mixed media: the focal subject rendered with true-to-life detail, materials and lighting; colour laid in as controlled watercolour washes over fine graphite and technical-pen underdrawing, with construction and guide lines left visible; realism dominant over painterly looseness; the full environment and sky rendered edge to edge with no blank margins",
+      "composition": "vertical 9:16",
       "aspect_ratio": "9:16",
       "resolution": "2K",
       "style_anchor_dir": "assets/style_anchors",
       "negatives": {
-        "_role": "어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서 실호출로 검증된 값이고(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 기계적으로 유도하지 않는다.",
+        "_role": "어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서 실호출로 검증된 값이고(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 기계적으로 유도하지 않는다. 종이 7항목은 ADR-0038이 더했다 — 스타일에서 종이 절을 빼는 것만으로는 4장 중 3장에 종이 가장자리가 남았다(F 실측). **금지는 의존이 아니다** — 이미지에 글자나 종이가 들어가면 안 되는 것은 자막이 없어도 유효하다.",
         "nb2": [
           "burned-in subtitles or caption bars",
           "sparkle particle overlay",
-          "any legible or handwritten text, letters, numbers or annotation scribbles"
+          "any legible or handwritten text, letters, numbers or annotation scribbles",
+          "white paper background",
+          "paper texture",
+          "paper edges",
+          "sheet of paper",
+          "blank margins",
+          "vignette border",
+          "framed artwork"
         ],
         "mj": [
           "burned-in subtitles",
@@ -361,9 +374,17 @@
           "handwritten text",
           "letters",
           "numbers",
-          "annotation scribbles"
+          "annotation scribbles",
+          "white paper background",
+          "paper texture",
+          "paper edges",
+          "sheet of paper",
+          "blank margins",
+          "vignette border",
+          "framed artwork"
         ]
-      }
+      },
+      "_composition": "레이아웃 지시는 없다 (ADR-0038). 자막 자리를 비우라는 절이 있었는데 실측에서 먹지 않았고(4/4 안 비움), 비워진 만큼은 그림이 아니라 종이였다. 자막 가독성은 `[9]`가 외곽선·그림자로 책임진다 — 단계는 하류의 편의를 위해 자기 산출물을 깎지 않는다 (specs/05 D-6)."
     }
   }
 }

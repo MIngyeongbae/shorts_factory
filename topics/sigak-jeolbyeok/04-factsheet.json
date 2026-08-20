@@ -1,0 +1,530 @@
+{
+  "topic": "시각 절벽",
+  "verdict": "pass",
+  "conditions": {
+    "twist": true,
+    "failed_alternative": true,
+    "numbers": true,
+    "present_link": false
+  },
+  "facts": [
+    {
+      "id": "f01",
+      "claim": "시각 절벽의 최초 발표는 1960년 Scientific American이 아니라 1957년 7월 12일자 Science 126권 3263호 80~81쪽에 실린 Walk·Gibson·Tighe의 논문 'Behavior of Light- and Dark-Reared Rats on a Visual Cliff'이며, 이 논문의 저자 순서는 Walk가 앞이다.",
+      "numbers": [
+        "1957년 7월 12일",
+        "126권 3263호",
+        "80~81쪽"
+      ],
+      "source": "Walk, Gibson & Tighe, Science 126(3263), 1957 (PubMed 13442652)",
+      "confidence": "high"
+    },
+    {
+      "id": "f02",
+      "claim": "널리 알려진 원논문 'The Visual Cliff'는 1960년 4월 Scientific American 202권 4호 64~71쪽에 실렸다(DOI 10.1038/scientificamerican0460-64).",
+      "numbers": [
+        "1960년 4월",
+        "202권 4호",
+        "64~71쪽"
+      ],
+      "source": "Scientific American 공식 아카이브",
+      "confidence": "high",
+      "notes": "일부 2차 자료는 67~71쪽으로 표기하나 위키백과·SciAm·ConductScience가 일치하는 64~71쪽 채택"
+    },
+    {
+      "id": "f03",
+      "claim": "1960년 논문 인쇄본의 저자 표기는 'Eleanor J. Gibson and Richard D. Walk' 순이며, Scientific American 웹 아카이브가 Walk를 앞세운 것은 메타데이터 오류다.",
+      "numbers": [
+        "1960년"
+      ],
+      "source": "1960년 인쇄본 표제 스캔·고서점 목록 대조 (검증 자료)",
+      "confidence": "high"
+    },
+    {
+      "id": "f04",
+      "claim": "1960년 원기사의 부제는 이 장치를 '여러 동물의 깊이 지각을 조사하는 간단한 장치'로 소개하며, 지금까지 시험한 모든 종이 스스로 움직일 수 있게 되자마자 급격한 낙차를 지각하고 피하는 것으로 보인다고 요약했다.",
+      "numbers": [
+        "1960년"
+      ],
+      "source": "Scientific American 공식 아카이브 (1960.4, 부제 원문)",
+      "confidence": "high"
+    },
+    {
+      "id": "f05",
+      "claim": "시각 절벽의 첫 피험자는 쥐였고, 인간 영아 외에도 병아리·거북·양·새끼 염소·돼지·새끼 고양이·개·성체 닭·원숭이 등 광범위한 동물이 시험됐다.",
+      "numbers": [],
+      "source": "Rodkey, Journal of the History of the Behavioral Sciences 51(2), 2015, 113-140 초록; 영문 위키백과 Visual cliff",
+      "confidence": "high"
+    },
+    {
+      "id": "f06",
+      "claim": "시각 절벽은 단일 실험이 아니라, 종에 맞춰 방법을 바꾸고 장치를 변형해 가며 수행한 일련의 실험군이었다.",
+      "numbers": [],
+      "source": "Rodkey 2015 전문 ('a series of experiments, employing varying methods and an evolving apparatus')",
+      "confidence": "high",
+      "notes": "조사 단계에서 유통된 다른 형태의 영문 인용문은 원문에 존재하지 않아 인용 불가"
+    },
+    {
+      "id": "f07",
+      "claim": "시각 절벽 장치는 3개월간 암흑 사육한 마지막 쥐 19마리를 더 활용하려던 두 번째 과제에서 나왔고, 깁슨과 연구조교 Thomas Tighe가 실험실에 있던 재료로 급조했다.",
+      "numbers": [
+        "3개월",
+        "19마리"
+      ],
+      "source": "Rodkey 2015 전문",
+      "confidence": "high"
+    },
+    {
+      "id": "f08",
+      "claim": "첫 실험에서 암흑 사육 쥐는 깊은 쪽을 일관되게 회피했고, 그 일관성이 예상 밖이어서 연구진은 외풍·냄새 같은 편향을 의심했다. 깊은 쪽 유리 바로 밑에 벽지를 대어 광학적 깊이를 없앤 통제 조건에서야 쥐들이 양쪽을 가리지 않고 다녔으며, Tighe는 '보지 않았으면 믿지 않았을 것'이라고 말했다.",
+      "numbers": [],
+      "source": "Rodkey 2015 전문; Walk·Gibson·Tighe, Science 126(3263), 1957",
+      "confidence": "high",
+      "notes": "'첫 쥐 실험은 실패했다(양쪽을 아무렇지 않게 배회)'는 위키백과발 서술은 검증에서 사실과 반대로 기각됨 — 대본 사용 금지"
+    },
+    {
+      "id": "f09",
+      "claim": "'그랜드캐니언 가족 여행에서 시각 절벽을 착안했다'는 이야기는 깁슨 본인이 명시적으로 부정한 신화다. 실제 방문은 1946년이었고 당시 자녀는 2세와 6세로 기어다니는 영아가 아니었다.",
+      "numbers": [
+        "1946년",
+        "2세",
+        "6세"
+      ],
+      "source": "Rodkey 2015 전문 (깁슨 회고 'Contrary to a popular myth, this occasion was not the inspiration' 인용)",
+      "confidence": "high"
+    },
+    {
+      "id": "f10",
+      "claim": "심리학사가 로드키는 교과서의 시각 절벽 서술을 '거짓말로서의 신화'가 아니라 '단순화로서의 신화'로 규정하고, 지속되는 오류 두 가지로 그랜드캐니언 착상설과 본성-양육 논쟁용 설계설을 지목했다.",
+      "numbers": [
+        "두 가지"
+      ],
+      "source": "Rodkey 2015 전문",
+      "confidence": "high"
+    },
+    {
+      "id": "f11",
+      "claim": "깁슨이 코넬 Behavior Farm에서 Howard Liddell 지도로 갓 태어난 새끼 염소를 관찰한 일화는 시각 절벽의 직접적 착상 계기가 아니라 '좋은 예비 경험'이었을 뿐이다.",
+      "numbers": [],
+      "source": "Rodkey 2015 전문",
+      "confidence": "high"
+    },
+    {
+      "id": "f12",
+      "claim": "장치는 두꺼운 유리 상판 아래 체크무늬 천을 한쪽은 유리 바로 밑에, 다른 쪽은 약 4피트(약 1.2m) 아래에 두어, 떨어질 가능성이 전혀 없는 가짜 낙차를 만든 것이다.",
+      "numbers": [
+        "약 4피트",
+        "약 1.2m"
+      ],
+      "source": "영문 위키백과 Visual cliff; Gibson & Walk 1960 장치 서술",
+      "confidence": "high",
+      "notes": "장치 세부 치수는 사료 간 불일치('40인치', '바닥에서 1피트' 등) — 원문 미대조로 낙차 '약 4피트'만 채택, 그 외 치수 사용 금지"
+    },
+    {
+      "id": "f13",
+      "claim": "선행 방법이던 래슐리 점프대 실험(Lashley & Russell, 1934)은 암흑에서 100일간 기른 쥐를 20~40cm 떨어진 발판으로 뛰게 한 것이었다.",
+      "numbers": [
+        "1934년",
+        "100일",
+        "20~40cm"
+      ],
+      "source": "Lashley & Russell, The Journal of Genetic Psychology 45, 1934, 136-144",
+      "confidence": "high"
+    },
+    {
+      "id": "f14",
+      "claim": "래슐리 점프대 연구는 실패작이 아니라 쥐의 깊이 지각이 선천적이라고 결론지은 연구였다. 다만 점프가 연습이 필요한 운동기술이라 사전 훈련 중 시각·운동 학습이 혼입된다는 방법론적 비판이 후대(Epstein, 1964)에 제기됐고, 시각 절벽은 사전 훈련이 전혀 필요 없다는 점이 강점이었다.",
+      "numbers": [
+        "1964년"
+      ],
+      "source": "Epstein, Psychological Bulletin 61(2), 1964, 115-128 (검증 자료 정정)",
+      "confidence": "medium"
+    },
+    {
+      "id": "f15",
+      "claim": "후드 쥐는 코끝의 뻣뻣한 수염(vibrissae)으로 유리를 만질 수 있는 한 시각 절벽에서 어느 쪽도 선호하지 않았다.",
+      "numbers": [],
+      "source": "Gibson & Walk 1960 (영문 위키백과 경유)",
+      "confidence": "medium",
+      "notes": "'수염이 첫 실험 실패의 원인이었고 중앙 판을 올려 해결했다'는 인과 서사는 검증에서 근거 없음으로 기각 — 사용 금지"
+    },
+    {
+      "id": "f16",
+      "claim": "중앙 판 높이는 예비 시험의 1.5인치에서 2.5인치로 올렸는데, 목적은 쥐가 뛰어내리려는 성향을 억제해 주로 시각 단서를 쓰게 하기 위함이었다.",
+      "numbers": [
+        "1.5인치",
+        "2.5인치"
+      ],
+      "source": "Rodkey 2015 전문",
+      "confidence": "high"
+    },
+    {
+      "id": "f17",
+      "claim": "중앙 판을 올린 조건에서 쥐의 95~100%가 얕은 쪽으로 내려왔다.",
+      "numbers": [
+        "95~100%"
+      ],
+      "source": "Gibson & Walk 1960 원문 (검색 스니펫으로 문장 단위 확보, PDF 전문 미대조)",
+      "confidence": "medium"
+    },
+    {
+      "id": "f18",
+      "claim": "인간 영아 실험에는 생후 6~14개월 아기 36명이 참가했고, 중앙 판에서 실제로 기어 내려온 27명 가운데 유리로 덮인 깊은 쪽으로 기어간 아기는 3명뿐이었다.",
+      "numbers": [
+        "6~14개월",
+        "36명",
+        "27명",
+        "3명"
+      ],
+      "source": "영문 위키백과 Visual cliff; National Science and Technology Medals Foundation Gibson 페이지",
+      "confidence": "high",
+      "notes": "9명은 판에서 내려오지도 않았으므로 '92%가 거부했다'는 표현은 부정확 — 사용 주의"
+    },
+    {
+      "id": "f19",
+      "claim": "하루 된 병아리와 갓 태어난 양·새끼 염소는 생후 24시간 이내에도 깊은 쪽으로 건너지 않았고, 손으로 깊은 쪽에 놓으면 방어 자세로 얼어붙었다.",
+      "numbers": [
+        "24시간"
+      ],
+      "source": "SimplyPsychology (Gibson & Walk 1960 요약, 원문 미대조)",
+      "confidence": "medium"
+    },
+    {
+      "id": "f20",
+      "claim": "수생 거북은 76%만 얕은 쪽으로 내려와 시험 동물 가운데 성적이 가장 낮았다.",
+      "numbers": [
+        "76%"
+      ],
+      "source": "Gibson & Walk 1960 (영문 위키백과 경유)",
+      "confidence": "medium",
+      "notes": "위키백과가 각주로 단 Fantz(1961)는 오류로 판정 — 원출처는 Gibson & Walk 1960"
+    },
+    {
+      "id": "f21",
+      "claim": "새끼 고양이는 스스로 능숙하게 움직이는 최초 시점인 생후 4주에 얕은 쪽을 선호했고, 27일간 암흑에서 기른 고양이는 처음엔 선호가 없다가 약 1주간 빛에 노출된 뒤 명 사육 고양이와 같아졌다.",
+      "numbers": [
+        "4주",
+        "27일",
+        "약 1주"
+      ],
+      "source": "영문 위키백과 Visual cliff; SimplyPsychology",
+      "confidence": "medium"
+    },
+    {
+      "id": "f22",
+      "claim": "깊은 쪽을 유리로 덮은 탓에 아기가 건너기 전에 유리의 단단함을 촉각으로 확인할 수 있었고, 이 때문에 순수하게 시각만 검증한 것이 아니라는 비판이 반복적으로 제기됐다.",
+      "numbers": [],
+      "source": "영문 위키백과 Visual cliff 비판 절",
+      "confidence": "high"
+    },
+    {
+      "id": "f23",
+      "claim": "깁슨과 워크의 초기 결론은 벼랑을 지각하고 피하는 능력이 아이의 '타고난 자질(original endowment)'의 일부라는 것이었다.",
+      "numbers": [],
+      "source": "LoBue & Adolph 리뷰 (PMC6716607)에 인용된 원문",
+      "confidence": "high"
+    },
+    {
+      "id": "f24",
+      "claim": "Campos·Langer·Krowitz(1970)의 실험에서 기어다니기 전 영아를 깊은 쪽 위에 직접 올려놓자 심박이 빨라지는 대신 오히려 느려졌는데(감속), 이는 공포가 아니라 관심·주의 반응의 지표다.",
+      "numbers": [
+        "1970년"
+      ],
+      "source": "Campos, Langer & Krowitz, Science 170(3954), 1970, 196-197",
+      "confidence": "high"
+    },
+    {
+      "id": "f25",
+      "claim": "Campos 등(1970)의 같은 실험에서 어린 영아의 울음 등 불편 반응은 깊은 쪽보다 얕은 쪽에서 더 자주 나타났다.",
+      "numbers": [
+        "1970년"
+      ],
+      "source": "Campos, Langer & Krowitz, Science 170(3954), 1970 초록",
+      "confidence": "medium",
+      "notes": "단일 출처, 검증 단계 재확인 실패 (초록 절단 추정)"
+    },
+    {
+      "id": "f26",
+      "claim": "'무서워서 피한다'는 설명은 순환논증이라는 지적을 받았다 — 아기가 무섭다는 증거가 회피 행동뿐이고, 회피의 이유를 다시 공포로 설명하기 때문이다.",
+      "numbers": [],
+      "source": "LoBue & Adolph, 'Fear in Infancy' (PMC6716607)",
+      "confidence": "high"
+    },
+    {
+      "id": "f27",
+      "claim": "아기들은 벼랑 끝에서 뒷걸음질치지 않는다. 시각 절벽·실제 절벽·경사로·틈새 실험 모두에서 시행 시간 대부분을 가장자리에 붙어 아래를 들여다보고 허공으로 팔을 뻗으며 보낸다.",
+      "numbers": [],
+      "source": "LoBue & Adolph (PMC6716607)",
+      "confidence": "high"
+    },
+    {
+      "id": "f28",
+      "claim": "아기들은 벼랑 끝에서 전형적인 공포 표정을 짓지 않고 주로 중립적이거나 긍정적인 표정을 보이며, 종종 웃는다.",
+      "numbers": [],
+      "source": "LoBue & Adolph (PMC6716607)",
+      "confidence": "high"
+    },
+    {
+      "id": "f29",
+      "claim": "엘리너 깁슨 본인도 '동물이 깊은 쪽을 무서워하는 것처럼 보여 놀란 적이 한 번도 없었다'고 회고했고, 낙차에 대한 공포는 스스로 이동을 시작한 뒤에 학습되는 것으로 보았다.",
+      "numbers": [],
+      "source": "LoBue & Adolph (PMC6716607)에 인용된 깁슨 회고",
+      "confidence": "high"
+    },
+    {
+      "id": "f30",
+      "claim": "애돌프·크레치·로뷰(2014)는 회피와 공포가 혼동돼 왔으며 인간 영아의 고소공포를 뒷받침하는 설득력 있는 증거가 없다고 결론지었다.",
+      "numbers": [
+        "2014년"
+      ],
+      "source": "Adolph, Kretch & LoBue, Current Directions in Psychological Science 23(1), 2014, 60-66 초록",
+      "confidence": "high"
+    },
+    {
+      "id": "f31",
+      "claim": "기어다닌 지 2주면 깊은 쪽에서 심박 가속이 나타나지만 실제 회피는 6주 이상 경험한 뒤에야 나타나고, 심박이 뛰던 바로 그 아기가 몇 분 뒤 건너기 과제에서는 깊은 쪽으로 기어간다.",
+      "numbers": [
+        "2주",
+        "6주"
+      ],
+      "source": "LoBue & Adolph (PMC6716607)",
+      "confidence": "high"
+    },
+    {
+      "id": "f32",
+      "claim": "Kretch & Adolph(2013)의 실험에서 기기에 숙련된 12개월 아기는 위험한 낙차를 거부했지만, 갓 걷기 시작한 12개월 아기는 90cm 낙차까지도 그대로 걸어 내려가려 했다 — 회피는 자세별로 새로 학습된다. 세 집단 표본은 16·17·18명(총 51명)이었다.",
+      "numbers": [
+        "2013년",
+        "12개월",
+        "90cm",
+        "16명",
+        "17명",
+        "18명",
+        "51명"
+      ],
+      "source": "Kretch & Adolph, Child Development 84(1), 2013, 226-240 초록; SRCD 보도자료",
+      "confidence": "high"
+    },
+    {
+      "id": "f33",
+      "claim": "걷기에 숙련된 18개월 아기는 위험한 낙차를 걸어서 내려가지는 않았지만, 앉아서 내려가는 등 다른 방식으로는 내려갔다 — '금지'가 아니라 '방법 선택'이다.",
+      "numbers": [
+        "18개월"
+      ],
+      "source": "SRCD 보도자료 'Infants' Avoidance of Drop-Off Reflects Specific Motor Ability, Not Fear'",
+      "confidence": "high"
+    },
+    {
+      "id": "f34",
+      "claim": "연구를 이끈 카렌 애돌프는 '아기가 낙차를 피하게 되는 이유가 고소공포라는 고전적 설명은 틀렸다'고 직접 밝혔다.",
+      "numbers": [],
+      "source": "SRCD 보도자료 (직접 인용문)",
+      "confidence": "high"
+    },
+    {
+      "id": "f35",
+      "claim": "애돌프의 대안 설명은 어포던스 지각이다 — 아기는 자기 몸과 기술 대 환경의 성질의 관계를 지각해 내려갈 수 있는지 판단하며, 이 학습은 경험한 자세별로 새로 이뤄진다.",
+      "numbers": [],
+      "source": "Kretch & Adolph 2013; Adolph, Kretch & LoBue 2014",
+      "confidence": "high"
+    },
+    {
+      "id": "f36",
+      "claim": "Witherington 등(2005)은 걷기 전 기는 영아 20명과 갓 걷는 영아 20명을 비교해 갓 걷는 영아가 오히려 더 일관되게 깊은 쪽을 회피했다고 보고했는데, 이는 초보 보행아가 낙차로 걸어 나간다는 Kretch & Adolph(2013)의 결과와 상반된다.",
+      "numbers": [
+        "2005년",
+        "20명",
+        "2013년"
+      ],
+      "source": "Witherington et al., Infancy 7(3), 2005, 285-298",
+      "confidence": "high",
+      "notes": "반대 학설로 기록 — 대본이 한쪽만 단정하지 않도록 주의"
+    },
+    {
+      "id": "f37",
+      "claim": "Dahl 등(2013)의 실험에서 무작위로 전동 이동장치 훈련을 받은 기기 전 영아 집단은 대조군보다 시각적 자기수용감각과 고소 경계심이 유의하게 높았고, 시각적 자기수용감각이 이동 경험과 고소 경계심의 관계를 매개했다.",
+      "numbers": [
+        "2013년"
+      ],
+      "source": "Dahl et al., Psychological Science 24(7), 2013, 1361-1367 초록",
+      "confidence": "high",
+      "notes": "표본 수·훈련 시간·심박 등 세부 수치는 원문 미확인 — 사용 금지"
+    },
+    {
+      "id": "f38",
+      "claim": "Sorce 등(1985)의 실험에서 12개월 아기는 30cm의 애매한 낙차 앞에서 엄마 얼굴을 확인하고 행동을 결정했다. 엄마가 기쁨 표정이면 74%가 건넜지만, 공포 표정이면 한 명도 건너지 않았다(0명).",
+      "numbers": [
+        "1985년",
+        "12개월",
+        "30cm",
+        "74%",
+        "0명"
+      ],
+      "source": "Sorce, Emde, Campos & Klinnert, Developmental Psychology 21(1), 1985, 195-200; 수치는 Karasik et al. 2016 (오픈액세스) 인용으로 확정",
+      "confidence": "high",
+      "notes": "낙차를 '30인치'로 적은 2차 자료가 있으나 Karasik et al. 2016이 30cm로 명시 — 30cm 채택"
+    },
+    {
+      "id": "f39",
+      "claim": "Sorce 등(1985)의 실험에서 엄마가 슬픔 표정일 때는 아기의 33%가 건넜다.",
+      "numbers": [
+        "1985년",
+        "33%"
+      ],
+      "source": "2차 리뷰(Walle 등 사회적 참조 리뷰) 경유, 원논문 미대조",
+      "confidence": "medium",
+      "notes": "분노 조건은 6%와 11%로 자료가 상충해 채택 불가, 흥미 조건(약 73~75%)도 미확인 — 둘 다 사용 금지"
+    },
+    {
+      "id": "f40",
+      "claim": "Karasik 등(2016)은 Sorce 등(1985) 설계의 한계로 단일 낙차 높이, 30cm가 애매하지 않고 이미 위험했을 가능성, 1회 시행, 연출된 표정의 부자연스러움, 안전 유리 탓에 떨어져도 아무 결과가 없는 점, 단일 연령군을 지적했다.",
+      "numbers": [
+        "2016년",
+        "1985년",
+        "30cm",
+        "1회"
+      ],
+      "source": "Karasik et al., Frontiers in Psychology 7:797, 2016 전문",
+      "confidence": "high"
+    },
+    {
+      "id": "f41",
+      "claim": "Karasik 등(2016)은 12개월 숙련 기기 11명, 12개월 초보 보행 10명, 18개월 숙련 보행 9명을 0~90cm를 1cm 단위로 조절하는 유리 없는 실제 낙차 장치로 시험했다. 초보 보행아는 엄마가 말리는데도 위험한 높이를 자주 시도한 반면, 경험 많은 아기는 지각 정보가 애매할 때만 엄마의 신호에 의존했다.",
+      "numbers": [
+        "2016년",
+        "12개월",
+        "11명",
+        "10명",
+        "18개월",
+        "9명",
+        "0~90cm",
+        "1cm"
+      ],
+      "source": "Karasik et al., Frontiers in Psychology 7:797, 2016; SRCD 보도자료",
+      "confidence": "high"
+    },
+    {
+      "id": "f42",
+      "claim": "깁슨이 예일에서 로버트 여키스의 침팬지 연구실에 합류하려 하자 여키스는 '내 연구실에는 여성이 없다(I have no women in my laboratory)'며 거절했다.",
+      "numbers": [],
+      "source": "National Science and Technology Medals Foundation, Eleanor J. Gibson 페이지 (인용문 원문)",
+      "confidence": "high"
+    },
+    {
+      "id": "f43",
+      "claim": "깁슨은 1949년 남편 제임스 깁슨의 코넬대 부임과 함께 옮겨왔으나 친족 채용 금지 규정 때문에 무급 연구원으로 일했고, 1966년에야 교수가 됐으며 1972년 Susan Linn Sage 석좌교수가 됐다.",
+      "numbers": [
+        "1949년",
+        "1966년",
+        "1972년"
+      ],
+      "source": "영문 위키백과 Eleanor J. Gibson",
+      "confidence": "high"
+    },
+    {
+      "id": "f44",
+      "claim": "엘리너 J. 깁슨은 1910년 12월 7일 일리노이주 피오리아에서 태어나 2002년 12월 30일 사망했고, 스미스 칼리지 학사(1931)·석사(1933)를 거쳐 1938년 예일대에서 Clark L. Hull 지도로 박사학위를 받았다.",
+      "numbers": [
+        "1910년 12월 7일",
+        "2002년 12월 30일",
+        "1931년",
+        "1933년",
+        "1938년"
+      ],
+      "source": "영문 위키백과 Eleanor J. Gibson",
+      "confidence": "high"
+    },
+    {
+      "id": "f45",
+      "claim": "깁슨은 1968년 APA 우수과학공헌상, 1986년 미국심리학재단 금메달을 받았고, 1992년 조지 H. W. 부시로부터 미국 국가과학훈장을 받았다.",
+      "numbers": [
+        "1968년",
+        "1986년",
+        "1992년"
+      ],
+      "source": "영문 위키백과 Eleanor J. Gibson; National Science and Technology Medals Foundation",
+      "confidence": "high"
+    },
+    {
+      "id": "f46",
+      "claim": "깁슨의 명제는 '우리는 지각하기 위해 배울 뿐 아니라, 배우기 위해 지각한다(We perceive to learn, as well as learn to perceive)'이다.",
+      "numbers": [],
+      "source": "National Science and Technology Medals Foundation, Gibson 페이지",
+      "confidence": "high"
+    },
+    {
+      "id": "f47",
+      "claim": "공동 연구자 리처드 D. 워크(1920~1999)의 문서 컬렉션은 2015년부터 아크론대 커밍스 심리학사 센터에서 연구자에게 공개돼 있으며, 깊이 지각 연구와 함께 공수부대원·운동선수의 공포·불안 연구, 와인 시음 실험 기록까지 포함한다.",
+      "numbers": [
+        "1920~1999",
+        "2015년"
+      ],
+      "source": "Cummings Center for the History of Psychology 블로그 (2015.1.26); American Psychologist 부고 서지",
+      "confidence": "high"
+    },
+    {
+      "id": "f48",
+      "claim": "육군 참전자였던 워크는 공수부대원 공포 연구에서 자신이 직접 시범 강하를 했다.",
+      "numbers": [],
+      "source": "Cummings Center 블로그 (2015.1.26)",
+      "confidence": "medium"
+    },
+    {
+      "id": "f49",
+      "claim": "코넬대 희귀본·필사본 컬렉션의 Eleanor Gibson Papers(#14-23-2658, 21 cubic feet, 1906~1999)에는 1961년 바너드 강연용 시각 절벽 자료(Box 1, Folder 26), 시각 절벽 사진·네거티브(Box 11, Folder 43), 'A visual cliff' 비디오카세트(Box 20)가 실물로 남아 있다.",
+      "numbers": [
+        "21 cubic feet",
+        "1906~1999",
+        "1961년"
+      ],
+      "source": "Cornell University Library, Division of Rare and Manuscript Collections 검색도구 RMA02658",
+      "confidence": "high"
+    },
+    {
+      "id": "f50",
+      "claim": "코넬대 디지털 컬렉션에 시각 절벽 실험 영아의 흑백 사진(레코드 ss:1312506, 자료번호 RMC2013_0043)이 온라인 공개돼 있다.",
+      "numbers": [],
+      "source": "Cornell University Library Digital Collections (digital.library.cornell.edu/catalog/ss:1312506)",
+      "confidence": "high"
+    },
+    {
+      "id": "f51",
+      "claim": "시각 절벽은 오늘날에도 설치류 시각 기능 평가용 상용 실험장치로 제작·판매된다(예: ConductScience, $1,490).",
+      "numbers": [
+        "$1,490"
+      ],
+      "source": "ConductScience 'Visual Cliff Test' 제품·프로토콜 페이지 (SKU ME-5201/5202)",
+      "confidence": "high"
+    },
+    {
+      "id": "f52",
+      "claim": "ConductScience 프로토콜 페이지는 Fox(1965)를 근거로 정상 시력 마우스의 80~90% 대 시각 손상 마우스의 50~60%가 얕은 쪽을 선호한다는 범위값을 제시한다.",
+      "numbers": [
+        "1965년",
+        "80~90%",
+        "50~60%"
+      ],
+      "source": "ConductScience 페이지 (상업 페이지 단일 출처)",
+      "confidence": "low",
+      "notes": "조사 자료의 '85% 대 52%' 대표값은 근거 없음으로 기각 — 이 범위값 자체도 low 등급이라 사용 금지"
+    },
+    {
+      "id": "f53",
+      "claim": "Arnold 등(2007)은 헤링본식 착유장이 만드는 시각 절벽 앞에서 젖소(하이퍼) 실험군이 대조군보다 심박이 유의하게 높고 더 자주 멈췄다고 보고했다 — 논문 부제는 '소의 고소공포 증거'다.",
+      "numbers": [
+        "2007년"
+      ],
+      "source": "Arnold et al., Journal of Comparative Psychology 121(4), 2007, 440-446",
+      "confidence": "high"
+    }
+  ],
+  "twist": "'갓난아기도 본능적으로 낭떠러지를 무서워한다'는 통념과 달리, 아기들은 절벽 가장자리에서 공포 표정 없이 종종 웃으며 허공으로 팔을 뻗었고, 현대 연구는 회피와 공포가 혼동됐을 뿐 영아의 고소공포를 뒷받침하는 설득력 있는 증거가 없다고 결론지었다.",
+  "failed_alternatives": [
+    "진짜 낭떠러지에 아기를 데려가는 가장 쉬운 방법은 안전 문제로 애초에 쓸 수 없었다 — 그래서 두꺼운 유리로 떨어질 가능성이 전혀 없는 가짜 절벽을 만들었다.",
+    "선행 표준이던 래슐리 점프대(1934)는 점프가 연습이 필요한 운동기술이라 사전 훈련 중 시각·운동 학습이 혼입된다는 결함이 후대(Epstein 1964)에 지적됐다. 시각 절벽은 사전 훈련이 전혀 필요 없다는 점 때문에 이를 대체했다 — 단, 원 연구 자체는 '실패'가 아니라 선천성 결론까지 낸 연구였으므로 '실패한 방법'이 아니라 '해석이 뒤에 논박된 선행 방법'으로 서술할 것.",
+    "해법이던 유리 자체가 결함이 됐다 — 아기가 유리를 두드려 단단함을 촉각으로 확인할 수 있어 순수 시각 검증이 안 된다는 비판을 받았고, 후대 연구진(Kretch & Adolph)은 유리를 버리고 0~90cm를 1cm 단위로 조절하는 실제 낙차 장치를 만들었다.",
+    "Sorce 등(1985)의 엄마 표정 실험도 단일 높이·1회 시행·연출 표정·안전 유리라는 한계가 후대(Karasik et al. 2016)에 조목조목 지적돼 조절식 실제 낙차 장치로 재검증됐다."
+  ],
+  "present_link": "일반 시청자가 지금 접근 가능한 것은 Scientific American 공식 온라인 아카이브의 1960년 4월호 원문 기사와 코넬대 디지털 컬렉션에 공개된 실험 영아 사진(ss:1312506)뿐이다. 코넬 문서고(Gibson Papers)와 아크론 커밍스 센터(Walk Papers)는 연구자 열람용이고 박물관 실물 전시는 확인되지 않았다 — 비판 판정상 '지금 가서 볼 수 있는' 접점은 불충족이므로, 마무리 구간은 접점 대신 NYU 등 살아 있는 후속 연구 라인으로 대체할 것.",
+  "notes": "① 검증에서 기각된 서사 사용 금지: '첫 쥐 실험은 실패했다(양쪽 배회)'는 사실과 반대(실제로는 첫 실험부터 암흑 쥐가 깊은 쪽을 회피, 배회는 벽지 통제 조건), 그랜드캐니언 착상설은 깁슨 본인이 부정, '수염 실패→중앙판 해결' 인과 서사와 'most healthy respect for the chasm' 문구는 근거 없음. ② 사용 금지 수치: 분노 6%/11%, 흥미 73~75%, 장치 세부 치수(40인치 등), 마우스 85%/52%. ③ 비판 권고는 조건부 진행: 한 편에 두 이야기(장치 탄생기 vs 공포 신화 붕괴기)가 경합하므로 축 하나를 선택해야 하며 킬러 콘텐츠는 후자다. 심박 '감속'과 순환논증은 각각 한 문장 이상의 설명 비용이 든다. ④ 저자 표기는 'Gibson and Walk' 순(웹 아카이브의 역순은 오류). ⑤ 원본 사진·영상 미확보로 전량 일러스트 제작이며, '아기+낙차' 조합은 썸네일 단계에서 아동 위험 연출로 오인될 심의 리스크가 있으므로 유리 위임을 즉시 드러내는 연출 필요."
+}

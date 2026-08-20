@@ -193,7 +193,8 @@ def test_sceneplan_prompt_carries_the_outline_and_the_vocabulary(with_outline):
     prompt = llm.calls[0]["prompt"]
     assert "통짜가 아니다" in prompt, "구성안의 단 이름이 실린다"
     assert "aerial_diorama" in prompt and "slow_zoom_in" in prompt
-    assert "kenburns" in prompt and "dissolve" in prompt
+    assert "dissolve" in prompt
+    assert "kenburns" not in prompt, "[1s]는 motion을 고르지 않는다 (ADR-0039 결정 1)"
 
 
 def test_sceneplan_rejects_sentences_in_says(with_outline):
@@ -342,3 +343,103 @@ def test_build_scenes_refuses_to_write_when_the_copy_drifts():
     plan["scenes"][0]["scene_id"] = 99
     with pytest.raises(ScriptSessionError, match="계획과 대본이 어긋난다|비어 있다"):
         build_scenes(plan, texts, run_id=RUN_ID, topic=TOPIC)
+
+
+# --- 산출 직후 검증 + 씬 단위 재청 (ADR-0044) ----------------------------------
+
+
+def bad_scene_write_output(sid: int = 3) -> str:
+    """씬 하나에만 팩트시트 밖 숫자를 심은 세션 출력."""
+    session = load_fixture("write_session.json")
+    for scene in session["scenes"]:
+        if scene["scene_id"] == sid:
+            scene["text"] = "높이는 999미터에 달합니다."
+    return json.dumps(session, ensure_ascii=False)
+
+
+def fixed_scene_output(sid: int = 3) -> str:
+    """재청 응답 — 실패한 씬만 고쳐 낸다."""
+    session = load_fixture("write_session.json")
+    fixed = next(s for s in session["scenes"] if s["scene_id"] == sid)
+    return json.dumps({"scenes": [fixed]}, ensure_ascii=False)
+
+
+def test_write_retries_only_the_failed_scenes(with_plan):
+    """실패 씬만 같은 세션에 재청한다 — 전체 재집필은 없다 (ADR-0044)."""
+    llm = FakeLLMClient([bad_scene_write_output(), fixed_scene_output()])
+    result = run_write_stage(SLUG, llm=llm, paths=with_plan)
+
+    assert result.valid, result.errors
+    assert len(llm.calls) == 2
+    retry = llm.calls[1]
+    assert retry["resume"] == "fake-1", "재청은 같은 세션을 이어간다 (resume)"
+    assert retry["label"] == "1w-write.retry1"
+    assert "scene_id 3" in retry["prompt"]
+    assert "999" in retry["prompt"], "실패 사유가 재청 지시에 실린다"
+    assert "scene_id 1 " not in retry["prompt"], "통과한 씬은 청하지 않는다"
+
+
+def test_write_retry_is_capped_at_one(with_plan):
+    """재청 상한 1회 — 그래도 남으면 중단·보고이고 더 부르지 않는다."""
+    llm = FakeLLMClient([bad_scene_write_output(), bad_scene_write_output()])
+    result = run_write_stage(SLUG, llm=llm, paths=with_plan)
+
+    assert not result.valid
+    assert len(llm.calls) == 2, "재청은 1회뿐이다"
+    assert any("999" in error for error in result.errors)
+    assert state_of(with_plan, "1w-write")["status"] == "failed"
+    assert state_of(with_plan, "1w-write")["retries"] == 1
+
+
+def test_write_retry_cannot_smuggle_other_scenes(with_plan):
+    """재청이 청하지 않은 씬을 내면 버린다 — 씬 구조는 계획에서만 온다."""
+    session = load_fixture("write_session.json")
+    fixed = next(s for s in session["scenes"] if s["scene_id"] == 3)
+    smuggled = {"scene_id": 1, "text": "몰래 바꾼 첫 줄인데 꽤 긴 문장으로 채웁니다."}
+    retry = json.dumps({"scenes": [fixed, smuggled]}, ensure_ascii=False)
+
+    llm = FakeLLMClient([bad_scene_write_output(), retry])
+    result = run_write_stage(SLUG, llm=llm, paths=with_plan)
+
+    original_first = load_fixture("write_session.json")["scenes"][0]["text"]
+    assert result.scenes["scenes"][0]["text"] == original_first
+
+
+def test_write_passes_without_any_retry(with_plan):
+    """통과하면 재청 세션을 부르지 않는다."""
+    llm = FakeLLMClient([as_text("write_session.json")])
+    result = run_write_stage(SLUG, llm=llm, paths=with_plan)
+
+    assert result.valid
+    assert len(llm.calls) == 1
+    assert state_of(with_plan, "1w-write")["retries"] == 0
+
+
+def test_sceneplan_retries_in_the_same_session(with_outline):
+    """[1s]도 산출 직후 검증에 걸리면 같은 세션에 1회 재청한다 (ADR-0044)."""
+    plan = load_fixture("sceneplan_pass.json")
+    plan["scenes"][0]["says"] = "매년 400만 명이 다녀가는 관광지라는 사실"  # 팩트시트 밖 숫자
+
+    llm = FakeLLMClient([
+        json.dumps(plan, ensure_ascii=False),
+        as_text("sceneplan_pass.json"),
+    ])
+    result = run_sceneplan_stage(SLUG, llm=llm, paths=with_outline)
+
+    assert result.valid, result.errors
+    assert len(llm.calls) == 2
+    assert llm.calls[1]["resume"] == "fake-1"
+    assert "400만" in llm.calls[1]["prompt"], "검증기 문구가 그대로 실린다"
+
+
+def test_sceneplan_stops_after_one_retry(with_outline):
+    plan = load_fixture("sceneplan_pass.json")
+    plan["scenes"][0]["says"] = "매년 400만 명이 다녀가는 관광지라는 사실"
+    broken = json.dumps(plan, ensure_ascii=False)
+
+    llm = FakeLLMClient([broken, broken])
+    result = run_sceneplan_stage(SLUG, llm=llm, paths=with_outline)
+
+    assert not result.valid
+    assert len(llm.calls) == 2
+    assert any("400만" in error for error in result.errors)

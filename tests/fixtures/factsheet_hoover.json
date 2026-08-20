@@ -11,35 +11,46 @@
     {
       "id": "f01",
       "claim": "후버댐은 높이 221미터의 콘크리트 중력식 아치댐이다",
-      "numbers": ["221미터"],
+      "numbers": [
+        "221미터"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },
     {
       "id": "f02",
       "claim": "댐 바닥의 두께는 200미터다",
-      "numbers": ["200미터"],
+      "numbers": [
+        "200미터"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },
     {
       "id": "f03",
       "claim": "댐 몸통을 230개의 기둥 블록으로 나누어 따로 타설했다",
-      "numbers": ["230개"],
+      "numbers": [
+        "230개"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },
     {
       "id": "f04",
       "claim": "콘크리트가 굳는 것은 건조가 아니라 시멘트의 수화 반응이다",
-      "numbers": [],
+      "numbers": [
+        "5년"
+      ],
       "source": "콘크리트 공학 개론",
       "confidence": "high"
     },
     {
       "id": "f05",
       "claim": "통짜로 부었다면 완전히 식는 데 125년이 걸릴 것으로 계산됐다",
-      "numbers": ["125년"],
+      "numbers": [
+        "125년",
+        "100년"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },
@@ -53,7 +64,9 @@
     {
       "id": "f07",
       "claim": "블록 안에 총연장 933킬로미터의 냉각용 강관을 묻었다",
-      "numbers": ["933킬로미터"],
+      "numbers": [
+        "933킬로미터"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },
@@ -81,7 +94,9 @@
     {
       "id": "f11",
       "claim": "분할 타설과 강관 냉각으로 냉각 기간이 2년으로 줄었다",
-      "numbers": ["2년"],
+      "numbers": [
+        "2년"
+      ],
       "source": "미국 개척국 기술보고서",
       "confidence": "high"
     },

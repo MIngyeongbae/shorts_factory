@@ -160,6 +160,15 @@ class GeneratedImage:
     seed: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
+    #: 같은 호출이 낸 후보 전체 (ADR-0031 §2). MJ는 잡 하나에 4장을 내므로 넷이고,
+    #: `data`는 그중 첫 장이다. **하류 계약은 그대로다** — `[7]`·`[8]`은 여전히
+    #: `images/{scene_id}` 한 장만 안다 (ADR-0020). 고르는 것은 `[6r]` 몫이라 어댑터는
+    #: 버리지만 않는다. 이미 산 것이므로 추가 과금이 0이다.
+    #:
+    #: 후보라는 개념이 없는 프로바이더는 빈 튜플이고, **부재는 경고가 아니다**
+    #: (specs/05 D-3). 그 씬은 `[6r]`에서 사분면 교체 없이 pass/redo만 받는다.
+    variants: tuple[bytes, ...] = ()
+
     def __post_init__(self) -> None:
         if not self.data:
             raise ImageGenError("이미지 바이트가 비어 있다")
@@ -174,6 +183,14 @@ class GeneratedImage:
             raise ImageGenError(
                 f"{self.mime_type}이라면서 시그니처가 다르다. 응답 본문이 이미지가 아니다"
             )
+        for index, variant in enumerate(self.variants):
+            # 후보도 저장 대상이라 같은 검사를 받는다. 여기서 안 걸면 `[6]`이 빈
+            # 바이트를 `_cand/`에 내려놓고, 그것을 고른 `[6r]`이 깨진 파일을
+            # `images/`로 올린다 — 실패가 두 단계 뒤로 밀린다.
+            if not variant or not variant.startswith(magic):
+                raise ImageGenError(
+                    f"후보 q{index}가 {self.mime_type}이 아니다 (ADR-0031 §2)"
+                )
 
     @property
     def suffix(self) -> str:
@@ -188,6 +205,7 @@ class GeneratedImage:
             "model_id": self.model_id,
             "seed": self.seed,
             "bytes": len(self.data),
+            "variants": len(self.variants),
         }
 
 
@@ -218,9 +236,9 @@ class ImageClient(ABC):
     def concurrency(self) -> int:
         """이 프로바이더에 동시에 던져도 되는 잡 수. `[6]`의 워커 수 기본값이다 (ADR-0031 §4).
 
-        **한도를 아는 것은 프로바이더뿐이라 여기서 묻는다.** MJ는 계정의 `relaxCoreSize`가
-        그 값이고, 그것은 구독 플랜이 정하므로 리포에 적어 둘 수 없다 — 적어 두면 플랜을
-        바꾼 날 조용히 틀린다 (ADR-0031 G3, ADR-0032).
+        **한도를 아는 것은 프로바이더뿐이라 여기서 묻는다.** MJ는 계정의 `coreSize`
+        (fast 동시 한도)가 그 값이고, 그것은 구독 플랜이 정하므로 리포에 적어 둘 수
+        없다 — 적어 두면 플랜을 바꾼 날 조용히 틀린다 (ADR-0031 G3).
 
         기본 1은 "모르면 줄 세운다"이고 그것이 지금까지의 동작이다. 한도를 모르는 채 여럿
         던지면 빨라지는 것이 아니라 429가 나고 큐만 길어진다. 호출을 할 수 있으므로

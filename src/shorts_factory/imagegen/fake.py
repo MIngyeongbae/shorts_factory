@@ -62,15 +62,27 @@ def fake_image(
     width: int = FAKE_WIDTH,
     height: int = FAKE_HEIGHT,
     model_id: str = "fake-image-model",
+    quadrants: int = 0,
 ) -> GeneratedImage:
-    """요청 지문에서 색을 뽑은 단색 PNG."""
+    """요청 지문에서 색을 뽑은 단색 PNG.
+
+    `quadrants`를 주면 후보를 그만큼 만든다 (ADR-0031 §2 — MJ는 잡 하나에 4장).
+    후보마다 색을 어긋내므로 `[6r]`이 **어느 장을 골랐는지가 바이트 비교로 드러난다.**
+    기본값이 0인 이유는 후보라는 개념이 없는 프로바이더가 정상이기 때문이다
+    (specs/05 D-3).
+    """
     digest = request.digest
     rgb = (int(digest[0:2], 16), int(digest[2:4], 16), int(digest[4:6], 16))
+    variants = tuple(
+        solid_png(width, height, tuple((c + index * 40) % 256 for c in rgb))
+        for index in range(quadrants)
+    )
     return GeneratedImage(
-        data=solid_png(width, height, rgb),
+        data=variants[0] if variants else solid_png(width, height, rgb),
         request_id=f"fake-{digest}",
         model_id=model_id,
         seed=int(digest, 16) % 100_000,
+        variants=variants,
         raw={"digest": digest, "size": [width, height]},
     )
 
@@ -97,12 +109,14 @@ class FakeImageClient(ImageClient):
         width: int = FAKE_WIDTH,
         height: int = FAKE_HEIGHT,
         model_id: str = "fake-image-model",
+        quadrants: int = 0,
     ) -> None:
         self.fail_scenes = dict(fail_scenes or {})
         self.error = error
         self.width = width
         self.height = height
         self.model_id = model_id
+        self.quadrants = quadrants
         self.calls: list[dict[str, Any]] = []
 
     @property
@@ -139,5 +153,9 @@ class FakeImageClient(ImageClient):
             )
 
         return fake_image(
-            request, width=self.width, height=self.height, model_id=self.model_id
+            request,
+            width=self.width,
+            height=self.height,
+            model_id=self.model_id,
+            quadrants=self.quadrants,
         )

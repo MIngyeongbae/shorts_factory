@@ -26,7 +26,7 @@ from shorts_factory.imagegen.midjourney import (
     SUBMIT_PATH,
     MidjourneyClient,
     build_prompt,
-    result_image,
+    result_images,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
@@ -102,17 +102,22 @@ def test_an_empty_negative_leaves_no_trailing_space():
     assert build_prompt(request) == "댐 --ar 9:16"
 
 
-def test_the_submit_goes_to_the_relax_endpoint():
-    """**Fast로 새면 이미지 27잡이 GPU 27분을 태운다** (ADR-0025)."""
+def test_the_submit_goes_to_the_fast_endpoint():
+    """**이미지는 fast다** (ADR-0039이 ADR-0025 §2를 뒤집었다).
+
+    relax로 새면 1잡이 7초에서 180초가 되고 28씬이 1.5분에서 28분이 된다.
+    모드는 프롬프트 플래그가 아니라 **프리픽스**가 정하므로 여기가 유일한 경로다.
+    """
     c = client([("submit", (200, {"code": 1, "result": "task-1"}))])
     c.submit(REQUEST, timeout=30)
 
     method, url, body = c.transport.calls[0]
     assert method == "POST"
     assert url == f"http://proxy:8086{SUBMIT_PATH}"
-    assert "/mj-relax/" in url and "/mj-fast/" not in url
-    # 프록시가 `--relax`를 붙인다. 어댑터가 프롬프트를 만지지 않는다.
-    assert "--relax" not in json.loads(body)["prompt"]
+    assert "/mj-fast/" in url and "/mj-relax/" not in url
+    # 모드 플래그는 프록시가 붙인다. 어댑터가 프롬프트를 만지지 않는다.
+    prompt = json.loads(body)["prompt"]
+    assert "--relax" not in prompt and "--fast" not in prompt
 
 
 def test_the_korean_prompt_survives_json_encoding():
@@ -147,14 +152,19 @@ def test_auth_rejection_stops_the_whole_provider():
 # --- 폴링 -------------------------------------------------------------------
 
 
-def test_the_discord_grid_is_cropped_before_it_is_returned():
-    """씬마다 2×2 그리드가 들어가면 `[7]`이 그것을 그대로 움직인다."""
+def test_the_discord_grid_becomes_four_candidates_not_one():
+    """그리드를 넷으로 나눠 전부 들고 온다 (ADR-0031 §2).
+
+    씬마다 2×2 그리드가 그대로 들어가면 `[7]`이 그것을 움직인다. 그렇다고 한 장만
+    남기면 이미 산 셋을 버리는 것이고, 실측에서 그 한 장(`q0`)이 넷 중 제일 약했다.
+    """
     grid = "http://localhost:8086/attachments/1/2/apple.webp"
     calls: list[tuple[bytes, str]] = []
+    quadrants = (PNG, PNG + b"1", PNG + b"2", PNG + b"3")
 
     def fake_crop(data, *, suffix, ffmpeg):
         calls.append((data, suffix))
-        return PNG
+        return quadrants
 
     c = client([
         ("submit", (200, {"code": 1, "result": "task-1"})),
@@ -163,14 +173,19 @@ def test_the_discord_grid_is_cropped_before_it_is_returned():
     ])
     import shorts_factory.imagegen.midjourney as mj
 
-    original, mj.crop_first_quadrant = mj.crop_first_quadrant, fake_crop
+    original, mj.crop_quadrants = mj.crop_quadrants, fake_crop
     try:
         image = c.generate(REQUEST, timeout=60)
     finally:
-        mj.crop_first_quadrant = original
+        mj.crop_quadrants = original
 
     assert calls == [(b"RIFF____WEBPgrid", ".webp")]
-    assert image.data == PNG and image.raw["grid"] is True
+    assert image.raw["grid"] is True
+    assert image.variants == quadrants
+    # 하류 계약은 그대로다 — `data`는 여전히 한 장이고 그것이 q0이다 (ADR-0020).
+    assert image.data == quadrants[0]
+    # 내려받기는 1회다. 넷으로 나누는 것은 로컬 FFmpeg다.
+    assert [m for m, _u, _b in c.transport.calls].count("GET") == 2
 
 
 def test_it_polls_until_success_then_downloads():
@@ -182,13 +197,18 @@ def test_it_polls_until_success_then_downloads():
             (200, success_payload()),
         ]),
         (CDN, (200, PNG)),
+        ("0_1.png", (200, PNG + b"second")),
     ])
     image = c.generate(REQUEST, timeout=60)
 
     assert image.data == PNG
     assert image.mime_type == "image/png"
     assert image.request_id == "task-1"
-    assert [m for m, _u, _b in c.transport.calls] == ["POST", "GET", "GET", "GET", "GET"]
+    # 개별 URL 모드는 네 장이 따로 온다 — 전부 받는다 (ADR-0031 §2).
+    assert image.variants == (PNG, PNG + b"second")
+    assert [m for m, _u, _b in c.transport.calls] == [
+        "POST", "GET", "GET", "GET", "GET", "GET",
+    ]
 
 
 def test_a_failed_task_reports_its_reason():
@@ -219,13 +239,26 @@ def test_a_slow_task_times_out_without_resubmitting():
 # --- 응답 파싱 ---------------------------------------------------------------
 
 
-def test_official_mode_takes_the_full_image_not_the_thumbnail():
-    """공식 웹 모드는 4장을 개별 URL로 준다. 썸네일은 640px 축소본이라 안 쓴다."""
-    assert result_image(success_payload()) == (CDN, False)
+def test_official_mode_takes_every_full_image_not_the_thumbnail():
+    """공식 웹 모드는 4장을 개별 URL로 준다. 썸네일은 640px 축소본이라 안 쓴다.
+
+    **넷을 다 돌려준다** — 고를 근거가 생겼으므로 `imageUrls[0]` 고정이 풀렸다
+    (ADR-0025 계약 공백 #1 → ADR-0031 §2).
+    """
+    assert result_images(success_payload()) == (
+        (CDN, "https://cdn.midjourney.com/x/0_1.png"),
+        False,
+    )
 
 
 def test_a_bare_string_url_is_also_accepted():
-    assert result_image({"imageUrls": [CDN]}) == (CDN, False)
+    assert result_images({"imageUrls": [CDN]}) == ((CDN,), False)
+
+
+def test_a_broken_url_anywhere_in_the_list_fails_loudly():
+    """둘째 장이 깨졌는데 첫 장만 보고 넘어가면 `_cand/`에 빈 파일이 남는다."""
+    with pytest.raises(ImageGenError, match=r"imageUrls\[1\]"):
+        result_images({"imageUrls": [{"url": CDN}, {"thumbnail": "x"}]})
 
 
 def test_discord_mode_falls_back_to_the_grid_and_asks_for_a_crop():
@@ -235,15 +268,15 @@ def test_discord_mode_falls_back_to_the_grid_and_asks_for_a_crop():
     따로 던지면 같은 픽셀을 얻자고 잡 수가 27 → 54가 된다.
     """
     grid = "http://localhost:8086/attachments/1/2/apple_7ba7dd71.webp?ex=6a7d"
-    assert result_image({"status": "SUCCESS", "imageUrls": None, "imageUrl": grid}) == (
-        grid,
+    assert result_images({"status": "SUCCESS", "imageUrls": None, "imageUrl": grid}) == (
+        (grid,),
         True,
     )
 
 
 def test_no_image_at_all_fails_loudly():
     with pytest.raises(ImageGenError, match="이미지 URL이 없다"):
-        result_image({"status": "SUCCESS", "imageUrls": None, "imageUrl": None})
+        result_images({"status": "SUCCESS", "imageUrls": None, "imageUrl": None})
 
 
 def test_the_cdn_download_carries_no_proxy_secret():
@@ -277,34 +310,36 @@ def accounts_payload(*accounts) -> dict:
     return {"list": list(accounts), "pagination": {"total": len(accounts)}}
 
 
-def account(*, enable=True, relax=3, token="secret-token") -> dict:
+def account(*, enable=True, core=3, token="secret-token") -> dict:
     # 실제 응답에는 userToken·cookie가 함께 온다 (실측). 그것까지 흉내 내야
-    # "비밀을 어디에도 남기지 않는다"를 확인할 수 있다.
+    # "비밀을 어디에도 남기지 않는다"를 확인할 수 있다. relaxCoreSize는 [7] 영상
+    # 몫이라 [6]은 읽지 않는다 — 섞여 있어도 coreSize를 고르는지가 검증 대상이다.
     return {
-        "id": "3fc4f795", "enable": enable, "relaxCoreSize": relax,
-        "coreSize": 3, "userToken": token, "cookie": None,
+        "id": "3fc4f795", "enable": enable, "coreSize": core,
+        "relaxCoreSize": 3, "userToken": token, "cookie": None,
     }
 
 
-def test_concurrency_reads_relax_core_size_from_the_account():
-    mj = client([("/mj/admin/accounts", (200, accounts_payload(account(relax=3))))])
-    assert mj.concurrency() == 3
+def test_concurrency_reads_core_size_from_the_account():
+    """이미지는 fast로 제출한다 (ADR-0039 §2) — 그 큐의 동시 한도가 coreSize다."""
+    mj = client([("/mj/admin/accounts", (200, accounts_payload(account(core=4))))])
+    assert mj.concurrency() == 4
 
 
 def test_concurrency_ignores_disabled_accounts():
     """잡은 활성 계정으로만 간다. 꺼진 계정의 한도를 따르면 근거 없는 숫자다."""
     mj = client([(
         "/mj/admin/accounts",
-        (200, accounts_payload(account(enable=False, relax=9), account(relax=3))),
+        (200, accounts_payload(account(enable=False, core=9), account(core=4))),
     )])
-    assert mj.concurrency() == 3
+    assert mj.concurrency() == 4
 
 
 def test_concurrency_takes_the_smallest_of_several_accounts():
     """잡이 어느 계정으로 갈지는 프록시가 정한다. 큰 쪽에 맞추면 작은 쪽이 429를 낸다."""
     mj = client([(
         "/mj/admin/accounts",
-        (200, accounts_payload(account(relax=5), account(relax=2))),
+        (200, accounts_payload(account(core=5), account(core=2))),
     )])
     assert mj.concurrency() == 2
 
@@ -314,7 +349,7 @@ def test_concurrency_takes_the_smallest_of_several_accounts():
     (
         (500, {"error": "그런 거 없다"}),
         (200, {"list": []}),
-        (200, {"list": [{"enable": True}]}),   # relaxCoreSize가 없다
+        (200, {"list": [{"enable": True}]}),   # coreSize가 없다
         (200, {"pagination": {}}),             # list 자체가 없다
         (200, b"<html>login</html>"),          # JSON이 아니다
     ),
@@ -333,8 +368,8 @@ def test_concurrency_does_not_leak_the_account_token(caplog):
     assert "secret-token" not in caplog.text
 
 
-def test_concurrency_uses_the_admin_endpoint_not_the_relax_prefix():
-    """`/mj-relax/` 프리픽스는 제출 전용이다. 관리 API에 붙이면 404가 난다."""
+def test_concurrency_uses_the_admin_endpoint_not_the_mode_prefix():
+    """모드 프리픽스는 제출 전용이다. 관리 API에 붙이면 404가 난다."""
     transport = fake_transport([
         ("/mj/admin/accounts", (200, accounts_payload(account())))
     ])
@@ -344,7 +379,7 @@ def test_concurrency_uses_the_admin_endpoint_not_the_relax_prefix():
     method, url, _ = transport.calls[0]
     assert method == "POST"
     assert url.endswith("/mj/admin/accounts")
-    assert "/mj-relax/" not in url
+    assert "/mj-relax/" not in url and "/mj-fast/" not in url
 
 
 def test_none_falls_back_to_the_adapter_own_budget():

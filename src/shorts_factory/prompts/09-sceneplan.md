@@ -64,9 +64,20 @@ ${limits}
 `subject`가 **무엇으로 만들어졌고 어느 구조물의 일부인지**를 짧은 명사구 목록으로. 안 적으면 이미지 모델이 가장 흔한 사물로 채운다 — "홈이 파인 블록 접합면"은 나무 짜맞춤이 됐고, 재질을 뺀 "협곡을 메운 거대한 덩어리"는 댐이 사라졌다.
 
 - 구체적인 것부터: 고유명사 → 정체 → 재질
+- **고유명사는 팩트시트에 있는 현지어 표기를 그대로 쓴다.** `일본 목조 가옥 골조`가 아니라 `日本の木造軸組`·`町家の角柱`. 한국어로 「일본」이라고 적으면 **한옥이 나온다** — 실측에서 4장 전부 그랬다. 재질·정체 같은 일반 명사(`목재 기둥`)는 한국어 그대로다
 - **비워도 된다**(`[]`). 재질도 정체도 무의미한 도해가 있다
 - `subject`가 `접합면`·`단면`·`표면`처럼 약한 대상이면 **고유명사를 넣지 않는다** — 강한 이름이 주 피사체를 밀어낸다
 - 팩트시트에 근거가 있어야 한다. 고유명사는 연출이 아니라 사실이다
+
+# info — 인포씬 지정 (선택)
+
+**화면에 라벨·수치가 그려져야 설명이 서는 씬**에만 `info`를 단다. 있으면 그 씬은 그림 위에 인포그래픽(지시선·라벨·수치)이 조립되는 영상이 된다.
+
+- `labels`: **화면에 그려질 문자열 그대로** 1~4개. 뒤 단계는 이 문자열을 한 글자도 바꾸지 않고 그대로 그린다 — 요약형으로, 짧게 적어라 (예: `"六畳 = 9.72㎡"`, `"높이 221m"`)
+- **문자열 속 수치는 팩트시트에 있어야 한다.** 화면에 나가는 숫자는 자막의 숫자와 같은 급이다 — 기계가 대조해서 반려한다
+- 배치·색·지시선은 적지 않는다 — 그리는 쪽 재량이다
+- 도해·단면·수치 비교 씬이 후보다. **모든 씬에 달지 마라** — 라벨이 없는 씬이 기본이다
+- `emphasis`(후처리 합성 강조)와 축이 다르다: `emphasis`는 강조, `info`는 설명이다
 
 # 연출 — 어휘에서 고른다
 
@@ -76,7 +87,6 @@ ${vocab}
 
 - `framing`·`transition`은 **비워도 된다.** 비우면 파이프라인이 비트별 기본값으로 채운다. 다만 **그 씬의 구도를 실제로 고른 것이 있으면 적어라** — 전부 비면 연출을 고르지 않은 것과 같다
 - `camera`는 느린 것만 쓴다. 복합 카메라 워크는 AI 영상에서 왜곡을 만든다
-- `motion`은 특별한 이유가 없으면 `kenburns`다. 영상 모션은 유체·군중처럼 **움직임 자체가 설명인 씬**에만, 편당 소수만
 - `emphasis`는 **숫자를 화면에 세울 씬**에만 단다. 모든 숫자 씬에 달 필요는 없다
 
 # 출력 스키마
@@ -88,11 +98,12 @@ ${vocab}
   "scenes": [
     {"scene_id": 1, "act": 1, "beat": "hook_fact", "says": "말할 요지", "char_budget": 22,
      "visual_goal": "이 그림이 지는 설명", "subject": "핵심 피사체", "subject_anchor": ["고유명사"], "subject_scale": "wide",
-     "framing": "drone_wide", "transition": "dissolve", "camera": "slow_zoom_in", "motion": "kenburns"},
+     "framing": "drone_wide", "transition": "dissolve", "camera": "slow_zoom_in"},
     {"scene_id": 2, "act": 1, "beat": "hook_twist", "says": "말할 요지", "char_budget": 24,
      "visual_goal": "...", "subject": "...", "subject_anchor": [], "subject_scale": "diagram",
-     "framing": "cross_section", "transition": "hard_cut", "camera": "static", "motion": "kenburns",
-     "emphasis": {"type": "big_red_text", "value": "230개"}}
+     "framing": "cross_section", "transition": "hard_cut", "camera": "static",
+     "emphasis": {"type": "big_red_text", "value": "230개"},
+     "info": {"labels": ["블록 230개", "한 변 7.6m"]}}
   ]
 }
 

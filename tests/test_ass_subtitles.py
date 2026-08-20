@@ -135,9 +135,10 @@ def test_style_carries_the_spec_numbers():
     style = style_line()
     fields = style[len("Style: ") :].split(",")
 
-    # 베이스가 흰 종이라 흰 글자는 외곽선만 남는다 (ADR-0023에서 뒤집었다).
-    assert fields[3] == "&H00000000", "검정 본문"
-    assert fields[5] == "&H00FFFFFF", "흰색 외곽선"
+    # 종이가 사라져 배경이 하늘일 수도 암벽일 수도 있다 (ADR-0038). 가독성은
+    # 배경이 아니라 글자가 책임진다 — 흰 글자 + 검정 외곽선 + 그림자.
+    assert fields[3] == "&H00FFFFFF", "흰색 본문"
+    assert fields[5] == "&H00000000", "검정 외곽선"
     assert fields[7] == "-1", "굵게"
     assert fields[16] == str(OUTLINE) == "3", "외곽선 3px"
     assert fields[18] == str(ALIGNMENT) == "2", "하단 중앙"

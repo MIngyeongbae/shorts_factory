@@ -13,11 +13,11 @@
 ## 세 값은 함께 정해졌다
 
 `40px` · `1줄 22자` · `2줄`은 서로 맞물린 한 벌이다. 40px에서 22자는 880px이라 가로
-안전폭 960px 안에 들어가고, specs/01이 허용하는 **가장 긴 큐(43자)도 22+21로 두 줄에
-들어간다.** 그래서 정상 범위의 큐는 폰트를 줄일 일이 없다 — 큐별 폰트 축소 경로를
-두지 않는다.
+안전폭 960px 안에 들어가고, specs/01이 허용하는 **가장 긴 큐(`line_chars_max`)도
+두 줄에 들어간다.** 그래서 정상 범위의 큐는 폰트를 줄일 일이 없다 — 큐별 폰트 축소
+경로를 두지 않는다.
 
-22자 × 2줄에 안 들어가는 큐는 specs/01의 43자를 넘겼다는 뜻이므로 **실패로 올린다**
+22자 × 2줄에 안 들어가는 큐는 specs/01의 `line_chars_max`를 넘겼다는 뜻이므로 **실패로 올린다**
 (`check_overflow`). 자막 단계가 글자를 작게 만들어 삼키면 상류 위반이 화면에서만
 티가 나고 기록에는 남지 않는다.
 """
@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from ..schemas import vocab
+from ..schemas import script_rules, vocab
 
 # --- 스타일 값 (specs/schema/subtitle-style.json) -----------------------------
 #
@@ -124,7 +124,7 @@ def check_overflow(scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE
     """`limit`자를 넘긴 줄이 있으면 실패시킨다.
 
     **폰트를 줄여 삼키지 않는다.** 22자 × 2줄에 안 들어가는 큐는 스펙 01의
-    "줄당 최대 43자"를 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가
+    `line_chars_max`를 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가
     글자를 작게 만들어 넘기면 상류 위반이 화면에서만 티가 나고 기록에는 안 남는다.
     """
     longest = max(len(line) for line in lines)
@@ -132,8 +132,8 @@ def check_overflow(scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE
         return
     raise SubtitleError(
         f"scenes/{scene_id}: 자막을 {len(lines)}줄로 나눠도 가장 긴 줄이 {longest}자다 "
-        f"(스펙 03 상한 {limit}자 × {MAX_LINES}줄). 스펙 01의 '줄당 최대 43자'를 "
-        f"넘긴 대본이라는 뜻이다 — 1부에서 고쳐야 한다"
+        f"(스펙 03 상한 {limit}자 × {MAX_LINES}줄). 스펙 01의 '줄당 최대 "
+        f"{script_rules.LINE_CHARS_MAX}자'를 넘긴 대본이라는 뜻이다 — 1부에서 고쳐야 한다"
     )
 
 

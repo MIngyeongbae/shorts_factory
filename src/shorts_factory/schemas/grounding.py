@@ -111,12 +111,71 @@ def factsheet_values(factsheet: dict[str, Any]) -> tuple[set[Decimal], set[Decim
 
 
 def _scene_sources(scene: dict[str, Any]) -> list[tuple[str, str]]:
-    """(필드명, 검사할 문자열) 목록."""
+    """(필드명, 검사할 문자열) 목록.
+
+    `info.labels`도 대조한다 (ADR-0043) — `[6i]`가 화면에 그대로 그리는 문자열이라
+    `emphasis.value`와 같은 급의 노출이다.
+    """
     sources = [("text", str(scene.get("text", "")))]
     emphasis = scene.get("emphasis")
     if isinstance(emphasis, dict) and emphasis.get("value"):
         sources.append(("emphasis", str(emphasis["value"])))
+    info = scene.get("info")
+    if isinstance(info, dict):
+        for index, label in enumerate(info.get("labels") or []):
+            sources.append((f"info/labels/{index}", str(label)))
     return sources
+
+
+def _plan_sources(scene: dict[str, Any]) -> list[tuple[str, str]]:
+    """씬 계획에서 그라운딩을 검사할 (필드명, 문자열) 목록.
+
+    `says`는 대본 숫자의 원천이고(스펙 05 §[1w] — 숫자는 says에 이미 있다),
+    `info.labels`는 화면에 그려지는 문자열이다 (ADR-0043). 둘 다 팩트시트 밖의
+    숫자를 실으면 하류에서 잡히기 전에 여기서 잡는다 (ADR-0044 fail-fast).
+    """
+    sources = [("says", str(scene.get("says", "")))]
+    info = scene.get("info")
+    if isinstance(info, dict):
+        for index, label in enumerate(info.get("labels") or []):
+            sources.append((f"info/labels/{index}", str(label)))
+    return sources
+
+
+def validate_plan_grounding(
+    plan: dict[str, Any], factsheet: dict[str, Any]
+) -> tuple[list[str], list[str]]:
+    """`[1s]` 산출의 그라운딩. `(errors, warnings)` — 형태는 `validate_grounding`과 같다."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    allowed, low_only, unparsable = factsheet_values(factsheet)
+
+    for scene in plan.get("scenes", []):
+        if not isinstance(scene, dict):
+            continue
+        sid = scene.get("scene_id", "?")
+        for field, text in _plan_sources(scene):
+            for raw, value in extract_values(text):
+                if value in allowed:
+                    continue
+                if value in low_only:
+                    errors.append(
+                        f"scenes/{sid}/{field}: '{raw}'는 confidence=low 사실의 숫자다 "
+                        f"(specs/06 — 대본 사용 금지)"
+                    )
+                else:
+                    errors.append(
+                        f"scenes/{sid}/{field}: '{raw}'가 팩트시트 numbers에 없다 (ADR-0007)"
+                    )
+
+    if unparsable:
+        warnings.append(
+            f"팩트시트 numbers 중 값을 못 읽은 항목 {len(unparsable)}건"
+            f"({', '.join(unparsable[:5])}): 계획이 이 숫자를 쓰면 미출처로 잡힌다"
+        )
+
+    return errors, warnings
 
 
 def validate_grounding(

@@ -6,11 +6,15 @@
     python run.py sceneplan --slug SLUG           # [1s] 구성안 → 씬 분할 + 그림·연출
     python run.py write     --slug SLUG           # [1w] 씬 계획 → 자막 문장 (대본 후보)
     python run.py draft     --slug SLUG           # 1a + 1s + 1w 연속 실행
-    python run.py validate  --slug SLUG           # 후보 검증 → 실패 종류에 따라 재진입 (최대 3회)
+    python run.py score     --slug SLUG           # [1b] 후보 채점 → 06-script.json 선발
+    python run.py validate  --slug SLUG           # 최종 게이트 — 실패 시 보고·중단 (ADR-0044)
     python run.py tts       --slug SLUG           # [2부] 대본 → narration.wav + 실측 타임스탬프
+    python run.py refpack   --slug SLUG           # [2부] 씬 계약 → 씬별 실사 참조 (사진 + 서술)
     python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
     python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.jpg
-    python run.py motion    --slug SLUG           # [2부] 이미지+씬 계약 → clips/{scene_id}.mp4
+    python run.py imagereview --slug SLUG         # [2부] 이미지 판정 → 사분면 교체 / 재생성
+    python run.py info      --slug SLUG           # [2부] 인포씬 CLEAN → INFO 이미지 (NB2 편집+검수)
+    python run.py motion    --slug SLUG           # [2부] 전 씬 영상 → clips/{scene_id}.mp4
     python run.py assemble  --slug SLUG           # [2부] 클립+씬 계약 → timeline.mp4
     python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
     python run.py knowledge reindex               # 소스 카드 인덱스 재생성
@@ -39,6 +43,16 @@ from .stages.assemble import (
     resolve_run_id,
     run_assemble_stage,
 )
+from .stages.imagereview import (
+    ImagereviewStageError,
+    resolve_run_id as resolve_imagereview_run_id,
+    run_imagereview_stage,
+)
+from .stages.info import (
+    InfoStageError,
+    resolve_run_id as resolve_info_run_id,
+    run_info_stage,
+)
 from .stages.imagegen import (
     DialectMismatch,
     ImagegenStageError,
@@ -50,10 +64,21 @@ from .stages.motion import (
     run_motion_stage,
 )
 from .stages.motion import resolve_run_id as resolve_motion_run_id
+from .videogen.base import VideoClient
+from .videogen.midjourney import MidjourneyVideoClient
+from .videogen.veo import VeoClient
 from .stages.prompt import PromptStageError, run_prompt_stage
+from .stages.refpack import (
+    TIMEOUT as REFPACK_TIMEOUT,
+    RefpackStageError,
+    resolve_run_id as resolve_refpack_run_id,
+    run_refpack_stage,
+    urllib_fetch,
+)
 from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
 from .stages.outline import run_outline_stage
 from .stages.sceneplan import run_sceneplan_stage
+from .stages.score import run_score_stage
 from .stages.session import ScriptSessionError
 from .stages.write import run_write_stage
 from .stages.topic import TopicStageError, run_topic_stage
@@ -140,7 +165,8 @@ def _cmd_research(args, paths: Paths) -> int:
 def _report(result) -> int:
     """대본 3단계 공통 출력. 검증 실패는 4로 나가되 **산출물은 남긴다.**
 
-    재생성은 `[2. validate]` 소관이라 여기서 다시 부르지 않는다 (ADR-0029).
+    재청은 각 단계가 산출 직후에 이미 했다 (ADR-0044) — 여기 남은 오류는 그
+    결과다. 재생성 루프는 없다.
     """
     print(result.summary)
     for warning in result.warnings:
@@ -172,6 +198,10 @@ def _cmd_write(args, paths: Paths) -> int:
     return _run_script_stage(args, paths, run_write_stage)
 
 
+def _cmd_score(args, paths: Paths) -> int:
+    return _run_script_stage(args, paths, run_score_stage)
+
+
 def _cmd_draft(args, paths: Paths) -> int:
     """[1a] → [1s] → [1w] 연속 실행.
 
@@ -194,13 +224,9 @@ def _cmd_draft(args, paths: Paths) -> int:
 
 
 def _cmd_validate(args, paths: Paths) -> int:
-    run_id = args.run_id
-    if not run_id:
-        run_id, _ = find_run_for_slug(paths, args.slug)
-
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
+    """[2]는 순수 기계 검증이라 LLM 세션이 없다 (ADR-0044)."""
     result = run_validate_stage(
-        args.slug, llm=client, paths=paths, run_id=run_id, force=args.force,
+        args.slug, paths=paths, run_id=args.run_id, force=args.force,
     )
     print(result.summary)
     for warning in result.warnings:
@@ -209,9 +235,9 @@ def _cmd_validate(args, paths: Paths) -> int:
         print(f"  오류: {error}", file=sys.stderr)
     if not result.passed:
         print(
-            f"\n후보 {len(result.attempts)}개를 모두 남겼다 "
-            f"(topics/{args.slug}/05-candidates/). "
-            "재생성 상한을 넘었으므로 소재나 팩트시트를 손봐야 한다.",
+            "\n최종 게이트 실패 — 재생성하지 않는다 (ADR-0044). "
+            "오류가 [1s]·[1w]의 직후 검증을 통과하고 여기서 걸렸다면 그 검증기의 "
+            "구멍이니 검증기를 고치고, 대본을 다시 만들지는 사람이 정한다.",
             file=sys.stderr,
         )
         return 5
@@ -272,6 +298,42 @@ def _cmd_tts(args, paths: Paths) -> int:
     return 10 if result.over_length else 0
 
 
+def _cmd_refpack(args, paths: Paths) -> int:
+    """[4] 씬 계약 → 씬별 실사 참조 사진과 서술 (ADR-0030).
+
+    `[3]`·`[5]`와 선후가 없다 — 셋 다 06-script.json만 읽는다. 세션은 구독이라
+    한계비용이 0이고 사진 내려받기도 무료다. 드는 것은 벽시계뿐이다.
+
+    `--no-download`는 강등 사다리의 **서술** 칸으로 내려서 돈다 — 주소와 라이선스는
+    그대로 기록하고 파일만 받지 않는다.
+    """
+    try:
+        run_id = resolve_refpack_run_id(paths, args.slug)
+    except RefpackStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 13
+
+    try:
+        result = run_refpack_stage(
+            args.slug,
+            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
+            paths=paths,
+            force=args.force,
+            fetch=None if args.no_download else urllib_fetch,
+            timeout=args.timeout or REFPACK_TIMEOUT,
+        )
+    except RefpackStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 13
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    for error in result.errors:
+        print(f"  계약 위반: {error}", file=sys.stderr)
+    return 13 if result.errors else 0
+
+
 def _cmd_prompt(args, paths: Paths) -> int:
     """[5] 씬 계약 → 씬별 이미지 프롬프트.
 
@@ -305,6 +367,35 @@ IMAGE_PROVIDERS = {
 
 def _make_image_client(args) -> ImageClient:
     return IMAGE_PROVIDERS[args.provider]()
+
+
+#: `--video` 값 → 영상 어댑터. `none`은 어댑터를 안 만든다는 뜻이고 그때 `[7]`은 전 씬을
+#: Ken Burns로 돌린다 (단계 독립 D-3 — 선택적 입력의 부재는 경고가 아니다).
+#:
+#: 기본값이 실물인 이유는 ADR-0039다 — **전 씬 영상이 기본**이고, `motion` 기본값도
+#: `mj_video`다. 기본을 `none`으로 두면 전 씬이 조용히 강등된다.
+VIDEO_PROVIDERS: dict[str, type[VideoClient] | None] = {
+    "midjourney": MidjourneyVideoClient,
+    "none": None,
+}
+
+
+def _make_video_client(args) -> VideoClient | None:
+    factory = VIDEO_PROVIDERS[args.video]
+    return None if factory is None else factory()
+
+
+#: `--info-video` 값 → 인포씬 영상 어댑터 (ADR-0043). `none`이면 인포씬이 일반
+#: 경로로 강등되고 경고가 남는다 — 조용히 사라지지 않는다.
+INFO_VIDEO_PROVIDERS: dict[str, type[VideoClient] | None] = {
+    "veo": VeoClient,
+    "none": None,
+}
+
+
+def _make_info_video_client(args) -> VideoClient | None:
+    factory = INFO_VIDEO_PROVIDERS[args.info_video]
+    return None if factory is None else factory()
 
 
 def _cmd_imagegen(args, paths: Paths) -> int:
@@ -343,20 +434,103 @@ def _cmd_imagegen(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_imagereview(args, paths: Paths) -> int:
+    """[6r] 만든 이미지를 판정해 사분면을 고르고 실패 씬만 다시 산다 (ADR-0031).
+
+    사분면 교체는 **이미 산 것을 고르는 일이라 과금이 0이다.** 돈이 드는 것은 `redo`
+    씬뿐이고 상한 1회다. `--no-redo`를 주면 판정만 하고 다시 사지 않는다 — 그때
+    redo 판정은 기록에 남고 이미지는 그대로 간다.
+    """
+    if not args.run_id and not args.slug:
+        print("오류: --slug나 --run-id 중 하나는 있어야 한다", file=sys.stderr)
+        return 13
+
+    images = None if args.no_redo else _make_image_client(args)
+    try:
+        run_id = args.run_id or resolve_imagereview_run_id(paths, args.slug)
+    except ImagereviewStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 13
+
+    try:
+        result = run_imagereview_stage(
+            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
+            images=images,
+            run_id=run_id,
+            slug=args.slug,
+            paths=paths,
+            force=args.force,
+            timeout=args.timeout,
+        )
+    except ImagereviewStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 13
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
 def _cmd_motion(args, paths: Paths) -> int:
     """[7] 베이스 이미지 + 씬 계약 → 씬마다 클립 하나.
 
-    과금이 없는 단계다(로컬 인코딩). `kling` 씬은 i2v 경로가 아직 없어 kenburns로
-    강등되며, 그 사실은 요약과 경고에 나온다 — 조용히 넘어가지 않는다.
+    **전 씬을 영상으로 만든다** (ADR-0039). 영상은 relax라 GPU를 쓰지 않지만 씬당
+    200초 넘게 기다리므로 편당 30분대다. `--video none`이면 로컬 인코딩만 돌아
+    과금도 대기도 없다.
+
+    영상 입력은 `image_source.json`에서 온다 (ADR-0041). 그 파일이 없거나 씬의 항목이
+    없으면 그 씬은 kenburns로 **기록을 남기며** 내려간다 — 조용히 넘어가지 않는다.
     """
     run_id = resolve_motion_run_id(paths, run_id=args.run_id, slug=args.slug)
     try:
         result = run_motion_stage(
             run_id, paths=paths, force=args.force, ffmpeg=args.ffmpeg,
+            video=_make_video_client(args),
+            video_timeout=args.video_timeout,
+            jobs=args.jobs,
+            info_video=_make_info_video_client(args),
         )
     except MotionStageError as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 8
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
+def _cmd_info(args, paths: Paths) -> int:
+    """[6i] 인포씬의 CLEAN에 라벨·수치를 얹어 INFO 이미지를 만든다 (ADR-0043).
+
+    검수를 포함한다 — 렌더된 글자를 계약 문자열과 자소 대조하고 구도 이탈을 본다.
+    검수 실패 씬은 재생성 1회 후에도 안 되면 **인포 없는 일반 영상으로 강등**되고,
+    그것은 이 커맨드의 실패가 아니다 (D-5).
+    """
+    if not args.run_id and not args.slug:
+        print("오류: --slug나 --run-id 중 하나는 있어야 한다", file=sys.stderr)
+        return 14
+
+    try:
+        run_id = args.run_id or resolve_info_run_id(paths, args.slug)
+    except InfoStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 14
+
+    try:
+        result = run_info_stage(
+            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
+            editor=NanoBananaClient(),
+            run_id=run_id,
+            slug=args.slug,
+            paths=paths,
+            force=args.force,
+            timeout=args.timeout,
+        )
+    except InfoStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 14
 
     print(result.summary)
     for warning in result.warnings:
@@ -459,6 +633,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("outline", "[1a] 팩트시트 → 훅 각도 + 단 구성", _cmd_outline),
         ("sceneplan", "[1s] 구성안 → 씬 분할 + 그림·연출", _cmd_sceneplan),
         ("write", "[1w] 씬 계획 → 자막 문장 (대본 후보)", _cmd_write),
+        ("score", "[1b] 후보 채점 → 06-script.json 선발", _cmd_score),
         ("draft", "[1a]+[1s]+[1w] 연속 실행", _cmd_draft),
     ):
         stage_parser = sub.add_parser(name, parents=[common], help=help_text)
@@ -490,6 +665,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tts.set_defaults(func=_cmd_tts)
 
+    p_refpack = sub.add_parser(
+        "refpack", parents=[common],
+        help="[4] 씬 계약 → 씬별 실사 참조: 사진 + 서술 (2부, 과금 0 — ADR-0030)",
+    )
+    p_refpack.add_argument("--slug", required=True)
+    p_refpack.add_argument(
+        "--no-download", action="store_true",
+        help="사진을 내려받지 않고 서술만 쓴다 (강등 사다리의 '서술' 칸)",
+    )
+    p_refpack.add_argument(
+        "--timeout", type=int, default=None,
+        help=f"조사 세션 상한(초) (기본: {REFPACK_TIMEOUT})",
+    )
+    p_refpack.set_defaults(func=_cmd_refpack)
+
     p_prompt = sub.add_parser("prompt", parents=[common],
                               help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
     p_prompt.add_argument("--slug", required=True)
@@ -507,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_imagegen.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
     p_imagegen.add_argument(
         "--provider", choices=sorted(IMAGE_PROVIDERS), default="midjourney",
-        help="이미지 어댑터 (기본: midjourney — relax. 개발·테스트는 fake)",
+        help="이미지 어댑터 (기본: midjourney — fast, ADR-0039. 개발·테스트는 fake)",
     )
     p_imagegen.add_argument(
         "--allow-missing-anchors", action="store_true",
@@ -515,7 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_imagegen.add_argument(
         "--jobs", type=int, default=None,
-        help="동시 제출 워커 수 (기본: 프로바이더에게 묻는다 — MJ는 계정 relaxCoreSize)",
+        help="동시 제출 워커 수 (기본: 프로바이더에게 묻는다 — MJ는 계정 coreSize)",
     )
     p_imagegen.add_argument(
         "--timeout", type=int, default=None,
@@ -523,14 +713,62 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_imagegen.set_defaults(func=_cmd_imagegen)
 
+    p_imagereview = sub.add_parser(
+        "imagereview", parents=[common],
+        help="[6r] 이미지 판정 → 사분면 교체 / 재생성 (ADR-0031, 교체는 과금 0)",
+    )
+    p_imagereview.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
+    p_imagereview.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
+    p_imagereview.add_argument(
+        "--provider", choices=sorted(IMAGE_PROVIDERS), default="midjourney",
+        help="redo 씬을 다시 살 어댑터 (기본: midjourney — fast, ADR-0039)",
+    )
+    p_imagereview.add_argument(
+        "--no-redo", action="store_true",
+        help="판정만 하고 재생성하지 않는다 (사분면 교체는 그대로 적용된다)",
+    )
+    p_imagereview.add_argument(
+        "--timeout", type=int, default=None,
+        help="판정 세션과 redo 잡의 상한(초) (기본: 각 프로바이더가 정한다 — ADR-0035)",
+    )
+    p_imagereview.set_defaults(func=_cmd_imagereview)
+
+    p_info = sub.add_parser(
+        "info", parents=[common],
+        help="[6i] 인포씬 CLEAN → INFO 이미지 (NB2 편집 + 자소 대조 검수, ADR-0043)",
+    )
+    p_info.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
+    p_info.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
+    p_info.add_argument(
+        "--timeout", type=int, default=None,
+        help="편집 호출·검수 세션의 상한(초) (기본: 각 프로바이더가 정한다)",
+    )
+    p_info.set_defaults(func=_cmd_info)
+
     p_motion = sub.add_parser(
         "motion", parents=[common],
-        help="[7] 이미지+씬 계약 → clips/{scene_id}.mp4 (2부, Ken Burns)",
+        help="[7] 이미지+씬 계약 → clips/{scene_id}.mp4 (2부, 전 씬 영상 — ADR-0039)",
     )
     p_motion.add_argument("--slug", default=None, help="run_id를 대본에서 읽는다")
     p_motion.add_argument("--run-id", default=None)
     p_motion.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_motion.add_argument(
+        "--video", choices=sorted(VIDEO_PROVIDERS), default="midjourney",
+        help="영상 어댑터 (기본: midjourney — relax, GPU 0). none이면 전 씬 Ken Burns",
+    )
+    p_motion.add_argument(
+        "--jobs", type=int, default=None,
+        help="동시 워커 수 (기본: 영상 프로바이더에게 묻는다. 영상 씬이 없으면 1)",
+    )
+    p_motion.add_argument(
+        "--video-timeout", type=int, default=None,
+        help="영상 잡 하나를 기다리는 상한(초) (기본: 프로바이더가 정한다 — ADR-0035)",
+    )
+    p_motion.add_argument(
+        "--info-video", choices=sorted(INFO_VIDEO_PROVIDERS), default="veo",
+        help="인포씬 영상 어댑터 (기본: veo — ADR-0043). none이면 인포씬을 일반 경로로 강등",
     )
     p_motion.set_defaults(func=_cmd_motion)
 

@@ -20,6 +20,9 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프)과 시그니처 문구 | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
+| `score.schema.json` | `[1b]` 산출(`09-score.json`) — 후보 채점·선발 기록 (ADR-0040) | `schemas/score.py` |
+| `image-source.schema.json` | `[6]`·`[6r]` 산출(`image_source.json`) — `[7]` 영상 입력의 사이드카 계약 (ADR-0041) | `schemas/image_source.py` |
+| `refs.schema.json` | `[4]` 산출(`refs.json`) — 씬별 실사 참조와 첨부 가능 라이선스 (ADR-0030) | `schemas/refs.py` |
 
 세 스키마는 대본 하나가 세 단계를 지나며 자라는 모습이다. `08-sceneplan.json`에서
 `06-script.json`으로 **어느 필드가 그대로 건너가는지는 아무 데도 손으로 적지 않는다** —

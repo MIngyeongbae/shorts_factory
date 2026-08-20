@@ -24,7 +24,8 @@ from typing import Any, Callable, Sequence
 from .base import PCM_S16LE, Alignment, Narration, TTSClient, TTSError
 from .audio import DEFAULT_TEMPO
 
-#: 1부가 `est_*`를 만들 때 쓰는 명목 발화 속도(자/초). specs/01의 5.3~6.3 중앙 부근.
+#: 1부가 `est_*`를 만들 때 쓰는 명목 발화 속도(자/초). specs/01 발화 속도 엔벨로프
+#: (`script-rules.json`의 `speed_cps`)의 중앙 부근으로 고른 페이크 고유값이다.
 NOMINAL_FINAL_SPEED = 5.85
 
 #: 페이크의 기본 원속. atempo 후 위 명목 속도가 되도록 잡는다.

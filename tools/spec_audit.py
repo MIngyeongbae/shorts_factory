@@ -30,8 +30,18 @@ VERBOSE = "-v" in sys.argv
 def load() -> dict[str, str]:
     docs = {f"specs/{p.name}": p.read_text(encoding="utf-8") for p in sorted((ROOT / "specs").glob("*.md"))}
     docs["CLAUDE.md"] = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    for p in sorted((ROOT / "src/shorts_factory/schemas").glob("*.py")):
-        docs[f"schemas/{p.name}"] = p.read_text(encoding="utf-8")
+    docs["topics/backlog.md"] = (ROOT / "topics/backlog.md").read_text(encoding="utf-8")
+    # src 전체를 본다 — schemas/만 보던 시절에 video/·stages/의 손 복사가 통과했다
+    # (kenburns.py의 camera 7값 전량이 실례다. 2026-08-19 감사).
+    src = ROOT / "src/shorts_factory"
+    for p in sorted(src.rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        rel = p.relative_to(src).as_posix()
+        key = f"schemas/{p.name}" if rel.startswith("schemas/") else f"src/{rel}"
+        docs[key] = p.read_text(encoding="utf-8")
+    for p in sorted((src / "prompts").glob("*.md")):
+        docs[f"prompts/{p.name}"] = p.read_text(encoding="utf-8")
     for p in sorted(SCHEMA_DIR.glob("*.json")):
         docs[f"specs/schema/{p.name}"] = p.read_text(encoding="utf-8")
     return docs
@@ -59,7 +69,12 @@ REACH = {
     "outline.schema.json": ("specs/05-pipeline.md", "schemas/outline.py"),
     "sceneplan.schema.json": ("specs/05-pipeline.md", "schemas/sceneplan.py"),
     "refs.json": ("specs/05-pipeline.md",),
+    "refs.schema.json": ("specs/05-pipeline.md", "schemas/refs.py"),
     "image_review.json": ("specs/05-pipeline.md",),
+    "image_source.json": ("specs/05-pipeline.md",),
+    "image-source.schema.json": ("specs/05-pipeline.md", "schemas/image_source.py"),
+    "score.schema.json": ("specs/05-pipeline.md", "schemas/score.py"),
+    "09-score.json": ("specs/05-pipeline.md",),
     "specs/schema/": ("CLAUDE.md", "specs/05-pipeline.md"),
 }
 
@@ -112,7 +127,11 @@ def check_vocab_copies(docs: dict[str, str]) -> list[str]:
                 ]
                 hit = bool(where)
             else:
-                hit = all(p.search(text) for p in patterns)
+                # 그 축을 vocab에서 확인하는 코드는 통과 — 전값 분기(디스패처·렌더러)는
+                # 정당하되, 어휘와 갈리면 로드 시점에 터지는 장치가 있어야 한다.
+                # 장치 없이 값만 다 들고 있는 파일이 이 규칙이 잡는 손 복사다.
+                aware = re.search(rf'vocab\.(?:require|values|meta)\(\s*"{name}"', text)
+                hit = not aware and all(p.search(text) for p in patterns)
             if hit:
                 rows.append(
                     f"⚠ {doc}: {name} 어휘 {len(values)}개를 한자리에 옮겨 적었다 — "
@@ -143,15 +162,59 @@ def check_limit_copies(docs: dict[str, str]) -> list[str]:
     limits = load_json("script-rules.json")["limits"]
     rows: list[str] = []
     for key, value in limits.items():
-        if not isinstance(value, list):
-            continue
-        low, high = value
-        pattern = re.compile(rf"{low}\s*~\s*{high}")
+        if isinstance(value, list):
+            low, high = value
+            pattern = re.compile(rf"{low}\s*~\s*{high}")
+            shown = f"{low}~{high}"
+        else:
+            # 스칼라(line_chars_max 등)는 "43자"처럼 단위가 붙은 꼴만 잡는다 —
+            # 맨 숫자를 잡으면 무관한 수까지 걸린다. subtitles.py의 43이 실례다
+            # (2026-08-19 감사: [low, high]만 보던 규칙이 스칼라를 건너뛰었다).
+            pattern = re.compile(rf"\b{value}\s*자")
+            shown = str(value)
         for doc, text in docs.items():
             if doc.startswith("specs/schema/"):
                 continue
             if pattern.search(text):
-                rows.append(f"⚠ {doc}: {key}({low}~{high})를 옮겨 적었다 — script-rules.json이 출처다")
+                rows.append(f"⚠ {doc}: {key}({shown})를 옮겨 적었다 — script-rules.json이 출처다")
+    return rows
+
+
+#: `$defs` 축 이름과 `meta` 절 이름이 다른 곳. 이름을 맞추는 것은 어휘 변경이라
+#: ADR이 필요하므로 여기서 받아 준다 (stages/session.py의 주석과 같은 판단).
+META_ALIAS = {"overlay": "overlay_type"}
+
+#: enum이 아닌 meta 절 — 값 목록이 아니라 설정 묶음이다.
+META_CONFIG = {"style"}
+
+
+def check_meta_alignment() -> list[str]:
+    """`$defs` enum과 `meta` 항목이 같은 값 집합인가.
+
+    `$defs`에만 값을 늘리면 `meta`를 읽는 코드(`build_negative`, `[7]`의
+    `video_prompt`)가 KeyError로 죽는다 — 두 목록의 동치를 검사하는 곳이 여기뿐이다
+    (2026-08-19 감사 C5). meta 항목 중 dict가 아닌 키(`default` 같은 설정)는 값이
+    아니므로 세지 않는다.
+    """
+    vocab = load_json("vocab.json")
+    rows: list[str] = []
+    for meta_name, items in vocab.get("meta", {}).items():
+        if meta_name in META_CONFIG or not isinstance(items, dict):
+            continue
+        axis = META_ALIAS.get(meta_name, meta_name)
+        block = vocab["$defs"].get(axis)
+        if block is None:
+            rows.append(f"⚠ vocab.json: meta.{meta_name}에 대응하는 $defs.{axis}가 없다")
+            continue
+        entries = {k for k, v in items.items() if isinstance(v, dict) and not k.startswith("_")}
+        enum = set(block["enum"])
+        for v in sorted(enum - entries):
+            rows.append(
+                f"⚠ vocab.json: $defs.{axis} 값 '{v}'가 meta.{meta_name}에 없다 — "
+                "meta를 읽는 코드가 KeyError로 죽는다"
+            )
+        for v in sorted(entries - enum):
+            rows.append(f"⚠ vocab.json: meta.{meta_name} 항목 '{v}'가 $defs.{axis} enum에 없다")
     return rows
 
 
@@ -160,6 +223,7 @@ def main() -> None:
     problems = 0
 
     problems += report("어휘를 옮겨 적은 곳 (ADR-0034 §3)", check_vocab_copies(docs))
+    problems += report("$defs와 meta의 값 집합 (감사 C5)", check_meta_alignment())
     problems += report("$ref가 가리키는 어휘", check_ref_targets(docs))
     problems += report("분량 값을 옮겨 적은 곳", check_limit_copies(docs))
 

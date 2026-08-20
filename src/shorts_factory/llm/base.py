@@ -58,6 +58,7 @@ class LLMClient(ABC):
         system_append: str = "",
         label: str = "",
         add_dirs: Sequence[Path] = (),
+        resume: str | None = None,
     ) -> LLMResult:
         """프롬프트 1건을 **독립 세션**으로 실행하고 최종 텍스트를 돌려준다.
 
@@ -66,5 +67,9 @@ class LLMClient(ABC):
         `add_dirs`는 세션이 Read할 수 있게 열어줄 디렉터리다 (ADR-0012의 소스 카드).
         작업 디렉터리는 여전히 중립 임시 경로이고 도구도 읽기 전용이므로,
         ADR-0011의 격리 계약은 그대로다.
+
+        `resume`는 **같은 세션을 이어가는** 재청 경로다 (ADR-0044). 실패 씬만 다시
+        청할 때 새 세션이 입력 전부를 재독하는 비용(~10분 실측)을 없앤다. 다른
+        세션의 id를 넘기는 것은 ADR-0009 위반이다 — 재청은 자기 세션에만 한다.
         """
         raise NotImplementedError

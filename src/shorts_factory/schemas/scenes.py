@@ -33,7 +33,8 @@ TRANSITIONS: tuple[str, ...] = vocab.values("transition")
 #: 숫자를 세우는 비트. 이름에서 뽑는다 — 목록을 또 적으면 어휘가 늘 때 갈라진다.
 NUMBER_BEATS: tuple[str, ...] = tuple(b for b in BEATS if b.endswith("_number"))
 
-#: 편당 영상 씬 상한 (ADR-0006). 어느 모션이 영상인지도 어휘가 안다.
+#: 편당 상한이 있는 영상 모션 — 과금 차선 `kling`뿐이다 (ADR-0039가 mj_video 상한을
+#: 폐기했다). 어느 모션에 상한이 있는지는 어휘가 안다.
 VIDEO_MOTIONS: tuple[str, ...] = tuple(
     name for name, item in vocab.meta("motion").items() if item.get("max_scenes")
 )
@@ -123,8 +124,8 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
             )
         prev_end = end
 
-    # 규칙: 영상 모션은 편당 상한이 있다 (specs/02, ADR-0006). fast 엔드포인트라
-    # GPU 시간을 쓰는 mj_video도 같은 상한을 쓴다 (ADR-0025 §3).
+    # 규칙: 편당 상한은 과금 차선 kling에만 있다 (specs/02, ADR-0039). mj_video는
+    # relax(GPU 0)라 상한이 폐기됐다 — 어느 모션이 상한을 갖는지는 vocab이 정한다.
     video = [s.get("scene_id") for s in scenes if s.get("motion") in VIDEO_MOTIONS]
     if MAX_VIDEO_SCENES and len(video) > MAX_VIDEO_SCENES:
         errors.append(

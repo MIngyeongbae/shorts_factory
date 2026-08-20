@@ -15,7 +15,9 @@ import pytest
 from conftest import HOOVER, PISA, install_script
 from timed_fixtures import install_images, install_run, timed_document
 
-from shorts_factory.cli import parse_args
+from shorts_factory.cli import _make_video_client, parse_args
+from shorts_factory.schemas import vocab
+from shorts_factory.imagegen.midjourney import MidjourneyClient
 from shorts_factory.stages.motion import (
     STAGE,
     MotionStageError,
@@ -25,6 +27,7 @@ from shorts_factory.stages.motion import (
 from shorts_factory.video.fake import FakeFFmpeg
 from shorts_factory.video.kenburns import frame_count
 from shorts_factory.video.timeline import build_timeline
+from shorts_factory.videogen.midjourney import MidjourneyVideoClient
 
 
 def install(paths, slug=PISA, *, document=None, copies=None, suffix=".png"):
@@ -206,6 +209,23 @@ def test_distinct_images_never_trigger_a_reversal(paths):
 # --- 강등 사다리 -------------------------------------------------------------
 
 
+def test_a_scene_without_motion_falls_back_to_the_default(paths):
+    """`motion`은 선택 필드다 — 비면 기본값이 영상으로 채운다 (ADR-0039 결정 1)."""
+    document = timed_document(PISA)
+    target = document["scenes"][3]
+    target.pop("motion", None)
+    run_id, _ = install(paths, PISA, document=document)
+
+    run(paths, run_id)
+
+    record = {s["scene_id"]: s for s in record_of(paths, run_id)["scenes"]}
+    entry = record[target["scene_id"]]
+    assert entry["motion"] == vocab.default_motion(target["beat"])
+    # 영상 프로바이더 없이 돌렸으므로 기본값 mj_video는 강등 사다리를 탄다 —
+    # 비운 씬이 영상으로 **취급**되는 것까지가 이 계약이다
+    assert entry["demoted_from"] == vocab.default_motion(target["beat"])
+
+
 def test_kling_scenes_are_demoted_loudly(paths):
     document = timed_document(PISA)
     document["scenes"][3]["motion"] = "kling"
@@ -370,6 +390,31 @@ def test_cli_exposes_the_stage():
     args = parse_args(["motion", "--slug", PISA])
     assert args.slug == PISA
     assert args.ffmpeg == "ffmpeg"
+
+
+def test_cli_defaults_to_the_real_video_provider():
+    """기본값이 `none`이면 전 씬이 조용히 강등된다 (ADR-0039 — 전 씬 영상이 기본)."""
+    args = parse_args(["motion", "--slug", PISA])
+    assert args.video == "midjourney"
+    assert _make_video_client(args) is not None
+    # 대기 상한도 워커 수도 단계가 선언하지 않는다 (ADR-0035, ADR-0031 G3)
+    assert args.video_timeout is None
+    assert args.jobs is None
+
+
+def test_cli_can_turn_the_video_off():
+    """`--video none`이면 로컬 인코딩만 돈다 — 과금도 대기도 없다."""
+    args = parse_args(["motion", "--slug", PISA, "--video", "none"])
+    assert _make_video_client(args) is None
+
+
+def test_the_real_video_adapter_takes_the_real_image_adapter():
+    """`image_source.json`의 `provider`와 대조하는 값이다 (ADR-0041).
+
+    이름이 어긋나면 `[7]`이 호출 없이 전 씬을 강등한다 — 그 대조가 성립하려면 두
+    어댑터의 이름이 실제로 짝이어야 한다.
+    """
+    assert MidjourneyVideoClient.source_provider == MidjourneyClient.name
 
 
 def test_run_id_comes_from_the_boundary_file(paths):

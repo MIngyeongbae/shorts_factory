@@ -53,6 +53,8 @@ SCENE_SCHEMA_DOC: dict[str, Any] = load("scene.schema.json")
 OUTLINE_SCHEMA_DOC: dict[str, Any] = load("outline.schema.json")
 SCENEPLAN_SCHEMA_DOC: dict[str, Any] = load("sceneplan.schema.json")
 FACTSHEET_SCHEMA_DOC: dict[str, Any] = load("factsheet.schema.json")
+SCORE_SCHEMA_DOC: dict[str, Any] = load("score.schema.json")
+REFS_SCHEMA_DOC: dict[str, Any] = load("refs.schema.json")
 SUBTITLE_STYLE: dict[str, Any] = load("subtitle-style.json")
 SCRIPT_RULES: dict[str, Any] = load("script-rules.json")
 BEAT_DEFAULTS: dict[str, Any] = load("beat-defaults.json")
@@ -66,6 +68,8 @@ REGISTRY: Registry = Registry().with_resources(
         ("outline.schema.json", OUTLINE_SCHEMA_DOC),
         ("sceneplan.schema.json", SCENEPLAN_SCHEMA_DOC),
         ("factsheet.schema.json", FACTSHEET_SCHEMA_DOC),
+        ("score.schema.json", SCORE_SCHEMA_DOC),
+        ("refs.schema.json", REFS_SCHEMA_DOC),
     )
 )
 
@@ -114,6 +118,15 @@ def checks() -> dict[str, Any]:
     return SCRIPT_RULES["checks"]
 
 
+def score_rules() -> dict[str, Any]:
+    """`[1b] score`의 축 목록·축당 만점·임계값 (ADR-0040).
+
+    임계값은 캘리브레이션으로 채우는 값이라 `None`일 수 있다. 코드가 기본값을 대신
+    선언하지 않는다 — 없으면 없는 대로 채점만 하고 반려하지 않는 쪽이 계약이다.
+    """
+    return SCRIPT_RULES["score"]
+
+
 def signature_phrases() -> tuple[dict[str, Any], ...]:
     """시그니처 문구. ADR-0033 §2가 필수에서 권장으로 내렸다."""
     return tuple(SCRIPT_RULES["signatures"]["phrases"])
@@ -137,3 +150,8 @@ def default_framing(beat: str, scale: str) -> str:
 def default_transition(beat: str) -> str:
     """씬이 `transition`을 비웠을 때 쓰는 전환."""
     return beat_default(beat)["transition"]
+
+
+def default_motion(beat: str) -> str:
+    """씬이 `motion`을 비웠을 때 쓰는 값. 비면 영상이 된다 (ADR-0039 결정 1)."""
+    return beat_default(beat).get("motion") or BEAT_DEFAULTS["fallback"]["motion"]

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "score.schema.json",
+  "title": "[1b] score 산출 — 후보 채점과 선발 (ADR-0040)",
+  "description": "축 이름·축당 만점·임계값은 여기 없다. script-rules.json의 `score` 절이 정본이고 이 스키마는 모양만 본다 — 두 곳에 적으면 갈라진다 (ADR-0034 §3).",
+  "type": "object",
+  "required": ["topic", "candidates", "chosen", "verdict"],
+  "additionalProperties": false,
+  "properties": {
+    "topic": {"type": "string", "minLength": 1},
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/scored"}
+    },
+    "chosen": {
+      "type": ["string", "null"],
+      "description": "선발한 후보의 파일명(05-candidates/ 안). 전 후보가 기준 미달이면 null이다 (specs/05 [1b])."
+    },
+    "why_chosen": {"type": "string"},
+    "verdict": {
+      "enum": ["pass", "reject"],
+      "description": "reject는 '전 후보 미달'이다. 사실이 틀렸다는 뜻이 아니다 — 그 판정은 [0b]와 [2]가 한다."
+    },
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "scored": {
+      "type": "object",
+      "required": ["candidate", "axes", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {"type": "string", "minLength": 1},
+        "axes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/axis"},
+          "description": "키는 script-rules.json `score.axes`의 축 이름이다. 목록 대조는 코드가 한다."
+        },
+        "total": {"type": "integer", "minimum": 0},
+        "critique_reflected": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "03-critique.md의 어느 지적을 반영했는지. 비판 반영 채점(specs/05:24)이 실제로 일어났는지 사람이 보는 자리다."
+        }
+      }
+    },
+    "axis": {
+      "type": "object",
+      "required": ["score", "why"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {"type": "integer", "minimum": 0},
+        "why": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

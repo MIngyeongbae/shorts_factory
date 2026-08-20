@@ -32,6 +32,7 @@ class FakeLLMClient(LLMClient):
         system_append: str = "",
         label: str = "",
         add_dirs: Sequence[Path] = (),
+        resume: str | None = None,
     ) -> LLMResult:
         self.calls.append(
             {
@@ -40,6 +41,7 @@ class FakeLLMClient(LLMClient):
                 "label": label,
                 "system_append": system_append,
                 "add_dirs": tuple(add_dirs),
+                "resume": resume,
             }
         )
         if not self._responses:

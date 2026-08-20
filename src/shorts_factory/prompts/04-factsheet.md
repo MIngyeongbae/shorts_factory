@@ -54,7 +54,7 @@ ${critique}
   ],
   "twist": "통념을 뒤집는 한 문장",
   "failed_alternatives": ["실패한 대안 1 (왜 안 됐는지 포함)", "실패한 대안 2"],
-  "present_link": "지금 방문·실견 가능한 지점",
+  "present_link": "지금 방문·실견 가능한 지점, 또는 시청자의 일상에서 지금도 작동하는 같은 원리 (둘 중 하나면 된다)",
   "notes": "선택 항목. 하류가 알아야 할 단서",
   "reject_reason": "선택 항목. verdict가 fail일 때만"
 }

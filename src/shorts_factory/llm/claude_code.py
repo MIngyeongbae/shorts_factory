@@ -80,6 +80,7 @@ class ClaudeCodeClient(LLMClient):
         allowed_tools: Sequence[str],
         system_append: str,
         add_dirs: Sequence[Path] = (),
+        resume: str | None = None,
     ) -> list[str]:
         cmd = [
             self.executable,
@@ -88,6 +89,9 @@ class ClaudeCodeClient(LLMClient):
             "--permission-mode", self.permission_mode,
             "--disable-slash-commands",
         ]
+        if resume:
+            # 같은 세션을 이어간다 (ADR-0044). 재청이 입력 전부를 재독하지 않게 한다.
+            cmd += ["--resume", resume]
         if allowed_tools:
             # 가변 인자 옵션이므로 콤마로 합쳐 하나의 토큰으로 넘긴다
             cmd += ["--allowedTools", ",".join(allowed_tools)]
@@ -140,9 +144,10 @@ class ClaudeCodeClient(LLMClient):
         system_append: str = "",
         label: str = "",
         add_dirs: Sequence[Path] = (),
+        resume: str | None = None,
     ) -> LLMResult:
         timeout = timeout or self.default_timeout
-        cmd = self._build_cmd(allowed_tools, system_append, add_dirs)
+        cmd = self._build_cmd(allowed_tools, system_append, add_dirs, resume)
         last_error = ""
 
         for attempt in range(1, self.max_retries + 1):

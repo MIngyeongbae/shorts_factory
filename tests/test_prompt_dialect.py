@@ -52,13 +52,35 @@ def test_mj_prompt_keeps_the_korean_subject_untranslated():
     assert GOAL in prompt
 
 
-def test_mj_prompt_drops_the_subtitle_rationale():
-    """양성 프롬프트의 `for subtitles`가 `--no burned-in subtitles`와 싸운다."""
-    assert "for subtitles" in COMPOSITION
-    assert "for subtitles" not in MJ_COMPOSITION
-    assert "bottom third left empty" in MJ_COMPOSITION
-    # 종횡비는 --ar가 정한다. 본문에 두 번 말하지 않는다.
+def test_the_prompt_carries_no_layout_instruction():
+    """이미지는 자막에 아무것도 빚지지 않는다 (ADR-0038).
+
+    옛 계약은 `bottom third left empty for subtitles`를 실었고, 코드가 `for subtitles`만
+    잘라 내며 **이유는 지우고 지시는 남겼다.** 지금은 지시 자체가 없다 — 실측에서 먹지도
+    않았고(4/4 안 비움) 비워진 만큼이 그림이 아니라 종이였다.
+    """
+    assert "subtitle" not in COMPOSITION
+    assert "bottom third" not in COMPOSITION
+    # 종횡비는 --ar가 정한다. 본문에 두 번 말하지 않는다 — 그래서 남는 것이 없다.
     assert "vertical 9:16" not in MJ_COMPOSITION
+    assert MJ_COMPOSITION == ""
+
+    prompt = build_mj_prompt(SHOT, SUBJECT)
+    assert not prompt.replace(f" --ar {SUBJECT[:0]}", "").rstrip().endswith(",")
+
+
+def test_paper_is_neither_asked_for_nor_allowed():
+    """종이는 두 곳에서 막는다 — 스타일에서 빼고 `--no`로 금지한다 (ADR-0038).
+
+    스타일만 고쳐서는 4장 중 3장에 종이 가장자리가 남았다 (F 실측). 둘 다 필요하다.
+    """
+    prompt, negative = build_scene_prompt(
+        "mj", shot=SHOT, subject=SUBJECT, visual_goal="", overlay_types=()
+    )
+    assert "white paper" not in prompt
+    assert "bare paper" not in prompt
+    assert "white paper background" in negative
+    assert "paper edges" in negative
 
 
 def test_mj_prompt_flattens_the_style_clauses():
@@ -108,7 +130,8 @@ def test_the_shipped_string_matches_what_was_verified():
     line = f"{prompt} {negative}"
     assert line.startswith(SUBJECT)
     assert " --ar 9:16 --no burned-in subtitles, caption bars," in line
-    assert "bottom third left empty --ar" in line
+    # 레이아웃 절이 없어져 스타일 마지막 절이 곧 `--ar` 앞이다 (ADR-0038).
+    assert "no blank margins --ar" in line
 
 
 # --- 룰은 방언과 무관하다 ----------------------------------------------------

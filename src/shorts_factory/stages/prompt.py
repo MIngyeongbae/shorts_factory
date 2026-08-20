@@ -38,6 +38,7 @@ from typing import Any
 from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..runstate import RunState
+from ..schemas import vocab
 from ..schemas.scenes import validate_scenes
 from ..schemas.visual_rules import (
     ASPECT_RATIO,
@@ -217,7 +218,8 @@ def build_prompts(
                 "beat": beat,
                 "subject_scale": scale,
                 "camera": scene["camera"],
-                "motion": scene["motion"],
+                # motion은 선택 필드다 — 비면 기본값이 영상이다 (ADR-0039 결정 1)
+                "motion": scene.get("motion") or vocab.default_motion(beat),
                 "framing": token,
                 "framing_source": source,
                 "prompt": prompt_text,

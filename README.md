@@ -7,7 +7,7 @@ Spec-Driven Development로 운영하는 AI 쇼츠 자동 생성 파이프라인.
 
 ## 구현 현황
 
-`specs/05-pipeline.md`의 1부 `[0a]`~`[2]`와 2부 `[3]`·`[5]`~`[7]`·`[9]`.
+`specs/05-pipeline.md`의 1부 `[0a]`~`[2]`와 2부 `[3]`~`[7]`(`[6r]`·`[6i]` 포함)·`[9]`.
 
 ```
 topics/backlog.md
@@ -17,10 +17,17 @@ topics/backlog.md
   ┌ [1a. outline]   07-outline.json    훅 각도 + 단 구성
   │ [1s. sceneplan] 08-sceneplan.json  씬 분할 + 그림·연출
   └ [1w. write]     05-candidates/*    자막 문장 (ADR-0029로 갈린 셋)
-  → [2. validate]   06-script.json     실패 종류에 따라 [1w]/[1s]/[1a]로 재진입
+  → [1b. score]     06-script.json     후보 채점(09-score.json) → 상위 1개 선발 (ADR-0040)
+  → [2. validate]   선발본 최종 게이트  재생성하지 않는다 — 실패는 보고·중단 (ADR-0044)
 ```
 
-`[1b] score`·`[1c] critique2`·`[2b] judge`와 2부 `[4]`·`[6r]`·`[8]`·`[10]`·`[11]`은 미구현.
+`[1c] critique2`·`[2b] judge`와 2부 `[8]`·`[10]`·`[11]`은 미구현.
+**ADR-0043·0044는 구현까지 끝났다** — `[1w]` 조립·씬 단위 재청(resume), `[1s]` 직후
+검증, `[2]` 게이트화, `[6i] info`(NB2 편집+자소 대조 검수), `[7]` Veo 분기,
+`videogen/veo.py`. 단 **Veo·NB2 편집의 실호출 프로브(ADR-0043 G1~G3)는 아직이다.**
+
+`[4] refpack`은 **생산까지 구현됐고 소비는 아직이다** — `refs.json`을 쓰지만 `[5]`가
+`description`을 프롬프트에 싣는 경로와 `[6]`이 파일을 첨부하는 경로가 없다 (ADR-0030 G2).
 
 ## 준비물
 
@@ -46,11 +53,20 @@ python run.py package --topic "한양도성 각자성석"
 # [1a]+[1s]+[1w] 팩트시트 → 대본 후보 (셋을 따로 돌릴 수도 있다)
 python run.py draft --slug hanyangdoseong-gakjaseongseok
 
-# [2] 후보 검증 → 실패 종류에 따라 되돌아가 재생성 (최대 3회)
+# [1b] 후보 채점 → 06-script.json 선발
+python run.py score --slug hanyangdoseong-gakjaseongseok
+
+# [2] 선발본 최종 게이트 — 실패 시 보고·중단 (ADR-0044. 재생성하지 않는다)
 python run.py validate --slug hanyangdoseong-gakjaseongseok
 
 # [3] 확정 대본 → narration.wav + 실측 타임스탬프 (2부, 편당 과금)
 python run.py tts --slug hubeodaem-konkeuriteu-naenggak
+
+# [4] 씬별 실사 참조 → refs.json + refs/{scene_id}/ (2부, 과금 0)
+python run.py refpack --slug hubeodaem-konkeuriteu-naenggak
+
+# [6i] 인포씬 CLEAN → INFO 이미지 (2부, NB2 편집 + 검수 — ADR-0043. 인포씬 없으면 스킵)
+python run.py info --slug hubeodaem-konkeuriteu-naenggak
 ```
 
 `[3]`은 `.env`의 `ELEVENLABS_API_KEY`·`ELEVEN_VOICE_ID`를 쓴다 (ADR-0004). 키 없이
@@ -76,7 +92,7 @@ python run.py tts --slug hubeodaem-konkeuriteu-naenggak
 | 2 | `[0a]` 반려 (백로그 4조건 미충족) |
 | 3 | `[0b]` 반려 (`verdict: fail`) |
 | 4 | `[1a]`·`[1s]`·`[1w]` 산출물이 계약·검증에 걸림 (산출물은 남는다) |
-| 5 | `[2]` 검증 실패 (재생성 상한까지 못 고침) |
+| 5 | `[2]` 최종 게이트 실패 (보고·중단 — 다시 돌릴지는 사람이 정한다, ADR-0044) |
 | 6 | `[6]` 이미지 생성 실패 |
 | 7 | `[6]` 스타일 앵커 0장 차단 (`--allow-missing-anchors`로 해제) |
 | 8 | `[7]` 클립 렌더 실패 |
@@ -84,6 +100,7 @@ python run.py tts --slug hubeodaem-konkeuriteu-naenggak
 | 10 | `[3]` 총 길이 상한 초과 — 대본 축약이 필요하다 (1부 소관, ADR-0017) |
 | 11 | `[3]` 키·`ELEVEN_VOICE_ID`·플랜 미비. **호출 전에 막히므로 과금이 없다** |
 | 12 | `[6]` `prompts.json`의 방언과 프로바이더 불일치 (ADR-0027). `[5]`를 맞는 `--dialect`로 다시 돌린다 — 무료다 |
+| 14 | `[6i]` 인포 단계 실패 (CLEAN 부재 등. 검수 강등은 실패가 아니다) |
 | 130 | 사용자 중단 (Ctrl+C) |
 
 과금 단계(`[3]`·`[6]`)는 고칠 자리가 저마다 달라서 코드를 나눴다 — 11은 `.env`,

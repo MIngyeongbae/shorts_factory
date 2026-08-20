@@ -139,6 +139,36 @@ def build_body(request: ImageRequest, *, model_id: str) -> dict[str, Any]:
     }
 
 
+def build_edit_body(
+    instruction: str,
+    image_path: Path,
+    *,
+    model_id: str,
+    aspect_ratio: str = "9:16",
+    resolution: str = "2K",
+) -> dict[str, Any]:
+    """지시 편집 호출의 본문 (ADR-0043 `[6i]`).
+
+    생성(`build_body`)과 다른 점은 입력이 프롬프트가 아니라 **기존 이미지 + 지시**라는
+    것이다 — CLEAN의 구도·조명·재질을 보존한 채 라벨·수치만 얹는 것이 계약이고,
+    그 보존 여부는 `[6i]`의 검수가 본다.
+    """
+    parts: list[dict[str, Any]] = [
+        {"type": "text", "text": instruction},
+        anchor_part(image_path),
+    ]
+    return {
+        "model": model_id,
+        "input": parts,
+        "response_format": {
+            "type": "image",
+            "mime_type": OUTPUT_MIME,
+            "aspect_ratio": aspect_ratio,
+            "image_size": resolution,
+        },
+    }
+
+
 def _image_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """응답에서 이미지 블록을 모은다. 편의 필드와 단계 배열을 모두 본다."""
     blocks: list[dict[str, Any]] = []
@@ -238,17 +268,14 @@ class NanoBananaClient(ImageClient):
             raise ProviderNotConfigured(str(exc)) from exc
         return self._api_key
 
-    def generate(
-        self, request: ImageRequest, *, timeout: int | None = None
-    ) -> GeneratedImage:
-        body = json.dumps(build_body(request, model_id=self.model_id)).encode("utf-8")
+    def _post(self, body: dict[str, Any], *, timeout: int | None) -> GeneratedImage:
         headers = {
             "x-goog-api-key": self.api_key,
             "Content-Type": "application/json",
         }
-
         status, raw = self.transport(
-            self.endpoint, headers, body, timeout or DEFAULT_TIMEOUT
+            self.endpoint, headers, json.dumps(body).encode("utf-8"),
+            timeout or DEFAULT_TIMEOUT,
         )
         if status != 200:
             raise _fail(status, raw)
@@ -259,3 +286,23 @@ class NanoBananaClient(ImageClient):
             raise ImageGenError(f"JSON이 아닌 200 응답이다: {exc}") from exc
 
         return parse_response(payload, model_id=self.model_id)
+
+    def generate(
+        self, request: ImageRequest, *, timeout: int | None = None
+    ) -> GeneratedImage:
+        return self._post(build_body(request, model_id=self.model_id), timeout=timeout)
+
+    def edit(
+        self,
+        instruction: str,
+        image_path: Path,
+        *,
+        timeout: int | None = None,
+    ) -> GeneratedImage:
+        """기존 이미지에 지시 편집 (ADR-0043 `[6i]`). 스타일 앵커는 쓰지 않는다 —
+        보존할 룩이 입력 이미지 그 자체다.
+        """
+        return self._post(
+            build_edit_body(instruction, image_path, model_id=self.model_id),
+            timeout=timeout,
+        )

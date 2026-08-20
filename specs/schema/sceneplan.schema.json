@@ -3,20 +3,28 @@
   "$id": "sceneplan.schema.json",
   "title": "08-sceneplan.json ([1s] sceneplan 산출)",
   "description": "씬 분할 + 글·그림 분담 + 연출 선택. 1부 내부 파일이고 2부는 읽지 않는다 (ADR-0029, ADR-0017). **문장이 없는 대본이다** — [1w]가 says를 text로 바꾸고 나머지 필드는 그대로 복사해 06-script.json을 만든다. 어느 필드가 복사되는지는 손으로 적지 않는다: 이 파일과 scene.schema.json의 교집합이고 sceneplan.carried_fields()가 계산한다.",
-
   "type": "object",
-  "required": ["topic", "scenes"],
+  "required": [
+    "topic",
+    "scenes"
+  ],
   "additionalProperties": false,
   "properties": {
-    "topic": { "type": "string", "minLength": 1 },
+    "topic": {
+      "type": "string",
+      "minLength": 1
+    },
     "scenes": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/planned_scene" }
+      "items": {
+        "$ref": "#/$defs/planned_scene"
+      }
     },
-    "notes": { "type": "string" }
+    "notes": {
+      "type": "string"
+    }
   },
-
   "$defs": {
     "planned_scene": {
       "type": "object",
@@ -30,8 +38,7 @@
         "visual_goal",
         "subject",
         "subject_scale",
-        "camera",
-        "motion"
+        "camera"
       ],
       "additionalProperties": false,
       "properties": {
@@ -59,7 +66,6 @@
           "minimum": 1,
           "description": "이 씬의 목표 글자 수. 범위는 script-rules.json의 limits.line_chars_target(권장)·line_chars_max(상한)다."
         },
-
         "visual_goal": {
           "type": "string",
           "minLength": 1,
@@ -72,11 +78,16 @@
         },
         "subject_anchor": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
           "description": "선택. 대상을 고정하는 짧은 한국어 명사구 목록 (ADR-0028). 부재는 경고가 아니다. 공백뿐인 항목은 여기서 막는다 — 값이 태어나는 자리다."
         },
-        "subject_scale": { "$ref": "vocab.json#/$defs/subject_scale" },
-
+        "subject_scale": {
+          "$ref": "vocab.json#/$defs/subject_scale"
+        },
         "framing": {
           "$ref": "vocab.json#/$defs/framing",
           "description": "선택. 구도 토큰 어휘에서 고른다 (ADR-0033 §3). 비우면 [5]가 beat-defaults.json으로 떨어뜨리고 그 씬 수를 요약에 낸다 — 필수로 만들면 세션이 아무 값이나 채워 그 관측 수단이 죽는다."
@@ -85,20 +96,52 @@
           "$ref": "vocab.json#/$defs/transition",
           "description": "선택. 이 씬으로 **진입**하는 전환. 첫 씬에서는 무시한다."
         },
-        "camera": { "$ref": "vocab.json#/$defs/camera" },
-        "motion": { "$ref": "vocab.json#/$defs/motion" },
-
+        "camera": {
+          "$ref": "vocab.json#/$defs/camera"
+        },
+        "motion": {
+          "$ref": "vocab.json#/$defs/motion"
+        },
         "emphasis": {
           "type": "object",
           "description": "선택. 화면 강조 요소 (레이어 B). 숫자를 화면에 세울 씬에 단다.",
-          "required": ["type", "value"],
+          "required": [
+            "type",
+            "value"
+          ],
           "additionalProperties": false,
           "properties": {
-            "type": { "$ref": "vocab.json#/$defs/overlay_type" },
-            "value": { "type": "string", "minLength": 1 }
+            "type": {
+              "$ref": "vocab.json#/$defs/overlay_type"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
-        "notes": { "type": "string" }
+        "info": {
+          "type": "object",
+          "description": "선택. 인포씬 표시 + 화면에 그려질 라벨 문구·수치 (ADR-0043). 존재하면 인포씬이다 — [6i]가 NB2 편집으로 INFO 이미지를 만들고 [7]이 Veo first/last로 영상을 만든다. labels는 화면에 그려질 문자열 그대로이고, 문자열 속 수치는 팩트시트 그라운딩 대상이다 (ADR-0007). 배치·색·지시선은 계약하지 않는다 — NB2 재량이다.",
+          "required": [
+            "labels"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
       }
     }
   }

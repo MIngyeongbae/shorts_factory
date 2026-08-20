@@ -12,7 +12,7 @@
 import pytest
 
 from shorts_factory.schemas import vocab
-from shorts_factory.schemas.scenes import BEATS, CAMERAS, SUBJECT_SCALES, TRANSITIONS
+from shorts_factory.schemas.scenes import BEATS, CAMERAS, MOTIONS, SUBJECT_SCALES, TRANSITIONS
 from shorts_factory.schemas.visual_rules import (
     FRAMINGS,
     GLOBAL_NEGATIVES,
@@ -73,6 +73,12 @@ def test_beat_default_transition_is_in_the_vocabulary(beat):
 
 
 @pytest.mark.parametrize("beat", BEATS)
+def test_beat_default_motion_is_in_the_vocabulary(beat):
+    """비면 영상이 된다 (ADR-0039 결정 1) — 기본값이 어휘 밖이면 그 약속이 깨진다."""
+    assert vocab.default_motion(beat) in MOTIONS
+
+
+@pytest.mark.parametrize("beat", BEATS)
 def test_beat_default_cameras_and_overlays_are_real(beat):
     """기본값 표가 어휘 밖의 값을 가리키면 되돌릴 때 그대로 깨진다."""
     defaults = vocab.beat_default(beat)
@@ -86,6 +92,7 @@ def test_unknown_beat_still_gets_a_default():
     """어휘가 늘었는데 기본값 표가 안 따라온 것으로 파이프라인을 세우지 않는다 (D-5)."""
     assert vocab.default_framing("아직_없는_비트", "wide") in FRAMINGS
     assert vocab.default_transition("아직_없는_비트") in TRANSITIONS
+    assert vocab.default_motion("아직_없는_비트") in MOTIONS
 
 
 # --- 고른 값이 이긴다 (ADR-0033 §3) ------------------------------------------
