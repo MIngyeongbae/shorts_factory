@@ -52,7 +52,7 @@ ${axes}
       "candidate": "01.json",
       "axes": {
         "hook_strength": {"score": 3, "why": "첫 줄이 규격 이야기로 시작해 3초 안에 감정이 안 생긴다"},
-        "info_density": {"score": 4, "why": "..."},
+        "comprehension": {"score": 4, "why": "..."},
         "standalone": {"score": 4, "why": "..."}
       },
       "total": 11,

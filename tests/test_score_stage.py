@@ -32,7 +32,7 @@ from shorts_factory.stages.topic import run_topic_stage
 
 TODAY = date(2026, 8, 19)
 TOPIC = "후버댐 콘크리트 냉각"
-AXES = ("hook_strength", "info_density", "standalone")
+AXES = ("hook_strength", "comprehension", "standalone")
 
 
 def scored(name: str, *values: int, reflected=("비판이 지목한 훅 약점",)) -> dict:

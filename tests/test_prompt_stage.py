@@ -39,11 +39,15 @@ REAL_SLUGS = (PISA, HOOVER)
 
 
 def real_script(slug: str) -> dict:
-    """실물 대본 사본. 없으면 skip (1부가 만든 토픽 패키지에 딸린 파일이다)."""
+    """실물 대본 사본. 없으면 skip (1부가 만든 토픽 패키지에 딸린 파일이다).
+
+    옛 beat 라벨은 conftest.load_script가 정규화한다 (ADR-0047 — 옛 산출물은
+    재검증하지 않고, 픽스처로 읽을 때만 새 어휘로).
+    """
     path = REPO / "topics" / slug / SCRIPT_FILE
     if not path.exists():
         pytest.skip(f"{path}가 없다 — 1부 토픽 패키지가 있어야 돈다")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_script(slug)
 
 
 @pytest.fixture

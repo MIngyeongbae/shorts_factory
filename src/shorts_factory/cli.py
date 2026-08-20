@@ -385,8 +385,9 @@ def _make_video_client(args) -> VideoClient | None:
     return None if factory is None else factory()
 
 
-#: `--info-video` 값 → 인포씬 영상 어댑터 (ADR-0043). `none`이면 인포씬이 일반
-#: 경로로 강등되고 경고가 남는다 — 조용히 사라지지 않는다.
+#: `--info-video` 값 → 인포씬 영상 어댑터 (ADR-0043). `none`이면 인포씬이 INFO
+#: 정지(zoompan)로 강등되고 경고가 남는다 (ADR-0043 개정) — 라벨은 화면에 남고,
+#: 조용히 사라지지 않는다. 영상 없는 테스트 배치가 이 칸으로 돈다.
 INFO_VIDEO_PROVIDERS: dict[str, type[VideoClient] | None] = {
     "veo": VeoClient,
     "none": None,
@@ -768,7 +769,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_motion.add_argument(
         "--info-video", choices=sorted(INFO_VIDEO_PROVIDERS), default="veo",
-        help="인포씬 영상 어댑터 (기본: veo — ADR-0043). none이면 인포씬을 일반 경로로 강등",
+        help="인포씬 영상 어댑터 (기본: veo — ADR-0043). none이면 INFO 정지(zoompan)로 강등 — 라벨은 남는다",
     )
     p_motion.set_defaults(func=_cmd_motion)
 

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -30,9 +31,6 @@ SUBJECT_SCALES: tuple[str, ...] = vocab.values("subject_scale")
 FRAMING_TOKENS: tuple[str, ...] = vocab.values("framing")
 TRANSITIONS: tuple[str, ...] = vocab.values("transition")
 
-#: 숫자를 세우는 비트. 이름에서 뽑는다 — 목록을 또 적으면 어휘가 늘 때 갈라진다.
-NUMBER_BEATS: tuple[str, ...] = tuple(b for b in BEATS if b.endswith("_number"))
-
 #: 편당 상한이 있는 영상 모션 — 과금 차선 `kling`뿐이다 (ADR-0039가 mj_video 상한을
 #: 폐기했다). 어느 모션에 상한이 있는지는 어휘가 안다.
 VIDEO_MOTIONS: tuple[str, ...] = tuple(
@@ -45,6 +43,10 @@ MAX_VIDEO_SCENES: int = min(
 
 #: `visual_goal`이 `text`를 되풀이했다고 볼 겹침 비율 (ADR-0022).
 VISUAL_GOAL_OVERLAP_LIMIT: float = vocab.checks()["visual_goal_overlap_limit"]
+
+#: `info.labels`의 숫자를 말이 되풀이했다고 볼 비율 (ADR-0047). 화면이 지는 숫자는
+#: 나레이션이 가리키기만 한다 — 첫 편은 이 비율이 0.75였고 라벨을 소리 내어 읽었다.
+LABEL_NUMBER_ECHO_LIMIT: float = vocab.checks()["label_number_echo_limit"]
 
 #: total_duration과 마지막 씬 est_end의 허용 오차(초). 경고 판정에만 쓴다.
 DURATION_TOLERANCE = 0.5
@@ -82,6 +84,29 @@ def visual_goal_overlap(text: str, visual_goal: str) -> float:
     return len(goal & _bigrams(text)) / len(goal)
 
 
+_NUMBER_TOKEN = re.compile(r"[0-9][0-9,.]*")
+
+
+def _number_tokens(text: str) -> set[str]:
+    """숫자 토큰 집합. 콤마를 정규화하고 꼬리 구두점을 뗀다 — `1,568`과 `1568`은 같은 수다."""
+    return {t.replace(",", "").rstrip(".") for t in _NUMBER_TOKEN.findall(text or "")}
+
+
+def label_number_echo(text: str, labels: list[str]) -> float:
+    """`info.labels`의 숫자 토큰 중 말(`says`/`text`)이 다시 말하는 비율 (0~1, ADR-0047).
+
+    **화면이 지는 숫자는 나레이션이 가리키기만 한다.** 1에 가까우면 나레이션이
+    화면 라벨을 소리 내어 읽는 것이다. 라벨에 숫자가 없으면 0이다 — 잴 것이 없는
+    씬을 막지 않는다.
+    """
+    tokens: set[str] = set()
+    for label in labels:
+        tokens |= _number_tokens(str(label))
+    if not tokens:
+        return 0.0
+    return len(tokens & _number_tokens(text)) / len(tokens)
+
+
 def semantic_errors(data: dict[str, Any]) -> list[str]:
     """스키마로 표현 불가한 교차 규칙 (스펙 02).
 
@@ -115,6 +140,17 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
                 "설명을 지지 않는다 — 본문이 말하지 않고 넘어가는 것을 적어라 (ADR-0022)"
             )
 
+        # ADR-0047 — 화면이 지는 숫자는 나레이션이 가리키기만 한다. [1s]의 says가
+        # 통과했어도 [1w]가 문장으로 옮기며 숫자를 되넣을 수 있어 최종본에서 한 번 더 잰다.
+        labels = (scene.get("info") or {}).get("labels") or []
+        echo = label_number_echo(scene.get("text", ""), labels)
+        if echo > LABEL_NUMBER_ECHO_LIMIT:
+            errors.append(
+                f"scenes/{sid}: text가 info.labels의 숫자 {echo:.0%}를 되풀이한다 "
+                f"(상한 {LABEL_NUMBER_ECHO_LIMIT:.0%}). 나레이션이 화면 라벨을 소리 내어 "
+                "읽고 있다 — 화면이 지는 숫자는 말이 가리키기만 한다 (ADR-0047)"
+            )
+
         if start >= end:
             errors.append(f"scenes/{sid}: est_start({start}) >= est_end({end})")
         # 씬은 자막 줄 순서를 그대로 따르므로 시간이 역행하거나 겹칠 수 없다.
@@ -143,19 +179,8 @@ def semantic_warnings(data: dict[str, Any]) -> list[str]:
     if not scenes:
         return warnings
 
-    # ADR-0033 — 오버레이를 고르는 것은 이제 비트 표가 아니라 [1s]다. 숫자 비트에
-    # 강조가 없는 것이 틀린 것은 아니지만(그 숫자를 화면에 안 세울 수 있다) 대개는
-    # 빠뜨린 것이라 알린다. 막지는 않는다.
-    missing = [
-        s.get("scene_id")
-        for s in scenes
-        if s.get("beat") in NUMBER_BEATS and not s.get("emphasis")
-    ]
-    if missing:
-        warnings.append(
-            f"숫자 비트인데 emphasis가 없는 씬: {', '.join(str(i) for i in missing)} — "
-            "그 숫자를 화면에 세우지 않을 생각이면 그대로 두어도 된다"
-        )
+    # "숫자 비트인데 emphasis가 없다" 경고는 *_number 비트와 함께 죽었다 (ADR-0047
+    # 결정 4, 의도된 삭제) — 숫자를 화면에 세우라고 미는 장치였고 방향이 반대다.
 
     last_end = scenes[-1].get("est_end")
     total = data.get("total_duration")

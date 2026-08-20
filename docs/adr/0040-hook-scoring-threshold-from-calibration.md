@@ -3,6 +3,11 @@
 - 상태: 승인
 - 날짜: 2026-08-19
 - 관련 스펙: specs/05-pipeline.md, specs/01-script-template.md, specs/schema/script-rules.json
+- 개정: **ADR-0047 — 2026-08-19 캘리브레이션 무효.** 축 하나가 교체됐다
+  (`info_density` → `comprehension`). 옛 세 축으로 잰 앵커 점수(후버 11, 다다미 10·9)로는
+  새 축의 임계값을 그을 수 없어 `min_total`·`min_per_axis`를 비웠다 — 캘리브레이션 전
+  상태("채점만 하고 반려하지 않는다")로 돌아간다. **이 ADR의 방법 자체는 그대로 산다** —
+  새 축으로 같은 절차를 다시 밟는 것이 재캘리브레이션이다
 
 ## 맥락
 

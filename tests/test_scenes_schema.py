@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 from conftest import load_fixture
 from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import (
+    label_number_echo,
     visual_goal_overlap,
     BEATS,
     MAX_VIDEO_SCENES,
@@ -127,24 +128,50 @@ def test_overlapping_scenes_are_rejected():
     assert any("이르다" in e for e in errors)
 
 
-@pytest.mark.parametrize("beat", ["context_number", "solution_number"])
-def test_number_beat_without_emphasis_is_a_warning(beat):
-    """오버레이를 고르는 것은 이제 [1s]다 (ADR-0033 §3). 막지 않고 알린다."""
+def test_emphasis_없는_숫자_씬은_경고가_아니다():
+    """"숫자 비트인데 emphasis가 없다" 경고는 *_number 비트와 함께 죽었다 (ADR-0047).
+
+    숫자를 화면에 세우라고 미는 장치였고 방향이 반대다 — 어느 씬이든 emphasis
+    없이 조용히 통과한다.
+    """
     data = load_fixture("scenes_pass.json")
-    scene = next(s for s in data["scenes"] if s["beat"] == beat)
-    del scene["emphasis"]
+    for scene in data["scenes"]:
+        scene.pop("emphasis", None)
     errors, warnings = validate_scenes(data)
     assert errors == []
-    assert any("emphasis" in w for w in warnings)
+    assert not any("emphasis" in w for w in warnings)
 
 
-def test_non_number_beat_may_omit_emphasis():
+def test_라벨_숫자를_text가_되풀이하면_반려된다():
+    """화면이 지는 숫자는 나레이션이 가리키기만 한다 (ADR-0047)."""
+    data = load_fixture("scenes_pass.json")
+    scene = next(s for s in data["scenes"] if "11만" in s["text"])
+    scene["info"] = {"labels": ["동원 11만 명"]}  # text가 라벨 숫자를 그대로 말한다
+    errors, _ = validate_scenes(data)
+    assert any("되풀이" in e and "ADR-0047" in e for e in errors)
+
+
+def test_라벨_숫자를_말이_가리키기만_하면_통과한다():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
-    scene.pop("emphasis", None)
-    errors, warnings = validate_scenes(data)
+    assert not any(ch.isdigit() for ch in scene["text"])
+    scene["info"] = {"labels": ["동원 11만 명", "기간 12년"]}
+    errors, _ = validate_scenes(data)
     assert errors == []
-    assert warnings == []
+
+
+def test_숫자_없는_라벨은_에코를_재지_않는다():
+    data = load_fixture("scenes_pass.json")
+    scene = next(s for s in data["scenes"] if "11만" in s["text"])
+    scene["info"] = {"labels": ["한양도성"]}
+    errors, _ = validate_scenes(data)
+    assert errors == []
+
+
+def test_라벨_에코는_콤마를_정규화한다():
+    """`1,568`과 `1568`은 같은 수다 — 표기 차로 에코가 빠져나가면 안 된다."""
+    assert label_number_echo("전체 길이가 1568km였죠.", ["1,568km"]) == 1.0
+    assert label_number_echo("배관 이야기입니다.", ["1,568km"]) == 0.0
 
 
 def _with_video_count(data: dict, count: int, motion: str = "kling") -> dict:

@@ -45,7 +45,7 @@ STYLE = {
 
 SCENE = {
     "scene_id": 6,
-    "beat": "context_number",
+    "beat": "context",
     "subject_scale": "wide",
     "camera": "slow_zoom_in",
     "motion": "kenburns",

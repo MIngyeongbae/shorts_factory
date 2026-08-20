@@ -2,7 +2,10 @@
 
 - `info/{scene_id}.jpg`의 **존재**가 Veo 경로를 고른다 — 씬의 `motion` 값이 아니다
 - first=CLEAN, last=INFO를 파일로 넘긴다 (base64 인라인 — URL 왕복 없음)
-- 강등 사다리: `veo → mj_video → kenburns`. 조용한 강등은 없다 (`demoted_from`)
+- 강등 사다리: `veo → info_still → mj_video → kenburns` (ADR-0043 개정 2026-08-21).
+  Veo가 없거나 실패해도 INFO가 있으면 **라벨을 지키는 정지**로 내려간다 — INFO를
+  버리고 일반 영상을 만드는 것은 강등이 아니라 다른 것을 만드는 것이다.
+  조용한 강등은 없다 (`demoted_from`)
 - 프로바이더 전체가 막히면 남은 인포씬은 시도조차 하지 않는다
 - INFO 파일이 바뀌면 지문이 바뀌어 클립을 다시 만든다
 """
@@ -164,18 +167,23 @@ def test_a_changed_info_image_changes_the_fingerprint(paths):
 # --- 강등 사다리 ---------------------------------------------------------------
 
 
-def test_without_a_veo_client_info_scenes_demote_loudly(paths):
+def test_without_a_veo_client_info_scenes_demote_to_info_still(paths):
+    """`--info-video none`의 테스트 배치 — INFO를 버리지 않고 정지로 세운다 (ADR-0043 개정)."""
     run_id, _ = install(paths, info_scenes=(1,))
 
     result = run(paths, run_id)  # info_video 없음
 
     record = record_of(paths, run_id)
-    assert record[1]["motion_used"] == "kenburns"
+    assert record[1]["motion_used"] == "info_still"
     assert record[1]["demoted_from"] == "veo"
+    assert record[1]["info_image"] == "info/1.jpg", "라벨은 화면에 남는다"
     assert any("Veo 프로바이더가 없다" in w for w in result.warnings)
+    assert result.info_still_count == 1
+    assert result.passed
 
 
-def test_veo_failure_falls_to_mj_video_when_sources_exist(paths):
+def test_veo_failure_falls_to_info_still_not_mj_video(paths):
+    """Veo가 실패해도 INFO가 있으면 라벨을 지킨다 — mj_video로 가면 라벨이 사라진다."""
     run_id, document = install(paths, info_scenes=(1,))
     ids = [s["scene_id"] for s in document["scenes"]]
     for scene in document["scenes"]:
@@ -188,20 +196,20 @@ def test_veo_failure_falls_to_mj_video_when_sources_exist(paths):
     result = run(paths, run_id, info_video=veo, video=mj)
 
     record = record_of(paths, run_id)
-    assert record[1]["motion_used"] == "mj_video"
+    assert record[1]["motion_used"] == "info_still"
     assert record[1]["demoted_from"] == "veo"
-    assert 1 in [r.scene_id for r in mj.calls], "사다리 한 칸 아래로 실제 호출이 갔다"
+    assert 1 not in [r.scene_id for r in mj.calls], "인포씬은 mj_video를 부르지 않는다"
     assert result.passed
 
 
-def test_veo_failure_without_sources_falls_to_kenburns(paths):
+def test_veo_failure_without_sources_falls_to_info_still(paths):
     run_id, _ = install(paths, info_scenes=(1,))
     veo = FakeVeoClient(fail={1: VideoGenError("잡 실패")})
 
     result = run(paths, run_id, info_video=veo)
 
     record = record_of(paths, run_id)
-    assert record[1]["motion_used"] == "kenburns"
+    assert record[1]["motion_used"] == "info_still"
     assert record[1]["demoted_from"] == "veo"
     assert result.passed
 

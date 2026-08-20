@@ -44,7 +44,7 @@
     },
     {
       "scene_id": 4,
-      "beat": "context_number",
+      "beat": "context",
       "text": "동원된 인원만 11만 명이었죠.",
       "est_start": 12.6,
       "est_end": 17.0,
@@ -156,7 +156,7 @@
     },
     {
       "scene_id": 12,
-      "beat": "solution_number",
+      "beat": "solution_step",
       "text": "성벽을 97개 구간으로 나눴습니다.",
       "est_start": 44.0,
       "est_end": 48.6,

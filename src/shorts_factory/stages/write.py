@@ -125,18 +125,22 @@ def format_scenes(plan: dict[str, Any]) -> str:
     """씬 계획을 집필 세션이 읽을 목록으로. **문장에 필요한 것만 준다.**
 
     그림 필드와 연출 필드는 빼고 준다 — 이 세션이 손댈 수 없는 값이고, 보여 주면
-    자막에 그림 지시를 섞어 쓰게 만든다.
+    자막에 그림 지시를 섞어 쓰게 만든다. `info.labels`만 예외로 준다 (ADR-0047) —
+    라벨의 숫자를 문장에 되넣지 말라는 규칙은 라벨을 보여 줘야 지킬 수 있다.
     """
-    rows = [
-        {
+    rows = []
+    for scene in plan.get("scenes", []):
+        row: dict[str, Any] = {
             "scene_id": scene.get("scene_id"),
             "act": scene.get("act"),
             "beat": scene.get("beat"),
             "says": scene.get("says"),
             "budget": scene.get("char_budget"),
         }
-        for scene in plan.get("scenes", [])
-    ]
+        labels = (scene.get("info") or {}).get("labels")
+        if labels:
+            row["screen_labels"] = labels
+        rows.append(row)
     return dump_json({"scenes": rows})
 
 

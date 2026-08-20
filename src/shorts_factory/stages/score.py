@@ -3,8 +3,12 @@
 specs/05-pipeline.md:
     [1b. score] → 06-script.json (훅 스코어링: 비판 반영 채점 → 상위 1개)
 
-    "shorts-hook-scorer 루브릭(hook_strength / info_density / standalone) 기반 LLM 채점.
+    "shorts-hook-scorer 루브릭(hook_strength / comprehension / standalone) 기반 LLM 채점.
      전 후보가 기준 미달이면 주제 자체를 반려하고 리포트."
+
+`comprehension`은 ADR-0047이 `info_density`를 교체한 축이다 — 밀도("같은 분량에 사실이
+얼마나")는 첫 편을 숫자 낭독으로 만들고도 4점을 받았다. 축 이름은 값 파일에서 로드하므로
+이 파일에는 상수가 없다.
 
 ## 이 단계가 지는 판단
 
@@ -125,8 +129,8 @@ def format_candidates(candidates: dict[str, dict[str, Any]]) -> str:
     """후보를 채점 세션이 읽을 형태로. 문장과 그림 목표만 준다.
 
     씬 계약 전체를 그대로 넣지 않는 이유는 연출 필드가 채점 축과 무관하기 때문이다.
-    `visual_goal`은 남긴다 — `info_density`가 "그림이 설명을 지면 밀도가 오른다"는
-    축이라(스펙 01) 그림이 무엇을 지는지를 봐야 잴 수 있다.
+    `visual_goal`은 남긴다 — `comprehension`이 "그림이 이해를 보조하는가"를 보는
+    축이라(스펙 01, ADR-0047) 그림이 무엇을 받는지를 봐야 잴 수 있다.
     """
     blocks: list[str] = []
     for name, doc in candidates.items():

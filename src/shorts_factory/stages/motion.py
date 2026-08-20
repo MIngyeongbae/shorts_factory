@@ -34,11 +34,15 @@ specs/05-pipeline.md:
 
 ## 강등 사다리
 
-`veo`(인포씬, ADR-0043) → `mj_video` → `kenburns` → `static`. **아래로만 내려간다.**
+`veo`(인포씬, ADR-0043) → `info_still` → `mj_video` → `kenburns` → `static`.
+**아래로만 내려간다.**
 
 인포씬은 `info/{scene_id}.jpg`(`[6i]`의 산출물)의 존재로 골라진다 — 씬의 `motion`
-값이 아니다. Veo가 실패하면 일반 영상 입력이 있는 씬은 `mj_video`로, 없으면
-`kenburns`로 내려가고 `demoted_from: "veo"`가 남는다.
+값이 아니다. **Veo가 없거나 실패하면 `info_still`로 내려간다** (ADR-0043 개정
+2026-08-21): INFO 이미지 + 씬 계약의 `camera`로 zoompan. 인포씬의 임무는 라벨을
+화면에 세우는 것이고 움직임은 부속이므로 **라벨을 먼저 지킨다** — 옛 동작(INFO를
+버리고 CLEAN 일반 영상)은 강등이 아니라 다른 것을 만드는 것이었다. INFO 이미지가
+아예 없는 씬만 `mj_video` 이하로 내려가고, 어느 쪽이든 `demoted_from: "veo"`가 남는다.
 
 - **강등을 조용히 하지 않는다.** 어느 경로로 내려가든 `demoted_from`을 채우고 경고를
   남긴다. `mj_video`가 분기 없이 Ken Burns로 렌더되던 것이 정확히 이 사고였다 —
@@ -137,8 +141,12 @@ MJ_VIDEO = vocab.require("motion", "mj_video")
 
 #: 인포씬의 영상 경로 (ADR-0043). **어휘 값이 아니라 기록 라벨이다** — 씬이 `motion`으로
 #: 고를 수 있는 값이 아니고, `info/{scene_id}.jpg`의 존재가 이 경로를 고른다.
-#: 강등 사다리: `veo → mj_video → kenburns → static`.
+#: 강등 사다리: `veo → info_still → mj_video → kenburns → static`.
 VEO = "veo"
+
+#: 인포씬의 정지 경로 (ADR-0043 개정 2026-08-21). `veo`처럼 기록 라벨이다 — Veo가
+#: 없거나 실패했을 때 INFO 이미지를 zoompan으로 세운다. 라벨은 화면에 남는다.
+INFO_STILL = "info_still"
 
 #: `[6i]`의 산출물 — 인포씬의 끝 프레임 (specs/05).
 INFO_DIR = "info"
@@ -200,6 +208,11 @@ class MotionResult:
         return sum(1 for s in self.scenes if s.get("motion_used") == VEO)
 
     @property
+    def info_still_count(self) -> int:
+        """인포씬 정지 (ADR-0043 개정) — INFO 이미지 zoompan. 라벨은 화면에 남는다."""
+        return sum(1 for s in self.scenes if s.get("motion_used") == INFO_STILL)
+
+    @property
     def reversed_count(self) -> int:
         return sum(1 for s in self.scenes if s.get("camera_reversed"))
 
@@ -220,6 +233,8 @@ class MotionResult:
             extra += f" / 영상 {self.video_count}"
         if self.veo_count:
             extra += f" / 인포영상 {self.veo_count}"
+        if self.info_still_count:
+            extra += f" / 인포정지 {self.info_still_count}"
         if self.demoted:
             extra += f" / 강등 {self.demoted}"
         if self.reversed_count:
@@ -437,20 +452,22 @@ def _plan_scene(
     source: dict[str, Any] | None = None
     info_image = (info_images or {}).get(scene_id)
 
-    # 인포씬이 먼저다 (ADR-0043) — `info/{scene_id}.jpg`의 존재가 Veo 경로를 고른다.
-    # 일반 영상 입력(source)도 함께 채워 둔다: Veo가 실패하면 그리로 내려간다.
+    info_digest = _digest(info_image.read_bytes()) if info_image else None
+
+    # 인포씬이 먼저다 (ADR-0043) — `info/{scene_id}.jpg`의 존재가 경로를 고른다.
+    # Veo가 없으면 INFO를 버리지 않고 정지로 세운다 (ADR-0043 개정) — 인포씬의
+    # 임무는 라벨이고 움직임은 부속이다. `--info-video none`의 테스트 배치가 이 칸이다.
     if info_image is not None and not has_info_video:
+        motion_used = INFO_STILL
         demoted_from = VEO
         warnings.append(
             f"씬 {scene_id}: INFO 이미지가 있는데 Veo 프로바이더가 없다 → "
-            "인포 없는 일반 영상으로 강등 (ADR-0043)"
+            "INFO 정지(zoompan)로 강등 (ADR-0043 개정) — 라벨은 화면에 남는다"
         )
-        info_image = None
-
-    info_digest = _digest(info_image.read_bytes()) if info_image else None
-
-    if info_image is not None:
+    elif info_image is not None:
         motion_used = VEO
+        # 일반 영상 입력(source)도 함께 채워 둔다 — 기록에 남는다. Veo 실패의 강등처는
+        # mj_video가 아니라 info_still이다 (_render_scene).
         source = (sources or {}).get(scene_id)
         if segment.clip_length > VEO_DURATIONS[-1]:
             warnings.append(
@@ -472,11 +489,6 @@ def _plan_scene(
         warnings.append(
             f"씬 {scene_id}: motion=kling인데 i2v 경로가 아직 없다 → kenburns로 강등"
         )
-
-    if demoted_from == VEO and motion == MJ_VIDEO and (sources or {}).get(scene_id):
-        # Veo 프로바이더 부재로 내려온 인포씬 — 일반 영상 입력이 있으면 그리로 간다.
-        source = (sources or {}).get(scene_id)
-        motion_used = MJ_VIDEO
 
     frames = frame_count(segment.clip_length)
     return {
@@ -750,7 +762,8 @@ def _render_scene(
 ) -> dict[str, Any]:
     """씬 하나를 `motion_used`가 가리키는 경로로 만든다. 실패하면 사다리를 내려간다.
 
-    사다리: `veo → mj_video → kenburns → static` (ADR-0043·0025 §3). 아래로만 간다.
+    사다리: `veo → info_still → mj_video → kenburns → static` (ADR-0043·0025 §3).
+    아래로만 간다.
     """
     if plan["motion_used"] == VEO and info_video is not None:
         record = _render_veo(
@@ -765,7 +778,31 @@ def _render_scene(
         )
         if record is not None:
             return record
-        # 사다리 한 칸 아래 (ADR-0043) — 일반 영상 입력이 있으면 mj_video, 없으면 kenburns.
+        # 사다리 한 칸 아래 (ADR-0043 개정) — INFO 이미지는 있으므로(이 경로의 전제)
+        # 라벨을 지키는 info_still로 내려간다. mj_video로 가면 라벨이 사라진다.
+        plan = {**plan, "motion_used": INFO_STILL, "demoted_from": VEO}
+
+    if plan["motion_used"] == INFO_STILL:
+        # INFO 이미지 + 씬 계약의 camera로 zoompan (ADR-0043 개정). 렌더 실패의
+        # 다음 칸은 _render_kenburns 안의 static이다.
+        info_rel = plan.get("info_image")
+        info_path = run_dir / info_rel if info_rel else None
+        if info_path is not None and info_path.is_file():
+            return _render_kenburns(
+                plan,
+                image=info_path,
+                clip_path=clip_path,
+                run_dir=run_dir,
+                ffmpeg=ffmpeg,
+                runner=runner,
+                timeout=timeout,
+            )
+        # INFO 파일이 사라졌다 — 기록과 실물이 갈린 경우다. 일반 사다리로 내려간다.
+        if warnings is not None:
+            warnings.append(
+                f"씬 {plan['scene_id']}: info_still인데 {info_rel}이 없다 → "
+                "일반 경로로 강등 (라벨이 사라진다)"
+            )
         next_step = MJ_VIDEO if (plan.get("source_task_id") and video is not None) else KENBURNS
         plan = {**plan, "motion_used": next_step, "demoted_from": VEO}
 
@@ -936,7 +973,7 @@ def run_motion_stage(
     if info_images and info_video is None:
         warnings.append(
             f"INFO 이미지가 {len(info_images)}씬에 있는데 Veo 프로바이더가 없다 → "
-            "인포 없는 일반 영상으로 강등한다 (ADR-0043)"
+            "INFO 정지(zoompan)로 강등한다 (ADR-0043 개정) — 라벨은 화면에 남는다"
         )
     seen: dict[str, int] = {}
     records: list[dict[str, Any]] = []

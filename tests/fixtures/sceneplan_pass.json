@@ -25,7 +25,7 @@
       "emphasis": {"type": "big_red_text", "value": "230개"}
     },
     {
-      "scene_id": 3, "act": 1, "beat": "context_number",
+      "scene_id": 3, "act": 1, "beat": "context",
       "says": "높이 221미터, 바닥 두께 200미터의 규모",
       "char_budget": 22,
       "visual_goal": "사람과 나란히 놓은 댐의 높이 비교",
@@ -57,7 +57,7 @@
       "camera": "slow_zoom_in", "motion": "kenburns"
     },
     {
-      "scene_id": 6, "act": 2, "beat": "context_number",
+      "scene_id": 6, "act": 2, "beat": "context",
       "says": "반응하는 동안 스스로 내는 열",
       "char_budget": 23,
       "visual_goal": "굳는 콘크리트 내부의 온도 분포",
@@ -88,7 +88,7 @@
       "emphasis": {"type": "big_red_text", "value": "125년"}
     },
     {
-      "scene_id": 9, "act": 2, "beat": "context_number",
+      "scene_id": 9, "act": 2, "beat": "context",
       "says": "댐 완공 예정은 5년 뒤라는 사정",
       "char_budget": 20,
       "visual_goal": "공사 일정표와 냉각 기간의 길이 차",
@@ -192,7 +192,7 @@
       "camera": "pan_left", "motion": "kenburns"
     },
     {
-      "scene_id": 19, "act": 4, "beat": "solution_number",
+      "scene_id": 19, "act": 4, "beat": "solution_step",
       "says": "블록 안에 묻은 강관 총연장 933킬로미터",
       "char_budget": 24,
       "visual_goal": "콘크리트 속을 지나는 배관망의 밀도",
@@ -213,7 +213,7 @@
       "camera": "pan_right", "motion": "kenburns"
     },
     {
-      "scene_id": 21, "act": 4, "beat": "solution_number",
+      "scene_id": 21, "act": 4, "beat": "solution_step",
       "says": "125년이 2년으로 줄어든 결과",
       "char_budget": 22,
       "visual_goal": "두 기간의 길이 차 — 눈금 하나에 나란히",

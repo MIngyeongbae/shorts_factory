@@ -27,6 +27,7 @@ from jsonschema import Draft202012Validator
 
 from . import vocab
 from .outline import act_budgets
+from .scenes import LABEL_NUMBER_ECHO_LIMIT, label_number_echo
 from .script_rules import SIGNATURES
 
 SCENEPLAN_SCHEMA: dict[str, Any] = vocab.SCENEPLAN_SCHEMA_DOC
@@ -142,6 +143,18 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
             errors.append(
                 f"scenes/{sid}: says에 {', '.join(intrusions)} — says는 요지지 문장이 아니다. "
                 "이걸 여기서 쓰면 [1w]가 할 일이 없어진다 (ADR-0029)"
+            )
+
+        # ADR-0047 — 화면이 지는 숫자는 말이 가리키기만 한다. 라벨의 숫자를 says가
+        # 되풀이하면 [1w]는 그 숫자를 문장으로 옮길 수밖에 없다 — 여기서 막는 것이
+        # 최종본([2])에서 걸리는 것보다 싸다.
+        labels = (scene.get("info") or {}).get("labels") or []
+        echo = label_number_echo(str(scene.get("says", "")), labels)
+        if echo > LABEL_NUMBER_ECHO_LIMIT:
+            errors.append(
+                f"scenes/{sid}: says가 info.labels의 숫자 {echo:.0%}를 되풀이한다 "
+                f"(상한 {LABEL_NUMBER_ECHO_LIMIT:.0%}). 화면이 지는 숫자는 말이 "
+                "가리키기만 한다 (ADR-0047)"
             )
 
     return errors

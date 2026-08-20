@@ -99,6 +99,23 @@ def test_sentence_in_says_is_an_error(plan):
     assert any("says" in e and "[1w]" in e for e in errors)
 
 
+def test_라벨_숫자를_says가_되풀이하면_반려된다(plan):
+    """화면이 지는 숫자는 말이 가리키기만 한다 (ADR-0047) — [1s]에서 먼저 잡는다."""
+    scene = plan["scenes"][3]
+    scene["says"] = "공사에 3년과 2억 달러가 든 사실"
+    scene["info"] = {"labels": ["공사 3년", "2억 달러"]}
+    errors, _ = validate_sceneplan(plan)
+    assert any("says가 info.labels" in e and "ADR-0047" in e for e in errors)
+
+
+def test_라벨_숫자를_says가_가리키기만_하면_통과한다(plan):
+    scene = plan["scenes"][3]
+    scene["says"] = "공사 규모가 상상 이상이었다는 것"
+    scene["info"] = {"labels": ["공사 3년", "2억 달러"]}
+    errors, _ = validate_sceneplan(plan)
+    assert errors == []
+
+
 # --- 분량과 씬 수 ---------------------------------------------------------
 
 

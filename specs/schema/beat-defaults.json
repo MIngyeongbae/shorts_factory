@@ -56,20 +56,6 @@
       "overlay": [],
       "transition": "dissolve"
     },
-    "context_number": {
-      "framing": {
-        "wide": "aerial_diorama",
-        "close": "subject_closeup",
-        "diagram": "section_diagram"
-      },
-      "camera": [
-        "slow_zoom_in"
-      ],
-      "overlay": [
-        "big_red_text"
-      ],
-      "transition": "dissolve"
-    },
     "failed_solution": {
       "framing": {
         "wide": "attempt_medium",
@@ -129,20 +115,6 @@
         "slow_zoom_in"
       ],
       "overlay": [],
-      "transition": "dissolve"
-    },
-    "solution_number": {
-      "framing": {
-        "wide": "solution_medium",
-        "close": "detail_closeup",
-        "diagram": "cross_section"
-      },
-      "camera": [
-        "static"
-      ],
-      "overlay": [
-        "big_red_text"
-      ],
       "transition": "dissolve"
     },
     "present_link": {

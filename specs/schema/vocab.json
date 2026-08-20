@@ -9,13 +9,11 @@
         "hook_fact",
         "hook_twist",
         "context",
-        "context_number",
         "failed_solution",
         "failure_reason",
         "dilemma_peak",
         "turning_point",
         "solution_step",
-        "solution_number",
         "present_link",
         "ending_echo"
       ]
@@ -91,7 +89,7 @@
   },
   "meta": {
     "beat": {
-      "_role": "서사 기능의 라벨이다. 연출의 분기 기준이 아니고(ADR-0033 §4) 순서·개수 제약도 없다. 기계가 이 값으로 갈라지는 곳은 스펙 04의 turning_point 차임 하나뿐이다.",
+      "_role": "서사 기능의 라벨이다. 연출의 분기 기준이 아니고(ADR-0033 §4) 순서·개수 제약도 없다. 기계가 이 값으로 갈라지는 곳은 스펙 04의 turning_point 차임 하나뿐이다. context_number·solution_number는 ADR-0047이 뺐다 — 씬의 임무를 '숫자를 말하는 것'으로 정의하는 라벨이라 첫 편(26씬 중 7씬)을 숫자 낭독으로 채웠다. 숫자를 든 씬은 그 숫자가 무엇을 하는지로 라벨된다.",
       "hook_fact": {
         "gloss": "충격 사실 제시",
         "position": "open"
@@ -102,9 +100,6 @@
       },
       "context": {
         "gloss": "배경 설명"
-      },
-      "context_number": {
-        "gloss": "핵심 숫자 포함 배경"
       },
       "failed_solution": {
         "gloss": "실패하는 해법 제시"
@@ -120,9 +115,6 @@
       },
       "solution_step": {
         "gloss": "해결책 단계 설명"
-      },
-      "solution_number": {
-        "gloss": "해결책 내 핵심 숫자"
       },
       "present_link": {
         "gloss": "현재와 연결",

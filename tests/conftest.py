@@ -60,11 +60,23 @@ PISA = "pisaui-satap-jiban-bogang"
 HOOVER = "hubeodaem-konkeuriteu-naenggak"
 
 
+#: ADR-0047이 어휘에서 뺀 옛 beat → 지금 라벨. **테스트 로더 한정 정규화다** —
+#: topics/의 옛 산출물은 재검증하지 않고 마이그레이션도 없으므로(ADR-0036·0047)
+#: 파일은 그대로 두고, 픽스처로 재활용할 때만 새 어휘로 읽는다.
+_RETIRED_BEATS = {"context_number": "context", "solution_number": "solution_step"}
+
+
+def _normalize_beats(document: dict) -> dict:
+    for scene in document.get("scenes", []):
+        scene["beat"] = _RETIRED_BEATS.get(scene.get("beat"), scene.get("beat"))
+    return document
+
+
 def load_script(slug: str) -> dict:
-    """`topics/{slug}/06-script.json` 원본."""
-    return json.loads(
+    """`topics/{slug}/06-script.json` — 옛 beat 라벨만 정규화해서 (위 주석)."""
+    return _normalize_beats(json.loads(
         (REPO_TOPICS / slug / "06-script.json").read_text(encoding="utf-8")
-    )
+    ))
 
 
 def install_script(paths: Paths, slug: str) -> Path:
@@ -76,5 +88,9 @@ def install_script(paths: Paths, slug: str) -> Path:
     source = REPO_TOPICS / slug / "06-script.json"
     dest = paths.topic_dir(slug) / "06-script.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(source.read_bytes())
+    dest.write_text(
+        json.dumps(_normalize_beats(json.loads(source.read_text(encoding="utf-8"))),
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     return dest
