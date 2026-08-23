@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "beat-defaults.json",
   "title": "비트별 연출 기본값 — 지시가 아니라 폴백 (ADR-0033)",
-  "description": "ADR-0001의 강제 표가 있던 자리다. 지금 이 값은 **강제가 아니다** — 연출을 고르는 것은 [1s] sceneplan이고(ADR-0033 §3), 이 표는 씬이 그 값을 비웠을 때만 쓰인다. 남겨 둔 이유는 ADR-0033의 되돌릴 조건이다: 편마다 룩이나 리듬이 갈리면 이 표를 다시 지시로 올린다. camera·overlay 열은 코드가 읽지 않고 [1s] 세션 프롬프트가 참고한다 — camera는 씬 계약의 필수 필드라 기본값으로 떨어질 자리가 없고, overlay는 [1s]가 emphasis로 직접 단다. motion 기본값이 mj_video인 것은 전 씬 영상이기 때문이다 (ADR-0039) — 씬이 비우면 영상이 된다.",
+  "description": "ADR-0001의 강제 표가 있던 자리다. 지금 이 값은 **강제가 아니다** — 연출을 고르는 것은 [3s] scenetable이고(ADR-0033 §3), 이 표는 씬이 그 값을 비웠을 때만 쓰인다. 남겨 둔 이유는 ADR-0033의 되돌릴 조건이다: 편마다 룩이나 리듬이 갈리면 이 표를 다시 지시로 올린다. camera 열은 코드가 읽지 않고 [3s] 세션 프롬프트가 참고한다 — camera는 씬 계약의 필수 필드라 기본값으로 떨어질 자리가 없다. motion은 없다 (ADR-0056 — 전 씬이 영상 클립이다). staging 기본값은 studio다 — 이 파이프라인이 인포 설명 영상용이라서 (ADR-0056 결정 4).",
   "fallback": {
     "framing": {
       "wide": "drone_wide",
@@ -12,9 +12,13 @@
     "camera": [
       "slow_zoom_in"
     ],
-    "overlay": [],
     "transition": "dissolve",
-    "motion": "mj_video"
+    "staging": "studio"
+  },
+  "multishot": {
+    "_role": "2샷 씬(scene.shot2)의 컷 시각과 자격을 [7]이 정하는 값 (ADR-0058 결정 3). cut = 가장 짧은 언어의 씬 길이 × cut_ratio (소수 첫째 자리). 가장 짧은 언어의 씬 길이가 2 × min_shot_seconds 미만이면 1샷 프롬프트로 사고 shot2_dropped를 기록한다. 0.5는 프로브 5클립 중 3개의 비율, 1.5는 자막 1줄 실측 하한(0.8~0.9초)보다 넉넉한 값 — 둘 다 첫 실편에서 재조정 대상이다.",
+    "cut_ratio": 0.5,
+    "min_shot_seconds": 1.5
   },
   "beat": {
     "hook_fact": {
@@ -26,7 +30,6 @@
       "camera": [
         "slow_zoom_in"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "hook_twist": {
@@ -38,7 +41,6 @@
       "camera": [
         "static"
       ],
-      "overlay": [],
       "transition": "hard_cut"
     },
     "context": {
@@ -53,7 +55,6 @@
         "tilt_down",
         "tilt_up"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "failed_solution": {
@@ -65,7 +66,6 @@
       "camera": [
         "static"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "failure_reason": {
@@ -77,7 +77,6 @@
       "camera": [
         "slow_zoom_in"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "dilemma_peak": {
@@ -89,7 +88,6 @@
       "camera": [
         "static"
       ],
-      "overlay": [],
       "transition": "hard_cut"
     },
     "turning_point": {
@@ -101,7 +99,6 @@
       "camera": [
         "slow_zoom_in"
       ],
-      "overlay": [],
       "transition": "hard_cut"
     },
     "solution_step": {
@@ -114,7 +111,6 @@
         "tilt_down",
         "slow_zoom_in"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "present_link": {
@@ -126,7 +122,6 @@
       "camera": [
         "slow_zoom_out"
       ],
-      "overlay": [],
       "transition": "dissolve"
     },
     "ending_echo": {
@@ -138,7 +133,6 @@
       "camera": [
         "slow_zoom_out"
       ],
-      "overlay": [],
       "transition": "dissolve"
     }
   }

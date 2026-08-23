@@ -12,11 +12,13 @@ from timed_fixtures import HOOVER, PISA, timed_document
 from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import BEATS
 from shorts_factory.video.timeline import (
+    CLIPS_DIR,
     DISSOLVE,
     DISSOLVE_SECONDS,
     HARD_CUT,
     TimelineError,
     build_timeline,
+    extend_with_ending,
     transition_into,
 )
 
@@ -145,7 +147,7 @@ def test_pisa_cuts_land_on_the_three_rule_beats():
 
 
 def test_hoover_cuts_come_from_the_scene_contract():
-    """후버댐 편은 `[1s]`가 전환을 직접 골랐다 (ADR-0033 §3).
+    """후버댐 픽스처는 전환이 씬마다 채워져 있다 (ADR-0033 §3).
 
     비트 기본값 표가 아니라 씬 계약의 `transition`이 하드컷의 출처다. 피사 편은
     아직 그 필드가 없는 옛 대본이라 위 테스트가 기본값 경로를 그대로 지킨다.
@@ -212,3 +214,88 @@ def test_unknown_beat_keeps_building_the_timeline():
         [scene(1, "hook_fact", 0.0, 4.0), scene(2, "montage", 4.0, 7.0)]
     )
     assert timeline.segments[1].transition_in in (DISSOLVE, HARD_CUT)
+
+
+# --- 엔딩 실사 컷 (ADR-0055) --------------------------------------------------
+#
+# 여기서 지키는 것은 연출이 아니라 **기하**다. 엔딩을 잘못 붙이면 이미 렌더된 씬 클립을
+# 다시 만들어야 하거나 xfade가 없는 프레임을 요구한다.
+
+
+def two_scenes():
+    return build_timeline(
+        [
+            scene(1, "hook_fact", 0.0, 4.0),
+            scene(2, "context", 4.0, 7.0, transition=DISSOLVE),
+        ]
+    )
+
+
+def test_no_ending_leaves_the_timeline_untouched():
+    """D-3 — 선택적 입력의 부재는 경고가 아니고, 같은 객체가 그대로 나간다."""
+    timeline = two_scenes()
+
+    assert extend_with_ending(timeline, [], source_dir="ending") is timeline
+
+
+def test_the_last_scene_clip_never_needs_a_rerender():
+    """**이 결정의 급소다.** 하드컷 진입이라 마지막 씬의 꼬리가 0으로 남는다 —
+    디졸브로 붙였다면 `[7]`이 렌더하지 않은 0.6초를 요구했을 것이다."""
+    before = two_scenes().segments[-1]
+    after = extend_with_ending(two_scenes(), [2.4], source_dir="ending").segments[1]
+
+    assert after.transition_out == HARD_CUT
+    assert after.tail == 0.0
+    assert after.clip_length == before.clip_length
+
+
+def test_ending_cuts_carry_their_own_tails():
+    full = extend_with_ending(two_scenes(), [2.4, 2.4, 2.4], source_dir="ending")
+    cuts = full.ending_segments
+
+    assert [c.transition_in for c in cuts] == [HARD_CUT, DISSOLVE, DISSOLVE]
+    assert [c.clip_length for c in cuts] == [3.0, 3.0, 2.4]
+
+
+def test_ending_starts_where_the_narration_ends():
+    full = extend_with_ending(two_scenes(), [2.4, 2.4], source_dir="ending")
+
+    assert full.scene_duration == 7.0
+    assert full.ending_segments[0].start == 7.0
+    assert full.total_duration == 11.8
+
+
+def test_each_dissolve_exactly_consumes_the_previous_tail():
+    """timeline.py의 불변식 — 누적 길이 = end + 남은 꼬리. 깨지면 xfade가 언다."""
+    full = extend_with_ending(two_scenes(), [2.4, 2.4, 2.4], source_dir="ending")
+
+    for previous, current in zip(full.segments, full.segments[1:]):
+        if current.transition_in != DISSOLVE:
+            continue
+        assert previous.end + previous.tail >= current.start + current.dissolve - 1e-9
+
+
+def test_ending_clips_come_from_their_own_directory():
+    full = extend_with_ending(two_scenes(), [2.4], source_dir="ending")
+
+    assert full.scene_segments[0].source_dir == CLIPS_DIR
+    assert full.ending_segments[0].clip_path == "ending/1.mp4"
+
+
+def test_ending_is_not_a_scene():
+    """자막 큐도 thump 지점도 전환 지표도 엔딩을 세지 않는다."""
+    scenes = [
+        scene(1, "hook_fact", 0.0, 4.0),
+        scene(2, "context", 4.0, 7.0, transition=HARD_CUT),
+    ]
+    full = extend_with_ending(build_timeline(scenes), [2.4, 2.4], source_dir="ending")
+
+    assert len(full.scene_segments) == 2
+    assert full.cut_scene_ids == (2,)
+    assert full.counts[HARD_CUT] == 1  # 엔딩 진입의 하드컷은 안 센다
+    assert full.counts[DISSOLVE] == 0  # 엔딩 컷 사이의 디졸브도 안 센다
+
+
+def test_zero_length_ending_cut_is_refused():
+    with pytest.raises(TimelineError, match="0보다 커야"):
+        extend_with_ending(two_scenes(), [0.0], source_dir="ending")

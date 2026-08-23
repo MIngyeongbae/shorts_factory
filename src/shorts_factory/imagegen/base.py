@@ -14,7 +14,7 @@
 
 `prompts.json`의 `prompt`·`negative_prompt`와 `style` 블록이 전부다.
 
-- `overlays`는 담지 않는다. 전부 레이어 B라 `[8. overlay]` 소관이다 (ADR-0019)
+- 화면 그래픽 지시는 담지 않는다. 베이스는 전 씬 클린이고(ADR-0019) 라벨은 인포씬(`[6i]`) 소관이다 (ADR-0054)
 - `framing_reuse_of`도 담지 않는다. **이미지 재사용 힌트가 아니다** — 구도만 같고
   `subject`는 가리키는 씬과 다르다. 캐시 키로 쓰면 다른 피사체가 같은 그림이 된다
 - 시간 정보는 애초에 `prompts.json`에 없다 (ADR-0020)
@@ -103,6 +103,14 @@ class ImageRequest:
     #: ADR-0005의 룩 일관성 수단. 지금 저장소에 0장이라 비어 있을 수 있다.
     style_anchors: tuple[Path, ...] = ()
     label: str = ""
+    #: ADR-0051 — 캐릭터 시트 참조 URL. **지문에 넣지 않는다**: Discord CDN 서명
+    #: URL이라 실행마다 서명이 바뀌는데, 그때마다 지문이 바뀌면 아무것도 안 바뀐
+    #: 씬을 매번 다시 산다. 참조 문법으로 잇는 것은 어댑터 몫이다 (G3).
+    reference_url: str = ""
+    #: ADR-0051 — 참조의 **안정 키** (cast id를 이은 것). 이쪽은 지문에 들어간다 —
+    #: 참조 없이 산 씬(강등)은 참조가 살아나면 지문이 달라져 다시 사고, 참조로 산
+    #: 씬은 URL이 돌아도 지문이 같아 다시 사지 않는다.
+    reference_key: str = ""
 
     @classmethod
     def from_prompt_scene(
@@ -137,16 +145,27 @@ class ImageRequest:
         앵커 교체는 파일 추가/교체로 드러나므로 이름만으로 충분하다 (ADR-0005는 앵커
         변경을 스펙 수정으로 취급한다 — 조용히 바뀌지 않는다).
         """
-        material = SEPARATOR.join(
-            (
-                self.prompt,
-                self.negative_prompt,
-                self.aspect_ratio,
-                self.resolution,
-                *(p.name for p in self.style_anchors),
-            )
-        )
+        parts = [
+            self.prompt,
+            self.negative_prompt,
+            self.aspect_ratio,
+            self.resolution,
+            *(p.name for p in self.style_anchors),
+        ]
+        # 키가 비면 재료가 도입 전과 한 바이트도 다르지 않다 — 기존 씬을 다시 사지
+        # 않는다. reference_url은 넣지 않는다 (서명 회전 — 필드 주석 참조).
+        if self.reference_key:
+            parts.append(f"ref={self.reference_key}")
+        material = SEPARATOR.join(parts)
         return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
+
+
+@dataclass(frozen=True)
+class CharacterReference:
+    """캐릭터 시트 참조 하나 (ADR-0051) — U1 업스케일 잡 id와 지금 닿는 URL."""
+
+    upscale_task_id: str
+    url: str
 
 
 @dataclass
@@ -161,7 +180,7 @@ class GeneratedImage:
     raw: dict[str, Any] = field(default_factory=dict)
 
     #: 같은 호출이 낸 후보 전체 (ADR-0031 §2). MJ는 잡 하나에 4장을 내므로 넷이고,
-    #: `data`는 그중 첫 장이다. **하류 계약은 그대로다** — `[7]`·`[8]`은 여전히
+    #: `data`는 그중 첫 장이다. **하류 계약은 그대로다** — `[7]`은 여전히
     #: `images/{scene_id}` 한 장만 안다 (ADR-0020). 고르는 것은 `[6r]` 몫이라 어댑터는
     #: 버리지만 않는다. 이미 산 것이므로 추가 과금이 0이다.
     #:
@@ -232,6 +251,22 @@ class ImageClient(ABC):
     #: 이 프로바이더가 내는 파일의 확장자. 단계가 파일명을 지을 때 쓴다.
     #: 기본값이 `.jpg`인 이유는 실물(Nano Banana 2)이 JPEG만 주기 때문이다 (ADR-0021).
     output_suffix: str = ".jpg"
+
+    #: ADR-0051 — 캐릭터 시트 참조(같은 인물을 여러 씬에 고정)를 만들 수 있는가.
+    #: False면 `[6]`은 시트를 만들지 않고 cast 씬을 서술 경로만으로 제출한다 —
+    #: 부재는 경고 한 줄이지 실패가 아니다 (D-3·D-5).
+    supports_character_reference: bool = False
+
+    def character_reference(
+        self, task_id: str, *, timeout: int | None = None
+    ) -> CharacterReference:
+        """시트 잡 id → 참조 (ADR-0051). `supports_character_reference`가 True일 때만 부른다.
+
+        멱등이어야 한다 — 완료된 업스케일이 있으면 재사용하고(같은 업스케일을 짧은
+        간격에 재요청하면 MJ가 거절한다, G1 실측), URL은 부를 때마다 태스크에서 새로
+        읽는다 (서명 URL 만료).
+        """
+        raise NotImplementedError(f"{self.name}는 캐릭터 참조를 지원하지 않는다")
 
     def concurrency(self) -> int:
         """이 프로바이더에 동시에 던져도 되는 잡 수. `[6]`의 워커 수 기본값이다 (ADR-0031 §4).

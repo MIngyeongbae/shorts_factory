@@ -1,5 +1,11 @@
 # 07. 판단 자율성 (Human in the loop → on the loop)
 
+> **보류 (ADR-0049).** 판정은 사람이 `script.md`를 읽고 한다 — AI 심사관·자율성
+> 사다리·revise 루프는 구현하지 않는다 (LLM 채점 게이트는 실측으로 반증됐다:
+> 호르무즈 편 채점기는 병을 정확히 보고도 pass를 냈다). 이 문서에서 지금 유효한
+> 것은 **판정 스키마의 human.json**뿐이다 — `decision: go`가 2부 진입 게이트다
+> (스펙 05 경계). 나머지는 장래 재검토용 설계 기록으로 남긴다.
+
 go/no-go 판단을 사람에서 AI 심사관으로 단계적으로 이양하는 설계. 원칙: **자율성은 스위치가 아니라 다이얼이며, 이양의 전제는 판단의 데이터화다.**
 
 ## 판정 스키마 (사람·AI 공용)
@@ -10,6 +16,7 @@ go/no-go 판단을 사람에서 AI 심사관으로 단계적으로 이양하는 
 {
   "judge": "human | ai",
   "decision": "go | revise | no_go",
+  "video_line": "vocab.json video_line 중 하나 — 비우면 기본 라인 (사람만 적는다, ADR-0059 결정 2)",
   "confidence": 0.82,
   "scores": {
     "hook": 2, "narrative": 4, "grounding": 5, "freshness": 3, "retention_risk": 2
@@ -23,6 +30,14 @@ go/no-go 판단을 사람에서 AI 심사관으로 단계적으로 이양하는 
   "judged_at": "2026-08-07T21:00:00+09:00"
 }
 ```
+
+### video_line — 영상 라인 (ADR-0059)
+
+`decision: go`와 같은 자리에서 **같은 사람이** 2부의 영상 라인을 고른다 — 어느 라인이 있고 기본이
+무엇이며 각 라인이 어느 어댑터로 가는지는 `specs/schema/vocab.json`의 `video_line`(`$defs` enum +
+`meta`)이 정본이다. 비우면 기본 라인이고, 어휘 밖의 값이면 `[3s]`·`[7]`이 **멈춘다** — 오타가
+기본 라인으로 조용히 내려가면 유료·무료가 뒤바뀐다. `ai.json`에는 이 필드가 없다 — 라인은 소재
+유형 규칙으로 자동 선택하지 않는다 (ADR-0059 검토한 대안).
 
 ### reason_code enum (no_go / revise 시 필수)
 

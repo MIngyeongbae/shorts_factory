@@ -141,6 +141,9 @@ class FakeImageClient(ImageClient):
                 "anchors": tuple(p.name for p in request.style_anchors),
                 "timeout": timeout,
                 "label": request.label,
+                # ADR-0051 — [6]이 참조를 제대로 실었는지 테스트가 여기서 본다.
+                "reference_url": request.reference_url,
+                "reference_key": request.reference_key,
             }
         )
 

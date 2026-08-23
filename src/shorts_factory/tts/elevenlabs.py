@@ -4,13 +4,15 @@ ADR-0004가 엔진과 호출 방식을, `base.py`가 정렬 계약을 정했다.
 옮긴 것뿐이다.
 
 - 엔드포인트 `POST /v1/text-to-speech/{voice_id}/with-timestamps`, 헤더 `xi-api-key`
-- 모델 `eleven_multilingual_v2` (한국어 + 클로닝 품질)
-- `voice_id`는 환경변수 `ELEVEN_VOICE_ID` (specs/04, ADR-0004 — IVC→PVC 교체 시 코드 무변경)
+- 모델 `eleven_multilingual_v2` (세 언어 공통 + 클로닝 품질, ADR-0004·0056)
+- `voice_id`는 **언어별 환경변수**다 (specs/04, ADR-0056 결정 7): ko `ELEVEN_VOICE_ID`
+  (ADR-0004 — IVC→PVC 교체 시 코드 무변경), ja `ELEVEN_VOICE_ID_JA`, en `ELEVEN_VOICE_ID_EN`.
+  어댑터는 `lang`으로 만들고, 비어 있으면 `check_configured()`가 호출 전에 거절한다
 - 오디오는 원시 PCM으로 받는다. 이유는 `audio.py` 독스트링 참고
 
-SDK(`elevenlabs`)를 쓰지 않는 이유는 `imagegen/nano_banana.py`와 같다 — 엔드포인트가
-하나고 현재 의존성이 두 줄이다. HTTP 경계를 `transport` 하나로 좁혀 테스트가 과금 호출
-없이 전 경로를 검증한다.
+SDK(`elevenlabs`)를 쓰지 않는다 (ADR-0021과 같은 판단) — 엔드포인트가 하나고 현재
+의존성이 두 줄이다. HTTP 경계를 공용 `transport.py` 하나로 좁혀 테스트가 과금 호출 없이
+전 경로를 검증한다.
 
 ## 실호출로 확인한 두 가지 (2026-08-12, Starter 플랜)
 
@@ -40,11 +42,10 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import urllib.error
-import urllib.request
 from typing import Any, Callable
 
 from ..config import MissingCredential, require_env
+from ..transport import TransportError, TransportTimeout, urllib_request
 from .base import (
     PCM_S16LE,
     Alignment,
@@ -64,6 +65,24 @@ ENDPOINT_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with
 API_KEY_ENV = "ELEVENLABS_API_KEY"
 VOICE_ID_ENV = "ELEVEN_VOICE_ID"
 
+#: 언어별 voice_id 환경변수 (ADR-0056 결정 7, `.env.example`). ko는 ADR-0004의 목소리다.
+VOICE_ID_ENVS: dict[str, str] = {
+    "ko": VOICE_ID_ENV,
+    "ja": "ELEVEN_VOICE_ID_JA",
+    "en": "ELEVEN_VOICE_ID_EN",
+}
+DEFAULT_LANG = "ko"
+
+
+def voice_env_for(lang: str) -> str:
+    """언어 코드 → voice_id 환경변수 이름. 모르는 언어는 설정 오류다."""
+    try:
+        return VOICE_ID_ENVS[lang]
+    except KeyError as exc:
+        raise TTSNotConfigured(
+            f"언어 '{lang}'의 voice_id 환경변수가 정해져 있지 않다 (있는 언어: {', '.join(VOICE_ID_ENVS)})"
+        ) from exc
+
 #: 모듈 독스트링 2번 — Starter에서 되는 가장 높은 PCM 레이트.
 DEFAULT_OUTPUT_FORMAT = "pcm_24000"
 
@@ -74,26 +93,25 @@ DEFAULT_TIMEOUT = 300
 REQUEST_ID_HEADER = "request-id"
 
 #: `(url, headers, body, timeout) -> (status, response_headers, response_bytes)`.
-#: `imagegen`의 `Transport`에 응답 헤더가 하나 더 붙은 모양이다 — 위 추적 ID 때문이다.
+#: 공용 `transport.py`의 `HeaderTransport`에서 method를 뺀 모양이다 — 이 어댑터는 POST
+#: 하나뿐이고, 응답 헤더가 필요한 것은 위 추적 ID 때문이다.
 Transport = Callable[[str, dict[str, str], bytes, int], "tuple[int, dict[str, str], bytes]"]
 
 
 def urllib_transport(
     url: str, headers: dict[str, str], body: bytes, timeout: int
 ) -> tuple[int, dict[str, str], bytes]:
-    """stdlib POST. 오류 응답도 본문을 살려 돌려준다 — 서버가 사유를 적어 준다."""
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    """stdlib POST. 오류 응답도 본문을 살려 돌려준다 — 서버가 사유를 적어 준다.
+
+    HTTP는 공용 `transport.urllib_request`가 치고, 여기서는 그 오류를 이 어댑터의
+    예외 계층으로 바꾼다 (ADR-0056 — 호출부가 보는 예외는 전과 같다).
+    """
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, dict(response.headers), response.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, dict(exc.headers or {}), exc.read()
-    except TimeoutError as exc:
-        raise TTSTimeout(f"{timeout}초 안에 응답이 오지 않았다") from exc
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, TimeoutError):
-            raise TTSTimeout(f"{timeout}초 안에 응답이 오지 않았다") from exc
-        raise TTSError(f"연결 실패: {exc.reason}") from exc
+        return urllib_request("POST", url, headers, body, timeout)
+    except TransportTimeout as exc:
+        raise TTSTimeout(str(exc)) from exc
+    except TransportError as exc:
+        raise TTSError(str(exc)) from exc
 
 
 def sample_rate_of(output_format: str) -> int:
@@ -208,6 +226,7 @@ class ElevenLabsClient(TTSClient):
     def __init__(
         self,
         *,
+        lang: str = DEFAULT_LANG,
         voice_id: str | None = None,
         model_id: str = MODEL_ID,
         api_key: str | None = None,
@@ -216,6 +235,7 @@ class ElevenLabsClient(TTSClient):
         endpoint: str = ENDPOINT_TEMPLATE,
         transport: Transport = urllib_transport,
     ) -> None:
+        self.lang = lang
         self.model_id = model_id
         self.output_format = output_format
         self.sample_rate = sample_rate_of(output_format)
@@ -238,10 +258,20 @@ class ElevenLabsClient(TTSClient):
 
     @property
     def voice_id(self) -> str:
+        """이 언어의 목소리 (`VOICE_ID_ENVS[lang]`). 비어 있으면 `TTSNotConfigured`."""
         if self._voice_id:
             return self._voice_id
-        self._voice_id = self._require(VOICE_ID_ENV, "클로닝한 본인 목소리 (ADR-0004)")
+        purpose = (
+            "클로닝한 본인 목소리 (ADR-0004)" if self.lang == DEFAULT_LANG
+            else f"{self.lang} 목소리 (ADR-0056 결정 7)"
+        )
+        self._voice_id = self._require(voice_env_for(self.lang), purpose)
         return self._voice_id
+
+    def check_configured(self) -> None:
+        """키·voice_id를 호출 전에 읽어 본다 — 비어 있으면 여기서 멈춘다 (과금 전)."""
+        self.api_key
+        self.voice_id
 
     @staticmethod
     def _require(name: str, purpose: str) -> str:

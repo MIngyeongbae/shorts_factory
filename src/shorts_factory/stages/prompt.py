@@ -1,20 +1,29 @@
-"""[5. prompt] — 씬 계약을 씬별 이미지 프롬프트로 옮긴다.
+"""[5. prompt] — 씬 계약을 씬별 **영상 프롬프트**로 옮긴다 (ADR-0056).
 
 specs/05-pipeline.md:
-    [5. prompt] → prompts.json (씬별 이미지 프롬프트, 스펙 03 룰 적용)
+    [5. prompt] → prompts.json (씬별 영상 프롬프트 — 닫힌 골격, 스펙 03)
 
-## 경계 (ADR-0017)
+## 경계 (ADR-0017 — ADR-0052)
 
-입력은 `topics/{slug}/06-script.json` 하나다. **읽기 전용**이다. 산출물은
-`runs/{run_id}/prompts.json`뿐이고, `run_id`는 대본 파일에 적힌 값을 그대로 쓴다 —
-계보를 run_id로 잇는다는 ADR-0017 그대로다. 이 단계는 `topics/` 아래에 아무것도 쓰지 않는다.
+입력은 씬 계약(`runs/{run_id}/scenes.json`, `[3s]` 산출)과 **선택적** `refs.json`
+(`[4]` 산출, ADR-0030 — 씬별 실사 서술을 앵커 뒤에 싣는다. 없으면 그냥 간다) 둘이고
+모두 **읽기 전용**이다. 산출물은 `runs/{run_id}/prompts.json`뿐이고, `run_id`는 계약
+파일에 적힌 값을 그대로 쓴다 — 계보를 run_id로 잇는다는 ADR-0017 그대로다. 이 단계는
+`topics/` 아래에 아무것도 쓰지 않는다.
 
 ## 이 단계가 판단하지 않는 것
 
-**연출은 전부 씬 계약에서 온다** (ADR-0033 §3). 고른 것은 `[1s. sceneplan]`이고 이
-모듈은 그것을 방언으로 옮기는 변환기다. 씬이 값을 비웠을 때만 `beat-defaults.json`의
-기본값으로 떨어지며, **그 씬 수를 요약에 낸다** — 연출 선택이 형식적으로 비어 있는지를
-보는 유일한 수단이다. 어휘 밖의 연출은 만들지 않는다.
+**연출은 전부 씬 계약에서 온다** (ADR-0033 §3). 고른 것은 `[3s. scenetable]`이고 이
+모듈은 그것을 스펙 03 「프롬프트 골격」에 채우는 변환기다 (`visual_rules.build_video_prompt`).
+씬이 `framing`·`staging`을 비웠을 때만 `beat-defaults.json`의 기본값으로 떨어지며,
+**그 씬 수를 요약에 낸다** — 연출 선택이 형식적으로 비어 있는지를 보는 유일한 수단이다.
+어휘 밖의 연출은 만들지 않는다. **영어 문장은 전부 `vocab.json`의 것이다** (ADR-0034) —
+이 파일에도 `visual_rules.py`에도 프롬프트 문장이 없다.
+
+## 길이를 쓰지 않는다
+
+클립 길이는 `[7]`이 세 언어의 실측에서 정한다 (ADR-0056 결정 2). FORMAT 절의 초 수는
+`{seconds}` 자리표시자로 남고 `[7]`이 그때 채운다. `prompts.json`은 시간 정보를 담지 않는다.
 
 ## 외부 의존 없음
 
@@ -38,21 +47,19 @@ from typing import Any
 from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..runstate import RunState
-from ..schemas import vocab
+from ..schemas import refs as refs_schema
+from .contract import SceneContractNotFound, load_scene_contract
 from ..schemas.scenes import validate_scenes
 from ..schemas.visual_rules import (
     ASPECT_RATIO,
     BASE_STYLE,
     COMPOSITION,
-    DEFAULT_DIALECT,
-    DIALECTS,
     FRAMINGS,
-    GLOBAL_OVERLAYS,
-    OVERLAYS,
+    FROM_DEFAULT,
     RESOLUTION,
-    STYLE_ANCHOR_DIR,
-    build_scene_prompt,
+    build_video_prompt,
     resolve_framing,
+    resolve_staging,
     schema_errors,
 )
 
@@ -60,11 +67,11 @@ log = logging.getLogger(__name__)
 
 STAGE = "5-prompt"
 
-SCRIPT_FILE = "06-script.json"
 PROMPTS_FILE = "prompts.json"
 
-#: 스타일 앵커로 인정하는 확장자 (ADR-0005 / .gitignore 예외 목록과 같다)
-ANCHOR_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+#: `[4] refpack`의 산출물 (ADR-0030). **선택적 입력이다** (D-3) — 없으면 그냥 간다.
+#: 소비하는 것은 `description`(서술 경로) 하나다 — 영상 프로바이더에 이미지 입력이 없다.
+REFS_FILE = refs_schema.RECORD_FILE
 
 
 class PromptStageError(Exception):
@@ -83,6 +90,9 @@ class PromptResult:
     #: `subject_anchor`가 비어 있지 않은 씬 수 (ADR-0028). 씬 계약에서 센다 —
     #: prompts.json에는 앵커가 프롬프트 문자열에 녹아 들어가 따로 남지 않는다.
     anchored_scenes: int = 0
+    #: `refs.json`의 서술이 실린 씬 수 (ADR-0030 서술 경로). 앵커와 같은 이유로
+    #: 요약에 낸다 — [4]가 습관적으로 비우는지를 보는 관측 수단이다.
+    described_scenes: int = 0
 
     @property
     def scene_count(self) -> int:
@@ -96,35 +106,32 @@ class PromptResult:
             counts[scene["subject_scale"]] = counts.get(scene["subject_scale"], 0) + 1
         return counts
 
+    def _defaulted(self, key: str) -> int:
+        if not self.prompts:
+            return 0
+        return sum(1 for s in self.prompts["scenes"] if s[key] == FROM_DEFAULT)
+
     @property
     def default_framed_scenes(self) -> int:
         """구도를 씬이 고르지 않아 **기본값으로 떨어진** 씬 수 (ADR-0033).
 
-        이 값이 되돌릴 조건의 관측 수단이다 — `[1s]`가 연출을 습관적으로 비우면
+        이 값이 되돌릴 조건의 관측 수단이다 — `[3s]`가 연출을 습관적으로 비우면
         구도가 다시 비트 표에서 나오게 되고, 그건 ADR-0033 이전과 같은 상태다.
         경고가 아니라 요약에 내는 이유는 한 편만 보고 판정할 값이 아니어서다.
         """
-        if not self.prompts:
-            return 0
-        return sum(
-            1 for s in self.prompts["scenes"] if s["framing_source"] == "beat_default"
-        )
+        return self._defaulted("framing_source")
 
     @property
-    def overlay_count(self) -> int:
-        """[8. overlay]가 합성해야 하는 레이어 B 항목 수."""
-        if not self.prompts:
-            return 0
-        return sum(
-            1 for s in self.prompts["scenes"] for o in s["overlays"] if o["layer"] == "B"
-        )
+    def default_staged_scenes(self) -> int:
+        """무대를 씬이 고르지 않아 기본값(`studio`)으로 떨어진 씬 수 (ADR-0056 결정 4)."""
+        return self._defaulted("staging_source")
 
     @property
-    def dialect(self) -> str:
-        """이 산출물이 쓰인 방언 (ADR-0027). 스킵한 경우에도 파일에서 읽힌다."""
+    def info_scenes(self) -> int:
+        """RED 절이 있는 씬 수 — 화면 계측 표시를 세운 씬 (ADR-0056 결정 3)."""
         if not self.prompts:
-            return ""
-        return self.prompts["style"].get("dialect", "")
+            return 0
+        return sum(1 for s in self.prompts["scenes"] if s["has_info"])
 
     @property
     def summary(self) -> str:
@@ -134,9 +141,11 @@ class PromptResult:
         )
         return (
             f"[5] {self.topic} — {self.scene_count}씬 ({scales}) / "
+            f"인포 {self.info_scenes}씬 / "
             f"대상 앵커 {self.anchored_scenes}씬 / "
+            f"참조 서술 {self.described_scenes}씬 / "
             f"구도 기본값 {self.default_framed_scenes}씬 / "
-            f"레이어B 오버레이 {self.overlay_count}건 / 방언 {self.dialect} "
+            f"무대 기본값 {self.default_staged_scenes}씬 "
             f"→ {PROMPTS_FILE}{tail}"
         )
 
@@ -150,104 +159,93 @@ def _load_json(path: Path, what: str) -> dict[str, Any]:
         raise PromptStageError(f"{what}을(를) 읽을 수 없다: {path} — {exc}") from exc
 
 
-def _scene_overlays(scene: dict[str, Any], sid: int) -> list[dict[str, Any]]:
-    """씬의 `emphasis` 하나. **비트로 오버레이를 더하지 않는다** (ADR-0033 §3).
-
-    무엇을 얹을지는 `[1s]`가 고른다. 레이어 A가 폐기돼(ADR-0019) 나오는 항목은 전부
-    레이어 B다 — `[8. overlay]`가 합성한다. 베이스 이미지에는 아무것도 그리지 않는다.
-    """
-    emphasis = scene.get("emphasis")
-    if not emphasis:
-        return []
-
-    etype = emphasis["type"]
-    if etype not in OVERLAYS:
-        # 어휘에 없는 값이 오면 연출을 지어내지 않고 멈춘다 (ADR-0033 §3).
-        raise PromptStageError(
-            f"씬 {sid}: 어휘에 없는 emphasis.type '{etype}'. "
-            f"허용: {', '.join(sorted(OVERLAYS))}"
-        )
-    return [{"type": etype, "layer": OVERLAYS[etype].layer, "value": emphasis["value"]}]
-
-
 def build_prompts(
-    script: dict[str, Any], *, source_script: str, dialect: str = DEFAULT_DIALECT
+    script: dict[str, Any],
+    *,
+    source_script: str,
+    refs: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """씬 계약 → prompts.json 문서. (문서, 경고) 를 돌려준다.
 
-    `dialect`는 프롬프트 **문법**만 고른다 (ADR-0027). 구도·오버레이·네거티브 항목은
-    방언과 무관하게 같은 룰에서 나온다.
-    """
-    if dialect not in DIALECTS:
-        raise PromptStageError(
-            f"모르는 방언이다: {dialect!r} (허용: {', '.join(DIALECTS)})"
-        )
+    `refs`는 `[4] refpack`의 `refs.json` 문서다 (ADR-0030 — **서술 경로**). 씬의
+    `description`을 앵커 뒤에 싣는다 (스펙 03의 항목 순서). 없거나 그 씬이 비어
+    있으면 그냥 간다 — 부재는 경고가 아니다 (D-3).
 
+    `characters`(ADR-0051)는 서술 경로뿐이다 — `cast` 씬의 SUBJECT에 `appearance`를
+    싣고 `cast`를 복사한다. 시트 프롬프트는 없다: 프로바이더에 참조 입력이 없다
+    (ADR-0056 되돌릴 조건 6).
+    """
     scenes: list[dict[str, Any]] = script["scenes"]
     warnings: list[str] = []
     out_scenes: list[dict[str, Any]] = []
-    missing_values: dict[str, list[int]] = {}
+
+    # ADR-0051 — 인물 블록. 없으면 인물 경로 전체가 이 함수를 그냥 통과한다 (D-3).
+    characters: list[dict[str, Any]] = script.get("characters") or []
+    characters_by_id = {c["id"]: c for c in characters}
 
     for scene in scenes:
         sid = scene["scene_id"]
         beat = scene["beat"]
         scale = scene["subject_scale"]
 
-        token, source = resolve_framing(scene)
+        token, framing_source = resolve_framing(scene)
+        staging, staging_source = resolve_staging(scene)
 
-        overlays = _scene_overlays(scene, sid)
-        overlay_names = tuple(item["type"] for item in overlays)
-        for item in overlays:
-            if OVERLAYS[item["type"]].needs_value and item["value"] is None:
-                missing_values.setdefault(item["type"], []).append(sid)
+        # ADR-0051 — cast는 characters의 id만 가리킨다. 스키마가 못 잡는 교차 규칙이라
+        # 여기서 막는다 — 깨진 참조로 만든 프롬프트는 [7]에서 돈만 쓰고 실패한다.
+        cast = scene.get("cast") or []
+        unknown = [cid for cid in cast if cid not in characters_by_id]
+        if unknown:
+            raise PromptStageError(
+                f"씬 {sid}: characters에 없는 cast id {unknown}. "
+                "고치는 곳은 씬 계약 하나다 (ADR-0020)"
+            )
+        appearances = [characters_by_id[cid]["appearance"] for cid in cast]
 
-        prompt_text, negative_text = build_scene_prompt(
-            dialect,
-            shot=FRAMINGS[token].shot,
-            subject=scene["subject"],
-            visual_goal=scene.get("visual_goal", ""),
-            overlay_types=overlay_names,
-            # ADR-0028 — 선택 필드다. 없는 씬(옛 대본)도 비운 씬도 그냥 빈 목록이고,
-            # 부재를 경고하지 않는다. 경고를 달면 선택 필드가 선택이 아니게 된다.
-            anchors=scene.get("subject_anchor", ()),
-        )
+        info = scene.get("info") or None
+        try:
+            prompt_text, negative_text = build_video_prompt(
+                subject=scene["subject"],
+                shot=FRAMINGS[token].shot,
+                staging=staging,
+                camera=scene["camera"],
+                # ADR-0028 — 선택 필드다. 없는 씬도 비운 씬도 그냥 빈 목록이고,
+                # 부재를 경고하지 않는다. 경고를 달면 선택 필드가 선택이 아니게 된다.
+                anchors=scene.get("subject_anchor") or (),
+                description=refs_schema.description_of(refs, sid) if refs else "",
+                appearances=appearances,
+                info=info,
+            )
+        except ValueError as exc:
+            raise PromptStageError(f"씬 {sid}: {exc}") from exc
 
-        out_scenes.append(
-            {
-                "scene_id": sid,
-                "beat": beat,
-                "subject_scale": scale,
-                "camera": scene["camera"],
-                # motion은 선택 필드다 — 비면 기본값이 영상이다 (ADR-0039 결정 1)
-                "motion": scene.get("motion") or vocab.default_motion(beat),
-                "framing": token,
-                "framing_source": source,
-                "prompt": prompt_text,
-                "negative_prompt": negative_text,
-                "overlays": overlays,
-            }
-        )
-
-    for overlay_type, ids in sorted(missing_values.items()):
-        warnings.append(
-            f"레이어 B 텍스트 오버레이 '{overlay_type}'에 넣을 값이 없다 "
-            f"(씬 {', '.join(str(i) for i in ids)}). 계약에 출처가 없어 value=null로 뒀다"
-        )
+        entry: dict[str, Any] = {
+            "scene_id": sid,
+            # 씬 계약의 값을 그대로 복사한다 — 고치는 곳은 씬 계약 하나다 (ADR-0020).
+            "beat": beat,
+            "subject_scale": scale,
+            "camera": scene["camera"],
+            "staging": staging,
+            "staging_source": staging_source,
+            "framing": token,
+            "framing_source": framing_source,
+            "has_info": info is not None,
+            "prompt": prompt_text,
+            "negative_prompt": negative_text,
+        }
+        if cast:
+            entry["cast"] = list(cast)
+        out_scenes.append(entry)
 
     document = {
         "run_id": script["run_id"],
         "topic": script["topic"],
         "source_script": source_script,
         "style": {
-            # ADR-0027 — [6]이 자기 프로바이더와 대조하는 값. 이 파일에서 방언을 알 수
-            # 있는 곳은 여기뿐이다 (프롬프트 문자열을 보고 추측하게 두지 않는다).
-            "dialect": dialect,
             "base_style": BASE_STYLE,
             "composition": COMPOSITION,
             "aspect_ratio": ASPECT_RATIO,
             "resolution": RESOLUTION,
-            "style_anchors": STYLE_ANCHOR_DIR,
-            "global_overlays": [dict(o) for o in GLOBAL_OVERLAYS],
         },
         "scenes": out_scenes,
     }
@@ -257,24 +255,43 @@ def build_prompts(
 def _anchored_scenes(script: dict[str, Any]) -> int:
     """`subject_anchor`를 채운 씬 수 (ADR-0028).
 
-    **이 값이 되돌릴 조건의 관측 수단이다.** `[1]`이 습관적으로 비우면(예: 27씬 중 2씬)
+    **이 값이 되돌릴 조건의 관측 수단이다.** `[3s]`가 습관적으로 비우면(예: 27씬 중 2씬)
     선택 필드가 죽은 것이므로 프롬프트를 고칠지 필수로 올릴지 다시 본다. 그래서 경고가
     아니라 요약에 낸다 — 한 편만 보고 판정할 값이 아니다.
     """
     return sum(1 for scene in script["scenes"] if scene.get("subject_anchor"))
 
 
-def _anchor_warning(paths: Paths) -> str | None:
-    """스타일 앵커가 하나도 없으면 [6]이 룩 일관성 수단 없이 돈다 (ADR-0005)."""
-    anchor_dir = paths.root / STYLE_ANCHOR_DIR
-    if anchor_dir.is_dir() and any(
-        p.suffix.lower() in ANCHOR_SUFFIXES for p in anchor_dir.iterdir()
-    ):
-        return None
-    return (
-        f"{STYLE_ANCHOR_DIR}/에 스타일 앵커 이미지가 없다. "
-        "[6. imagegen]이 룩 일관성 레퍼런스 없이 돌게 된다 (ADR-0005)"
-    )
+def _load_refs(
+    run_dir: Path, run_id: str
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """`refs.json`을 연다 — **선택적 입력이다** (D-3). `(문서, 경고)`.
+
+    부재는 조용히 넘어간다. 있는데 못 쓰는 경우(파싱 실패·계약 위반·다른 run)는
+    전부 경고하고 없는 것으로 친다 — 서술은 있으면 좋은 것이지 조건이 아니라서
+    여기서 멈추면 참조 없는 편이 전부 멈춘다. `[4]`가 `[5]`보다 늦게 돌았으면
+    `--force`로 다시 낸다 — 재생성은 무료다.
+    """
+    path = run_dir / REFS_FILE
+    if not path.exists():
+        return None, []
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return None, [f"{REFS_FILE}을 읽을 수 없다 ({exc}) → 참조 서술 없이 간다"]
+    errors = refs_schema.validate_refs(document)
+    if errors:
+        return None, [
+            f"{REFS_FILE}이 계약을 위반한다 ({errors[0]}) → 참조 서술 없이 간다"
+        ]
+    if document.get("run_id") != run_id:
+        # 계보는 run_id로 잇는다 (ADR-0017). 다른 편의 사진 서술을 실으면
+        # 실패가 아니라 틀린 그림이 나온다.
+        return None, [
+            f"{REFS_FILE}의 run_id({document.get('run_id')})가 대상 run({run_id})과 "
+            "다르다 → 참조 서술 없이 간다"
+        ]
+    return document, []
 
 
 def run_prompt_stage(
@@ -282,15 +299,16 @@ def run_prompt_stage(
     *,
     paths: Paths | None = None,
     force: bool = False,
-    dialect: str = DEFAULT_DIALECT,
 ) -> PromptResult:
     paths = paths or Paths.from_env()
 
-    script_path = paths.topic_dir(slug) / SCRIPT_FILE
-    script = _load_json(script_path, f"씬 계약({SCRIPT_FILE})")
+    try:
+        script, script_path = load_scene_contract(paths, slug)
+    except SceneContractNotFound as exc:
+        raise PromptStageError(str(exc)) from exc
 
     # 읽기 전용 입력이지만 계약 위반은 여기서 막는다. 깨진 씬으로 만든 프롬프트는
-    # [6]에서 돈만 쓰고 실패한다.
+    # [7]에서 돈만 쓰고 실패한다.
     errors, scene_warnings = validate_scenes(script)
     if errors:
         raise PromptStageError(
@@ -305,34 +323,34 @@ def run_prompt_stage(
 
     if state.is_done(STAGE) and not force and prompts_path.exists():
         previous = _load_json(prompts_path, PROMPTS_FILE)
-        # 방언이 다르면 스킵하지 않는다 (ADR-0027). 요청한 방언과 다른 파일을 두고
-        # "완료"라고 넘기면 [6]이 대조에서 걸리거나, 더 나쁘게는 사람이 --dialect를
-        # 줬는데 아무 일도 안 일어난 것처럼 보인다. 재생성은 무료다.
-        if previous.get("style", {}).get("dialect") == dialect:
-            log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
-            return PromptResult(
-                topic=topic, slug=slug, run_id=run_id, skipped=True,
-                prompts_path=prompts_path, prompts=previous,
-                anchored_scenes=_anchored_scenes(script),
-            )
-        log.info(
-            "[%s] 방언이 달라 다시 쓴다 (%s → %s)",
-            STAGE, previous.get("style", {}).get("dialect"), dialect,
+        log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
+        return PromptResult(
+            topic=topic, slug=slug, run_id=run_id, skipped=True,
+            prompts_path=prompts_path, prompts=previous,
+            anchored_scenes=_anchored_scenes(script),
         )
 
     state.mark_running(STAGE)
+
+    # [4]의 refs.json — 있으면 서술을 싣고 없으면 그냥 간다 (specs/05, ADR-0030).
+    refs_doc, refs_warnings = _load_refs(run_dir, run_id)
+    described = sum(
+        1
+        for s in script["scenes"]
+        if refs_doc and refs_schema.description_of(refs_doc, s["scene_id"])
+    )
 
     try:
         document, warnings = build_prompts(
             script,
             source_script=script_path.relative_to(paths.root).as_posix(),
-            dialect=dialect,
+            refs=refs_doc,
         )
     except PromptStageError as exc:
         # specs/05 실패 정책: 단계 실패는 run 디렉터리에 기록하고 종료
         state.mark_failed(STAGE, str(exc))
         raise
-    warnings = list(scene_warnings) + warnings
+    warnings = list(scene_warnings) + refs_warnings + warnings
 
     output_errors = schema_errors(document)
     if output_errors:
@@ -340,34 +358,27 @@ def run_prompt_stage(
         state.mark_failed(STAGE, message)
         raise PromptStageError(message)
 
-    # MJ 경로는 앵커를 첨부하지 않는다 (ADR-0025 G3 — `--sref`가 BASE_STYLE을 이겨
-    # 마감을 망가뜨렸고, 씬 간 일관성은 앵커 없이도 BASE_STYLE이 만든다). 그 방언에서
-    # 앵커 없음을 경고하면 고칠 것이 없는 경고가 편마다 뜬다.
-    if dialect == "nb2":
-        anchor_warning = _anchor_warning(paths)
-        if anchor_warning:
-            warnings.append(anchor_warning)
-
     for warning in warnings:
         log.warning("[%s] %s", STAGE, warning)
 
     write_text(prompts_path, dump_json(document))
+    result = PromptResult(
+        topic=topic, slug=slug, run_id=run_id,
+        prompts_path=prompts_path, prompts=document, warnings=warnings,
+        anchored_scenes=_anchored_scenes(script),
+        described_scenes=described,
+    )
     state.mark_done(
         STAGE,
         output=prompts_path.relative_to(paths.root).as_posix(),
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
-        dialect=dialect,
-        # 편이 쌓여야 판정할 값이라 run 상태에도 남긴다 (ADR-0028·0033 되돌릴 조건).
-        anchored_scenes=_anchored_scenes(script),
-        default_framed_scenes=sum(
-            1 for s in document["scenes"] if s["framing_source"] == "beat_default"
-        ),
+        # 편이 쌓여야 판정할 값이라 run 상태에도 남긴다 (ADR-0028·0030·0033·0056 되돌릴 조건).
+        info_scenes=result.info_scenes,
+        anchored_scenes=result.anchored_scenes,
+        described_scenes=described,
+        default_framed_scenes=result.default_framed_scenes,
+        default_staged_scenes=result.default_staged_scenes,
         warnings=warnings,
     )
-
-    return PromptResult(
-        topic=topic, slug=slug, run_id=run_id,
-        prompts_path=prompts_path, prompts=document, warnings=warnings,
-        anchored_scenes=_anchored_scenes(script),
-    )
+    return result

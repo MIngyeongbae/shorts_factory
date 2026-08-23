@@ -10,15 +10,16 @@
 
 ## SDK를 쓰지 않는다
 
-`imagegen/nano_banana.py`와 같은 이유다 (ADR-0021) — 엔드포인트 둘에 의존성을 들이지
-않고, HTTP 경계를 `transport` 하나로 좁혀 테스트가 실제 호출 없이 전 경로를 검증한다.
+ADR-0021과 같은 판단이다 — 엔드포인트 둘에 의존성을 들이지 않고, HTTP 경계를 공용
+`transport.py` 하나로 좁혀 테스트가 실제 호출 없이 전 경로를 검증한다. `omni.py`(A2)가
+같은 경계를 쓴다 (ADR-0056 결정 2).
 
 ## 응답 파싱은 관용적으로 읽고 요란하게 실패한다
 
 Veo 응답의 영상 위치는 버전에 따라 `generateVideoResponse.generatedSamples[].video` /
 `generatedVideos[].video` 꼴이 오간다. 아는 모양을 전부 훑되, **없으면 응답의 최상위
 키를 담아 실패한다** — 형태가 바뀌었을 때 추측이 아니라 한 줄짜리 오류로 드러나야 한다
-(`nano_banana.parse_response`와 같은 태도).
+(응답 모양을 박제하지 않는 태도 — ADR-0021).
 
 ## 첫 실호출로 확정된 것 (2026-08-20 프로브, ADR-0043 G2·G3)
 
@@ -43,7 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..config import MissingCredential, require_env
-from ..imagegen.midjourney import Transport, urllib_transport
+from ..transport import Transport, TransportError, TransportTimeout, urllib_transport
 from .base import (
     GeneratedClip,
     VideoClient,
@@ -227,7 +228,7 @@ class VeoClient(VideoClient):
 
     @property
     def api_key(self) -> str:
-        """키는 첫 호출에서 읽는다 (`nano_banana`와 같은 이유 — 생성만으로 실패하지 않는다)."""
+        """키는 첫 호출에서 읽는다 — 어댑터를 만드는 것만으로(`--help`) 실패하지 않는다."""
         if self._api_key:
             return self._api_key
         try:
@@ -247,12 +248,26 @@ class VeoClient(VideoClient):
     def _headers(self) -> dict[str, str]:
         return {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
 
+    def _send(
+        self, method: str, url: str, headers: dict[str, str], body: bytes | None,
+        *, timeout: int, what: str,
+    ) -> tuple[int, bytes]:
+        """transport 호출 — 연결·타임아웃 오류를 이 어댑터의 예외로 바꾼다 (ADR-0056)."""
+        try:
+            return self.transport(method, url, headers, body, timeout)
+        except TransportTimeout as exc:
+            raise VideoGenTimeout(f"{what}: {exc}") from exc
+        except TransportError as exc:
+            raise VideoGenError(f"{what}: {exc}") from exc
+
     def _request(
         self, method: str, url: str, body: dict[str, Any] | None,
         *, timeout: int, what: str,
     ) -> dict[str, Any]:
         raw_body = json.dumps(body).encode("utf-8") if body is not None else None
-        status, raw = self.transport(method, url, self._headers(), raw_body, timeout)
+        status, raw = self._send(
+            method, url, self._headers(), raw_body, timeout=timeout, what=what
+        )
         if status != 200:
             raise _fail(status, raw, what=what)
         try:
@@ -261,7 +276,10 @@ class VeoClient(VideoClient):
             raise VideoGenError(f"{what}: JSON이 아닌 200 응답이다: {exc}") from exc
 
     def _download(self, uri: str, *, timeout: int) -> bytes:
-        status, raw = self.transport("GET", uri, {"x-goog-api-key": self.api_key}, None, timeout)
+        status, raw = self._send(
+            "GET", uri, {"x-goog-api-key": self.api_key}, None,
+            timeout=timeout, what="영상 내려받기",
+        )
         if status != 200:
             raise _fail(status, raw, what="영상 내려받기")
         return raw

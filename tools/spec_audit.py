@@ -62,19 +62,25 @@ STALE_STAGES = {r"(?<!옛 )\[1\.\s*script\]": "[1. script] → [1a]/[1s]/[1w] (A
 
 #: 새 계약 파일이 도달해야 하는 문서.
 REACH = {
-    "07-outline.json": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
-    "08-sceneplan.json": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
-    "factsheet.schema.json": ("specs/06-topic-research.md", "schemas/factsheet.py"),
-    "subtitle-style.json": ("specs/03-visual-rules.md",),
-    "outline.schema.json": ("specs/05-pipeline.md", "schemas/outline.py"),
+    # 1부 (ADR-0049). 옛 단계 계약(07-outline 등)은 옛 산출물에만 남고(ADR-0036)
+    # 새 계약이 아니므로 여기서 뺐다. sceneplan.schema.json은 [3s]의 세션 산출
+    # 계약(씬 연출표)으로 복귀했다 (ADR-0049 §5, worklog 23).
+    "script.md": ("specs/01-script-template.md", "specs/05-pipeline.md",
+                  "specs/06-topic-research.md"),
+    "scenes.json": ("specs/05-pipeline.md",),
     "sceneplan.schema.json": ("specs/05-pipeline.md", "schemas/sceneplan.py"),
+    "factcheck.md": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
+    "seed.md": ("specs/06-topic-research.md",),
+    "subtitle-style.json": ("specs/03-visual-rules.md",),
     "refs.json": ("specs/05-pipeline.md",),
     "refs.schema.json": ("specs/05-pipeline.md", "schemas/refs.py"),
-    "image_review.json": ("specs/05-pipeline.md",),
-    "image_source.json": ("specs/05-pipeline.md",),
-    "image-source.schema.json": ("specs/05-pipeline.md", "schemas/image_source.py"),
-    "score.schema.json": ("specs/05-pipeline.md", "schemas/score.py"),
-    "09-score.json": ("specs/05-pipeline.md",),
+    # 2부 (ADR-0056). 이미지 단계 계약(image_source 등)은 단계와 함께 지웠다.
+    "clips.json": ("specs/05-pipeline.md",),
+    "clip_review.json": ("specs/05-pipeline.md",),
+    "script.ja.md": ("specs/01-script-template.md", "specs/05-pipeline.md"),
+    "scenes.timed.{lang}.json": ("specs/05-pipeline.md", "specs/04-audio-rules.md"),
+    "ending.json": ("specs/05-pipeline.md",),
+    "ending.schema.json": ("specs/05-pipeline.md", "schemas/ending.py"),
     "specs/schema/": ("CLAUDE.md", "specs/05-pipeline.md"),
 }
 

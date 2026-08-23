@@ -1,4 +1,4 @@
-"""씬 계약(`06-script.json`) 검증. specs/02-beat-schema.md + specs/schema/scene.schema.json.
+"""씬 계약(`scenes.json`) 검증. specs/02-beat-schema.md + specs/schema/scene.schema.json.
 
 **스키마도 어휘도 이 파일에 없다.** `specs/schema/`에서 로드한다 (ADR-0034 §3).
 여기 있는 것은 스키마로 표현할 수 없는 교차 규칙뿐이다.
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import re
+from collections import Counter
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -26,20 +27,13 @@ from . import vocab
 #: specs/schema/vocab.json — 손으로 옮겨 적지 않는다 (ADR-0034 §3).
 BEATS: tuple[str, ...] = vocab.values("beat")
 CAMERAS: tuple[str, ...] = vocab.values("camera")
-MOTIONS: tuple[str, ...] = vocab.values("motion")
 SUBJECT_SCALES: tuple[str, ...] = vocab.values("subject_scale")
 FRAMING_TOKENS: tuple[str, ...] = vocab.values("framing")
 TRANSITIONS: tuple[str, ...] = vocab.values("transition")
-
-#: 편당 상한이 있는 영상 모션 — 과금 차선 `kling`뿐이다 (ADR-0039가 mj_video 상한을
-#: 폐기했다). 어느 모션에 상한이 있는지는 어휘가 안다.
-VIDEO_MOTIONS: tuple[str, ...] = tuple(
-    name for name, item in vocab.meta("motion").items() if item.get("max_scenes")
-)
-MAX_VIDEO_SCENES: int = min(
-    (item["max_scenes"] for item in vocab.meta("motion").values() if item.get("max_scenes")),
-    default=0,
-)
+#: ADR-0056 — 무대(결정 4)와 계측 표시 방식(결정 3). `motion` 어휘는 없다 — 전 씬이
+#: 영상 클립이라 고를 값이 사라졌고, 편당 영상 씬 상한도 함께 갔다.
+STAGINGS: tuple[str, ...] = vocab.values("staging")
+ANNOTATIONS: tuple[str, ...] = vocab.values("annotation")
 
 #: `visual_goal`이 `text`를 되풀이했다고 볼 겹침 비율 (ADR-0022).
 VISUAL_GOAL_OVERLAP_LIMIT: float = vocab.checks()["visual_goal_overlap_limit"]
@@ -107,13 +101,68 @@ def label_number_echo(text: str, labels: list[str]) -> float:
     return len(tokens & _number_tokens(text)) / len(tokens)
 
 
+def character_errors(data: dict[str, Any]) -> list[str]:
+    """인물 블록의 교차 규칙 (ADR-0051).
+
+    스키마는 `characters` 항목과 `cast` 항목의 **모양**만 본다. 씬의 `cast`가
+    실재하는 인물 id를 가리키는지는 두 자리를 함께 봐야 하므로 여기다 —
+    "`characters`에 없는 id는 계약 위반이다" (specs/02).
+    """
+    errors: list[str] = []
+    characters: list[dict[str, Any]] = data.get("characters") or []
+
+    ids = [str(c.get("id")) for c in characters]
+    for cid, count in Counter(ids).items():
+        if count > 1:
+            errors.append(f"characters: id '{cid}'가 {count}번 정의됐다")
+
+    known = set(ids)
+    for scene in data.get("scenes", []):
+        sid = scene.get("scene_id", "?")
+        for cid in scene.get("cast") or []:
+            if cid not in known:
+                errors.append(
+                    f"scenes/{sid}/cast: '{cid}'가 characters에 없다 — "
+                    "계약 위반이다 (ADR-0051)"
+                )
+    return errors
+
+
+def character_warnings(data: dict[str, Any]) -> list[str]:
+    """인물 판정 기준의 관측 (ADR-0051) — 막지 않고 알린다.
+
+    블록의 존재 기준은 "같은 인물이 **2씬 이상** 반복 등장하고 서사를 지는가"다.
+    한 씬뿐인 인물은 시트 생성 비용만 들고 일관성 장치가 할 일이 없다 — 판정을
+    되짚으라는 신호이지 계약 위반은 아니다.
+    """
+    warnings: list[str] = []
+    characters: list[dict[str, Any]] = data.get("characters") or []
+    if not characters:
+        return warnings
+
+    appearances: Counter[str] = Counter()
+    for scene in data.get("scenes", []):
+        for cid in scene.get("cast") or []:
+            appearances[str(cid)] += 1
+
+    for character in characters:
+        cid = str(character.get("id"))
+        count = appearances.get(cid, 0)
+        if count < 2:
+            warnings.append(
+                f"characters/{cid}: cast된 씬이 {count}개다 — 2씬 이상 반복 등장이 "
+                "인물 블록의 기준이다 (ADR-0051). 판정을 되짚어라"
+            )
+    return warnings
+
+
 def semantic_errors(data: dict[str, Any]) -> list[str]:
     """스키마로 표현 불가한 교차 규칙 (스펙 02).
 
     **구조 검증은 없다** (ADR-0033 §4). 비트 순서·개수 제약은 폐기됐고, 서사가
-    성립하는지는 `[2b] judge`가 본다.
+    성립하는지는 사람이 대본을 읽고 본다 (ADR-0049 게이트).
     """
-    errors: list[str] = []
+    errors: list[str] = list(character_errors(data))
     scenes: list[dict[str, Any]] = data.get("scenes", [])
 
     # 규칙: scene_id는 1부터 연번이며 자막 줄 순서와 일치 (specs/02, ADR-0013)
@@ -140,7 +189,7 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
                 "설명을 지지 않는다 — 본문이 말하지 않고 넘어가는 것을 적어라 (ADR-0022)"
             )
 
-        # ADR-0047 — 화면이 지는 숫자는 나레이션이 가리키기만 한다. [1s]의 says가
+        # ADR-0047 — 화면이 지는 숫자는 나레이션이 가리키기만 한다. 나레이션이
         # 통과했어도 [1w]가 문장으로 옮기며 숫자를 되넣을 수 있어 최종본에서 한 번 더 잰다.
         labels = (scene.get("info") or {}).get("labels") or []
         echo = label_number_echo(scene.get("text", ""), labels)
@@ -160,21 +209,16 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
             )
         prev_end = end
 
-    # 규칙: 편당 상한은 과금 차선 kling에만 있다 (specs/02, ADR-0039). mj_video는
-    # relax(GPU 0)라 상한이 폐기됐다 — 어느 모션이 상한을 갖는지는 vocab이 정한다.
-    video = [s.get("scene_id") for s in scenes if s.get("motion") in VIDEO_MOTIONS]
-    if MAX_VIDEO_SCENES and len(video) > MAX_VIDEO_SCENES:
-        errors.append(
-            f"scenes: 영상 모션({'/'.join(VIDEO_MOTIONS)}) 씬이 {len(video)}개다 "
-            f"(편당 최대 {MAX_VIDEO_SCENES}개)"
-        )
+    # 편당 영상 씬 상한은 없다 (ADR-0056 — 전 씬이 영상 클립이다). 라벨 ASCII는
+    # scene.schema.json의 pattern이 잡는다 — 정규식을 여기 다시 적지 않는다
+    # (script-rules.json `_label_ascii`).
 
     return errors
 
 
 def semantic_warnings(data: dict[str, Any]) -> list[str]:
     """차단하지는 않지만 하류 단계가 알아야 할 사항."""
-    warnings: list[str] = []
+    warnings: list[str] = list(character_warnings(data))
     scenes: list[dict[str, Any]] = data.get("scenes", [])
     if not scenes:
         return warnings

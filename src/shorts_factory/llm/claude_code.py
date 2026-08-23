@@ -40,6 +40,11 @@ _RETRYABLE_PATTERNS = (
 
 _RETRYABLE_RE = re.compile("|".join(_RETRYABLE_PATTERNS), re.IGNORECASE)
 
+#: 타임아웃으로 도는 시도의 상한 (ADR-0048). 한도 재시도는 백오프 대기가 비용의
+#: 전부지만, 타임아웃 재시도는 회당 타임아웃 전체를 태우는 전체 재실행이다 —
+#: 한도와 같은 상한(5회)을 주면 걸린 세션 하나가 최악 두 시간을 조용히 태운다.
+MAX_TIMEOUT_ATTEMPTS = 2
+
 
 def _is_retryable(*chunks: str) -> bool:
     return any(chunk and _RETRYABLE_RE.search(chunk) for chunk in chunks)
@@ -149,6 +154,7 @@ class ClaudeCodeClient(LLMClient):
         timeout = timeout or self.default_timeout
         cmd = self._build_cmd(allowed_tools, system_append, add_dirs, resume)
         last_error = ""
+        timeouts = 0
 
         for attempt in range(1, self.max_retries + 1):
             log.info("헤드리스 세션 실행 [%s] 시도 %d/%d", label or "-", attempt, self.max_retries)
@@ -157,7 +163,8 @@ class ClaudeCodeClient(LLMClient):
             except LLMTimeout as exc:
                 last_error = str(exc)
                 log.warning("[%s] %s", label or "-", last_error)
-                if attempt >= self.max_retries:
+                timeouts += 1
+                if timeouts >= MAX_TIMEOUT_ATTEMPTS or attempt >= self.max_retries:
                     raise
                 self._backoff(attempt, label)
                 continue

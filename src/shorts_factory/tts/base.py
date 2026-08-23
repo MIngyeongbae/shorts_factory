@@ -143,8 +143,17 @@ class TTSClient(ABC):
     """단계 코드가 보는 유일한 TTS 표면.
 
     voice_id·model_id·API 키는 어댑터 생성자에서 주입한다 (ADR-0004: voice_id는
-    환경변수). 단계는 "이 텍스트를 읽어라"만 안다.
+    환경변수 — 언어별, ADR-0056 결정 7). 단계는 "이 텍스트를 읽어라"만 안다.
     """
+
+    def check_configured(self) -> None:
+        """**호출 전에** 키·voice_id가 있는지 확인한다. 없으면 `TTSNotConfigured`.
+
+        `[3]`이 세 언어를 도는데 두 번째 언어의 id가 비어 있으면 첫 언어의 과금이 헛되다
+        (스펙 05 `[3]` — "대본 파일이 있는데 id가 비어 있으면 진입 전에 멈춘다"). 그래서
+        단계가 어느 언어도 부르기 전에 전부 묻는다. 기본은 "확인할 것이 없다"다.
+        """
+        return None
 
     @abstractmethod
     def synthesize(

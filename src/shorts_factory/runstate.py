@@ -97,3 +97,28 @@ class RunState:
     def note(self, key: str, value: Any) -> None:
         self.data[key] = value
         self.save()
+
+
+class RunNotFound(Exception):
+    """슬러그에 해당하는 run이 없다."""
+
+
+def find_run_for_slug(paths, slug: str) -> tuple[str, dict[str, Any]]:
+    """해당 슬러그의 가장 최근 run을 찾는다 (run_id가 날짜 프리픽스라 사전순=시간순).
+
+    옛 stages/research.py에서 옮겨 왔다 (ADR-0049) — run 소속이라 여기가 자리다.
+    """
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for contract_path in sorted(paths.runs.glob("*/topic.json")):
+        try:
+            data = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if data.get("slug") == slug:
+            matches.append((contract_path.parent.name, data))
+
+    if not matches:
+        raise RunNotFound(
+            f"슬러그 '{slug}'에 해당하는 run이 없다. [0. seed]를 먼저 실행하라."
+        )
+    return matches[-1]

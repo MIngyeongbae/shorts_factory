@@ -1,29 +1,22 @@
-"""영상 생성 호출 어댑터 인터페이스. ADR-0039.
+"""영상 생성 호출 어댑터 인터페이스. ADR-0039 → ADR-0056.
 
-`imagegen/base.py`와 같은 모양이다. `[7. motion]`은 이 인터페이스에만 의존하고,
-프로바이더 교체(MJ → Kling, ADR-0025의 밴 대비 차선)는 어댑터 구현만 바꾼다.
-
-## 왜 이미지와 따로인가
-
-같은 프록시를 쓰지만 **계약이 다르다.** 이미지는 프롬프트 하나로 끝나는데 영상은
-**이미 만든 이미지가 입력**이고, MJ의 경우 그 입력이 로컬 파일이 아니라 **MJ가 닿을 수
-있는 주소**여야 한다 (ADR-0025). 그 사슬을 `ImageClient`에 끼워 넣으면 `[6]`이 모르는
-개념을 지고 가게 된다.
+`[7. videogen]`은 이 인터페이스에만 의존하고, 프로바이더 교체(Omni 직접 → fal 경유,
+ADR-0056 되돌릴 조건 2)는 어댑터 구현만 바꾼다.
 
 ## 요청에 담기는 것
 
-씬 하나의 클립을 만드는 데 필요한 것만이다.
+씬 하나의 클립을 만드는 데 필요한 것만이다. **주 경로는 텍스트→영상이다** (ADR-0056):
 
-- `source_task_id` — 그 이미지를 만든 이미지 잡의 id. **파일 경로가 아니다.**
-  MJ는 자기가 만든 이미지를 자기 잡 id로 가리킬 때만 입력으로 받는다 (ADR-0025).
-  출처는 `image_source.json`이다 — `[6]`이 쓰고 `[6r]`이 갱신하는 사이드카 계약이고,
-  `[7]`은 `images.json`을 열지 않는다 (ADR-0041, ADR-0024 §2)
-- `quadrant` — 그 잡의 몇 번째 장인가. `[6r]`이 사분면을 바꿔 끼웠으면 그 값이다
-  (ADR-0031 §2). 기본은 0
-- `motion_prompt` — 카메라 워크의 영어 구절. 씬 계약의 `camera`에서 오고, 문자열은
-  `specs/schema/vocab.json`의 `meta.camera[*].video_prompt`가 정본이다 (ADR-0034 §3)
-- `duration` — 씬 길이 + 디졸브 겹침 (ADR-0024). **지금은 참고값이다** — MJ 클립은
-  5.208초 고정이고 길이를 맞추는 것은 `[9]`의 트림이다
+- `prompt`·`negative_prompt` — `[5]`의 `prompts.json`에서 온 영상 지시. FORMAT 절의
+  초 수는 `[7]`이 채운 뒤 넘긴다 (`{seconds}` 자리표시자, 스펙 03)
+- `seconds` — 요청 클립 길이(정수 초). 세 언어 중 최장 씬 + 0.6초의 올림, 3~10 (스펙 05 `[7]`)
+
+아래는 **참조 프레임 경로**(`videogen/veo.py`, ADR-0043 실측)가 쓰던 필드다. 그 어댑터는
+파이프라인 밖이지만 실측 독스트링을 들고 있어 지우지 않았고, 필드도 그대로 둔다:
+
+- `first_frame`·`last_frame` — 시작·끝 프레임 로컬 파일 (Veo)
+- `source_task_id`·`quadrant` — MJ 영상의 잡 id 입력 (어댑터는 삭제됐다, ADR-0056)
+- `motion_prompt`·`duration` — Veo가 쓰던 카메라 구절·실수 길이
 """
 
 from __future__ import annotations
@@ -49,39 +42,35 @@ class VideoGenTimeout(VideoGenError):
 
 
 class VideoProviderNotConfigured(VideoGenError):
-    """어댑터를 쓸 수 없는 상태 (플랜 미달, 키 없음 등).
+    """어댑터를 쓸 수 없는 상태 (플랜 미달, 키 없음, 파라미터 거부 등).
 
-    씬 하나의 실패가 아니라 프로바이더 전체의 문제라 `[7]`은 남은 씬을 시도하지 않고
-    전부 `kenburns`로 내려간다 — 같은 오류로 27번 실패하며 GPU를 태우는 것은 결과가
-    아니라 소음이다. **relax 영상이 Pro 미만에서 막히는 것이 정확히 이 경우다**
-    (ADR-0039 §4).
+    씬 하나의 실패가 아니라 프로바이더 전체의 문제라 `[7]`은 **남은 씬을 시도하지 않고
+    멈춘다** (스펙 05 `[7]` — D-5의 "돈이 나가는" 경우). 같은 오류로 25번 실패하며
+    과금을 쌓는 것은 결과가 아니라 소음이다.
     """
 
 
 @dataclass(frozen=True)
 class VideoRequest:
-    """씬 하나에 대한 클립 요청 = 잡 1회.
+    """씬 하나에 대한 클립 요청 = 호출 1회.
 
-    입력 이미지를 가리키는 길이 **둘 중 하나**다 (프로바이더가 정한다):
-
-    - **잡 id** (`source_task_id`+`quadrant`) — MJ. 자기가 만든 이미지를 자기 잡 id로만
-      받는다 (ADR-0025·0041)
-    - **로컬 파일** (`first_frame`(+`last_frame`)) — Veo (ADR-0043). base64 인라인이라
-      "닿는 URL"을 만들 왕복이 없다. `last_frame`이 있으면 first→last 보간·조립이다
+    **텍스트→영상**(Omni, ADR-0056)은 `prompt`·`negative_prompt`·`seconds`만 쓴다.
+    참조 프레임 필드(`first_frame`·`last_frame`)는 Veo 어댑터(ADR-0043 실측)의 것이고
+    파이프라인은 더 이상 채우지 않는다.
     """
 
     scene_id: int
-    #: 이 씬 이미지를 만든 이미지 잡의 id (`image_source.json`의 `task_id`, ADR-0041).
-    #: 파일 입력 프로바이더(Veo)에서는 비워 둔다.
+    #: 영상 지시 — `prompts.json`의 `prompt`에 FORMAT 초 수를 채운 것 (스펙 03·05).
+    prompt: str = ""
+    negative_prompt: str = ""
+    #: 요청 클립 길이(정수 초). 3~10 (스펙 05 `[7]`). 0이면 프로바이더가 정한다.
+    seconds: int = 0
+    #: --- 아래는 참조 프레임·잡 id 경로의 필드 (모듈 독스트링) ---
     source_task_id: str = ""
-    #: 그 잡의 몇 번째 장인가. `[6r]`이 고른 사분면 (ADR-0031 §2).
     quadrant: int = 0
-    #: 시작 프레임 로컬 파일 (ADR-0043). 인포씬에서 CLEAN(`images/{scene_id}.png`)이다.
     first_frame: Any | None = None
-    #: 끝 프레임 로컬 파일 (ADR-0043). 인포씬에서 INFO(`info/{scene_id}.jpg`)다.
     last_frame: Any | None = None
     motion_prompt: str = ""
-    #: 씬 길이 + 겹침 (ADR-0024). MJ는 고정 길이를 주고, Veo는 4/6/8초에서 고른다.
     duration: float = 0.0
     label: str = ""
 
@@ -101,10 +90,15 @@ class GeneratedClip:
     def __post_init__(self) -> None:
         if not self.data:
             raise VideoGenError("클립 바이트가 비어 있다")
-        # 조용히 틀리는 경로를 막는다 — 프록시가 실패 페이지를 200으로 주면 그것이
+        # 조용히 틀리는 경로를 막는다 — 서버가 실패 페이지를 200으로 주면 그것이
         # `clips/`에 mp4 이름으로 앉고, `[9]`가 FFmpeg에서야 터진다.
-        if MP4_BRAND not in self.data[:32]:
+        if not self.looks_like_mp4(self.data):
             raise VideoGenError("mp4가 아니다 — 응답 본문이 영상이 아니다")
+
+    @staticmethod
+    def looks_like_mp4(data: bytes) -> bool:
+        """`ftyp` 박스가 머리에 있는가. 어댑터가 JSON과 영상을 가를 때도 쓴다."""
+        return MP4_BRAND in data[:32]
 
     @property
     def meta(self) -> dict[str, Any]:
@@ -128,18 +122,19 @@ class VideoClient(ABC):
     #: 이 프로바이더가 내는 파일의 확장자.
     output_suffix: str = ".mp4"
 
-    #: 이 어댑터가 입력으로 받을 수 있는 **이미지 프로바이더의 이름**
-    #: (`image_source.json`의 `provider`, ADR-0041).
-    #:
-    #: 잡 id는 그것을 만든 곳에서만 통한다 — MJ 잡 id를 다른 프로바이더에 넣으면
-    #: 씬 수만큼 실패한다. `[7]`은 이름이 다르면 **호출 없이** 전 씬을 강등한다.
-    #: 기본값이 빈 문자열인 것은 의도적이다: 선언하지 않은 어댑터는 아무 입력도 받지
-    #: 못하고, `[7]`이 그 사실을 경고로 남긴다.
+    #: 잡 id 입력 경로(삭제된 MJ 영상 어댑터)가 쓰던 선언. 텍스트→영상 어댑터는 비워 둔다.
     source_provider: str = ""
 
+    #: 이 프로바이더가 받는 클립 길이(정수 초)의 범위. `[7]`이 세 언어 최장 + 꼬리를 여기에
+    #: 가둔다 (스펙 05 `[7]`). 어댑터마다 다르다 (Omni 3~10, H3 4~10 — ADR-0059) — 단계가
+    #: 한 어댑터의 상수를 import하지 않는다.
+    min_seconds: int = 3
+    max_seconds: int = 10
+
     def concurrency(self) -> int:
-        """동시에 던져도 되는 잡 수. `[6]`의 `ImageClient.concurrency()`와 같은 계약이다
-        (ADR-0031 G3) — **단계가 숫자를 적지 않는다.** 못 읽으면 1로 떨어진다.
+        """동시에 던져도 되는 잡 수 (ADR-0031 G3의 계약) — **단계가 숫자를 적지 않는다.**
+        `[7]`은 이 값을 워커 수 기본으로 쓰고, 429가 오면 1로 줄인다 (스펙 05). `--jobs`가
+        이긴다. 못 읽으면 1로 떨어진다.
         """
         return 1
 

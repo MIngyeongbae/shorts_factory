@@ -1,17 +1,14 @@
-"""이미지 생성 어댑터 (`imagegen/`) — 인터페이스·페이크·미결정 프로바이더.
+"""이미지 생성 어댑터 (`imagegen/`) — **휴면** 패키지의 인터페이스·페이크 계약 (ADR-0056).
+
+어느 단계도 부르지 않지만 어댑터가 썩지 않게 계약을 지킨다 (ADR-0056 결정 1 —
+정지 이미지 쇼츠가 결정되면 되살린다). NB2 어댑터 테스트는 어댑터와 함께 지웠다.
 
 확인 대상:
-- ADR-0005 — 모든 호출에 스타일 앵커를 붙인다. 과금 어댑터는 앵커 없이 돌지 않는다
 - ADR-0020 — 요청에 담기는 것은 `prompt`·`negative_prompt`·`style`뿐이다.
   `framing_reuse_of`는 캐시 키가 아니고, 시간 정보는 애초에 없다
-- ADR-0001·0002 — 한국어 `subject`가 번역 없이 그대로 가고, 화면에 글자로 그리지 말라는
-  지시가 함께 간다
-- ADR-0021 — 실물 어댑터의 요청 본문·응답 파싱·오류 매핑. **실제 호출은 하지 않는다.**
-  HTTP 경계(`transport`)를 페이크로 갈아끼워 전 경로를 검증한다
+- ADR-0001 — 한국어 `subject`가 번역 없이 그대로 간다
 """
 
-import base64
-import json
 import struct
 import zlib
 
@@ -20,9 +17,7 @@ import pytest
 from shorts_factory.imagegen.base import (
     GeneratedImage,
     ImageGenError,
-    ImageGenRateLimited,
     ImageRequest,
-    ProviderNotConfigured,
     discover_style_anchors,
 )
 from shorts_factory.imagegen.fake import (
@@ -30,7 +25,6 @@ from shorts_factory.imagegen.fake import (
     fake_image,
     solid_png,
 )
-from shorts_factory.imagegen.nano_banana import NanoBananaClient
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -48,7 +42,6 @@ SCENE = {
     "beat": "context",
     "subject_scale": "wide",
     "camera": "slow_zoom_in",
-    "motion": "kenburns",
     "framing": "aerial_diorama",
     "framing_source": "beat_rule",
     "prompt": (
@@ -84,7 +77,7 @@ def png_chunks(data: bytes) -> list[tuple[bytes, bytes]]:
 
 
 def test_fake_png_is_structurally_valid():
-    """[7. motion]이 FFmpeg에 먹일 파일이다. 헤더만 흉내 낸 바이트면 거기서 터진다."""
+    """FFmpeg에 먹일 수 있는 파일이어야 한다. 헤더만 흉내 낸 바이트면 거기서 터진다."""
     data = solid_png(9, 16, (10, 20, 30))
     kinds = [kind for kind, _ in png_chunks(data)]
     assert kinds == [b"IHDR", b"IDAT", b"IEND"]
@@ -156,18 +149,16 @@ def test_meta_leaves_the_image_bytes_behind():
 def test_request_carries_the_korean_subject_untranslated():
     request = ImageRequest.from_prompt_scene(SCENE, STYLE)
     assert "협곡을 가득 메운 거대한 콘크리트 댐 덩어리" in request.prompt
-    assert "do not write these words in the image" in request.prompt
 
 
 def test_request_excludes_layer_b_overlays_and_scene_direction():
-    """오버레이는 [8], 카메라·모션·비트는 [7]·[9]가 scenes.timed.json에서 읽는다."""
+    """카메라·모션·비트는 [7]·[9]가 실측+계약 병합에서 읽는다 — 이미지 요청에는 프롬프트뿐이다."""
     request = ImageRequest.from_prompt_scene(SCENE, STYLE)
     payload = f"{request.prompt}\n{request.negative_prompt}"
 
     assert "325만" not in payload  # 대형 숫자는 레이어 B (ADR-0002)
     assert not hasattr(request, "overlays")
     assert not hasattr(request, "camera")
-    assert not hasattr(request, "motion")
     assert not hasattr(request, "beat")
 
 
@@ -249,216 +240,3 @@ def test_fake_records_what_was_sent(tmp_path):
 
 def test_fake_does_not_require_style_anchors():
     assert FakeImageClient().requires_style_anchors is False
-
-
-def test_paid_provider_demands_style_anchors():
-    assert NanoBananaClient().requires_style_anchors is True
-
-
-# --- 실물 어댑터 (ADR-0021). 실제 호출 0회 -------------------------------------
-
-
-def ok_response(data: bytes = b"", **extra) -> tuple[int, bytes]:
-    """이미지 한 장을 담은 200 응답."""
-    payload = {
-        "id": "int_abc",
-        "model": "gemini-3.1-flash-image",
-        "output_image": {
-            "mime_type": "image/png",
-            "data": base64.b64encode(data or solid_png(8, 8, (1, 2, 3))).decode("ascii"),
-        },
-    }
-    payload.update(extra)
-    return 200, json.dumps(payload).encode("utf-8")
-
-
-class RecordingTransport:
-    """호출을 받아 적고 정해진 응답을 돌려준다. 네트워크를 쓰지 않는다."""
-
-    def __init__(self, *responses: tuple[int, bytes]) -> None:
-        self.responses = list(responses) or [ok_response()]
-        self.calls: list[dict] = []
-
-    def __call__(self, url, headers, body, timeout):
-        self.calls.append(
-            {
-                "url": url,
-                "headers": headers,
-                "body": json.loads(body),
-                "timeout": timeout,
-            }
-        )
-        return self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
-
-
-def client(*responses, **kwargs) -> NanoBananaClient:
-    kwargs.setdefault("api_key", "test-key")
-    kwargs.setdefault("transport", RecordingTransport(*responses))
-    return NanoBananaClient(**kwargs)
-
-
-def test_missing_key_refuses_before_touching_the_network():
-    """키가 없으면 호출 자체가 없다. transport를 부르면 안 된다."""
-    transport = RecordingTransport()
-    with pytest.raises(ProviderNotConfigured, match="GEMINI_API_KEY"):
-        NanoBananaClient(transport=transport).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE)
-        )
-    assert transport.calls == []
-
-
-def test_key_is_read_at_call_time_not_construction():
-    """--help가 어댑터를 만드는 것만으로 실패하면 안 된다."""
-    NanoBananaClient()  # 예외 없음
-
-
-def test_request_carries_the_contract_values_verbatim():
-    """`9:16`·`2K`가 API 허용값과 문자열까지 같다 — 변환 테이블이 없다 (ADR-0021)."""
-    c = client()
-    c.generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-
-    call = c.transport.calls[0]
-    assert call["url"].endswith("/v1beta/interactions")
-    assert call["headers"]["x-goog-api-key"] == "test-key"
-    assert call["body"]["model"] == "gemini-3.1-flash-image"
-    assert call["body"]["response_format"] == {
-        "type": "image",
-        "mime_type": "image/jpeg",
-        "aspect_ratio": "9:16",
-        "image_size": "2K",
-    }
-
-
-def test_korean_subject_goes_out_untranslated():
-    """ADR-0001·0014 — `subject`는 한국어 그대로 프롬프트에 들어간다."""
-    c = client()
-    c.generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-
-    text = c.transport.calls[0]["body"]["input"][0]["text"]
-    assert SCENE["prompt"] in text
-
-
-def test_negative_prompt_is_appended_to_the_text():
-    c = client()
-    c.generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-
-    text = c.transport.calls[0]["body"]["input"][0]["text"]
-    assert SCENE["negative_prompt"] in text
-
-
-def test_empty_negative_prompt_adds_no_stray_instruction():
-    """빈 'Avoid:' 줄이 남으면 모델이 그것도 지시로 읽는다."""
-    c = client()
-    c.generate(
-        ImageRequest.from_prompt_scene({**SCENE, "negative_prompt": "  "}, STYLE)
-    )
-
-    assert "Avoid:" not in c.transport.calls[0]["body"]["input"][0]["text"]
-
-
-def test_style_anchors_ride_along_as_base64(tmp_path):
-    anchors = []
-    for name in ("a.png", "b.png"):
-        p = tmp_path / name
-        p.write_bytes(solid_png(4, 4, (4, 5, 6)))
-        anchors.append(p)
-
-    c = client()
-    c.generate(
-        ImageRequest.from_prompt_scene(SCENE, STYLE, style_anchors=tuple(anchors))
-    )
-
-    parts = c.transport.calls[0]["body"]["input"]
-    images = [p for p in parts if p["type"] == "image"]
-    assert len(images) == 2
-    assert all(p["mime_type"] == "image/png" for p in images)
-    assert base64.b64decode(images[0]["data"]) == solid_png(4, 4, (4, 5, 6))
-
-
-def test_more_than_three_anchors_is_refused(tmp_path):
-    """상한이 3장이다 (ADR-0021). 앞 3장만 쓰면 파일 이름 순서가 룩을 정한다."""
-    anchors = []
-    for name in ("a.png", "b.png", "c.png", "d.png"):
-        p = tmp_path / name
-        p.write_bytes(solid_png(4, 4, (4, 5, 6)))
-        anchors.append(p)
-
-    transport = RecordingTransport()
-    with pytest.raises(ProviderNotConfigured, match="3장"):
-        NanoBananaClient(api_key="k", transport=transport).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE, style_anchors=tuple(anchors))
-        )
-    assert transport.calls == [], "상한 위반은 호출 전에 걸러진다"
-
-
-def test_image_is_read_from_the_steps_array_too():
-    """편의 필드가 없고 단계 배열만 오는 응답도 읽는다."""
-    payload = {
-        "steps": [
-            {"content": [{"type": "text", "text": "..."}]},
-            {
-                "content": [
-                    {
-                        "type": "image",
-                        "mime_type": "image/png",
-                        "data": base64.b64encode(solid_png(6, 6, (7, 8, 9))).decode("ascii"),
-                    }
-                ]
-            },
-        ]
-    }
-    c = client((200, json.dumps(payload).encode("utf-8")))
-    result = c.generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-
-    assert result.data == solid_png(6, 6, (7, 8, 9))
-
-
-def test_response_without_an_image_names_the_shape_it_got():
-    """형태가 바뀌면 추측이 아니라 한 줄 오류로 드러나야 한다 (ADR-0021 되돌릴 조건)."""
-    body = json.dumps({"steps": [], "finish_reason": "SAFETY"}).encode("utf-8")
-    with pytest.raises(ImageGenError, match="finish_reason"):
-        client((200, body)).generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-
-
-def test_mismatched_signature_is_refused():
-    """200이어도 본문이 이미지가 아니면 거기서 멈춘다."""
-    payload = {
-        "output_image": {
-            "mime_type": "image/jpeg",
-            "data": base64.b64encode(b"not-an-image").decode("ascii"),
-        }
-    }
-    with pytest.raises(ImageGenError, match="시그니처"):
-        client((200, json.dumps(payload).encode("utf-8"))).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE)
-        )
-
-
-def test_rate_limit_maps_to_its_own_error():
-    with pytest.raises(ImageGenRateLimited):
-        client((429, b'{"error":"quota"}')).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE)
-        )
-
-
-@pytest.mark.parametrize("status", [401, 403])
-def test_auth_failure_stops_the_provider_and_mentions_the_paid_tier(status):
-    """유료 티어가 아니면 첫 호출이 막힌다 — 키 검증만으로는 알 수 없다 (ADR-0021)."""
-    with pytest.raises(ProviderNotConfigured, match="유료"):
-        client((status, b'{"error":"denied"}')).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE)
-        )
-
-
-def test_other_http_errors_are_retryable_scene_failures():
-    """500은 씬 하나의 실패다. `[6]`이 재시도하고 폴백한다."""
-    with pytest.raises(ImageGenError) as exc:
-        client((500, b"boom")).generate(ImageRequest.from_prompt_scene(SCENE, STYLE))
-    assert not isinstance(exc.value, ProviderNotConfigured)
-
-
-def test_two_hundred_that_is_not_json_fails_clearly():
-    with pytest.raises(ImageGenError, match="JSON"):
-        client((200, b"<html>502</html>")).generate(
-            ImageRequest.from_prompt_scene(SCENE, STYLE)
-        )

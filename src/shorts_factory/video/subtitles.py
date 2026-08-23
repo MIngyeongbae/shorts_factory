@@ -6,7 +6,7 @@
 자막은 **후처리 합성**이다 (ADR-0002). 정확해야 하는 한국어를 이미지 생성에 맡기지
 않는다. 큐 1개 = 씬 1개다 (ADR-0013) — 씬을 다시 묶거나 쪼개지 않는다.
 
-시각의 출처는 `scenes.timed.json` 하나다 (ADR-0020). 이 모듈은 씬의 `start`/`end`를
+시각의 출처는 그 언어의 `scenes.timed.{lang}.json` 하나다 (ADR-0020). 이 모듈은 씬의 `start`/`end`를
 그대로 쓰고, ASS의 시간 해상도(1/100초)만큼만 반올림한다 — 최대 5ms이므로 specs/00의
 ±200ms 안이다.
 
@@ -24,9 +24,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from ..schemas import script_rules, vocab
 
@@ -71,6 +72,23 @@ LINE_HEIGHT_RATIO = 1.2
 
 #: ASS의 줄바꿈 표시 (WrapStyle 2 = 자동 줄바꿈 없음, 이 표시만 줄을 나눈다)
 LINE_BREAK = r"\N"
+
+#: libass(자막)와 drawtext(엔딩 크레딧)가 읽는 폰트 파일 확장자. **읽는 곳이 둘이라
+#: 여기 한 번만 적는다** — `FONTS_DIR`을 이미 이 모듈이 들고 있고, 목록이 갈리면
+#: 한쪽 경로만 조용히 폰트를 못 찾는다 (ADR-0034 §3의 태도).
+FONT_SUFFIXES = (".ttf", ".otf", ".ttc")
+
+#: 언어별 폰트 패밀리 덮어쓰기 환경변수 (스펙 04 — "폰트만 언어별이다"). 계약 파일에
+#: 언어별 폰트 표를 넣는 것은 스키마 변경이라 ADR이 필요하므로, 그때까지는 환경변수로
+#: 받고 비어 있으면 `font_name`으로 떨어진다. ko는 계약의 `font_name` 그대로다.
+FONT_ENV_PATTERN = "SUBTITLE_FONT_{LANG}"
+
+
+def font_name_for(lang: str, *, environ: Mapping[str, str] | None = None) -> str:
+    """그 언어의 폰트 패밀리. `SUBTITLE_FONT_JA`처럼 덮어쓴 값이 있으면 그것, 없으면 계약값."""
+    env = os.environ if environ is None else environ
+    override = (env.get(FONT_ENV_PATTERN.format(LANG=lang.upper())) or "").strip()
+    return override or FONT_NAME
 
 
 class SubtitleError(Exception):
@@ -189,11 +207,11 @@ class Cue:
         return " ".join(self.lines)
 
 
-def style_line() -> str:
-    """specs/03 자막 스타일 한 줄. 필드 순서는 ASS V4+ 규격 그대로다."""
+def style_line(font_name: str = FONT_NAME) -> str:
+    """specs/03 자막 스타일 한 줄. 필드 순서는 ASS V4+ 규격 그대로다. 폰트만 언어별이다 (스펙 04)."""
     return (
         "Style: Default,"
-        f"{FONT_NAME},{FONT_SIZE},"
+        f"{font_name},{FONT_SIZE},"
         f"{PRIMARY_COLOUR},&H000000FF,{OUTLINE_COLOUR},&H00000000,"
         "-1,0,0,0,"  # Bold(-1=true), Italic, Underline, StrikeOut
         "100,100,0,0,"  # ScaleX, ScaleY, Spacing, Angle
@@ -230,10 +248,13 @@ EVENTS_HEADER = "\n".join(
 )
 
 
-def build_ass(scenes: Sequence[dict[str, Any]]) -> tuple[str, list[str]]:
-    """`scenes.timed.json`의 씬 배열 → (ASS 문서, 경고).
+def build_ass(
+    scenes: Sequence[dict[str, Any]], *, font_name: str = FONT_NAME
+) -> tuple[str, list[str]]:
+    """`scenes.timed.{lang}.json`의 씬 배열 → (ASS 문서, 경고).
 
     씬의 `text`·`start`·`end`를 그대로 옮긴다. 대본을 고치지 않는다 (ADR-0017).
+    `font_name`은 그 언어의 폰트다 (`font_name_for`) — 크기·줄 수 산수는 ko 기준 그대로다.
     """
     if not scenes:
         raise SubtitleError("씬이 없다")
@@ -263,7 +284,7 @@ def build_ass(scenes: Sequence[dict[str, Any]]) -> tuple[str, list[str]]:
             f"Default,,0,0,0,,{text}"
         )
 
-    document = "\n".join((HEADER, style_line(), "", EVENTS_HEADER, *events)) + "\n"
+    document = "\n".join((HEADER, style_line(font_name), "", EVENTS_HEADER, *events)) + "\n"
     return document, warnings
 
 

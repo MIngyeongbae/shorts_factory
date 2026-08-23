@@ -1,21 +1,26 @@
-"""scenes.timed.json — 실측 타임스탬프가 붙은 씬 계약. specs/02, ADR-0017.
+"""scenes.timed.{lang}.json — 실측 타임스탬프가 붙은 씬 계약. specs/02·05, ADR-0017·0056.
 
 specs/02:
-    `[3. tts+sync]`가 실측값을 `runs/{run_id}/scenes.timed.json`에 **새로 쓰며**,
+    `[3. tts+sync]`가 실측값을 `runs/{run_id}/scenes.timed.{lang}.json`에 **새로 쓰며**,
     그 파일에서 필드명은 `start`/`end`다. 추정(`est_*`)과 실측(`start`/`end`)은
     파일 단위로 분리된다.
+
+**언어당 파일 하나다** (ADR-0056 결정 5) — `ko` 필수, `ja`·`en`은 대본이 있으면.
+세 파일의 씬 수는 같다(`[2l]`의 줄 1:1 정렬). 스키마는 언어와 무관하게 하나이고
+경로만 `timed_scenes_path`가 만든다.
 
 그래서 이 스키마는 `scenes.py`의 씬 스키마를 손으로 옮겨 적지 않고 **필드명만 바꿔
 파생**시킨다. 스펙이 "같은 스키마, 이름만 다름"이라고 말하므로 코드도 그래야 한다 —
 씬 스키마가 늘거나 줄면 이쪽이 자동으로 따라간다.
 
-`06-script.json`은 읽기 전용이다 (ADR-0017). 이 모듈은 원본 문서를 손대지 않고
+씬 계약은 읽기 전용이다 (ADR-0017). 이 모듈은 원본 문서를 손대지 않고
 새 문서를 만들어 돌려준다.
 """
 
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 from typing import Any, Sequence
 
 from jsonschema import Draft202012Validator
@@ -23,13 +28,35 @@ from jsonschema import Draft202012Validator
 from . import vocab
 from .scenes import DURATION_TOLERANCE, SCENES_SCHEMA, scene_schema_copy
 
+#: 언어별 실측 파일 이름 (specs/05 계약 표). `{lang}` ∈ ko·ja·en.
+TIMED_SCENES_PATTERN = "scenes.timed.{lang}.json"
+
+#: 토픽 하나의 언어 (specs/05 — ADR-0056 결정 5). **ko는 필수이고 ja·en은 선택이다.**
+#: `[3]`·`[7]`·`[9]`가 같은 목록을 본다 — 세 단계가 각자 적으면 갈라진다.
+LANGUAGES: tuple[str, ...] = ("ko", "ja", "en")
+PRIMARY_LANGUAGE = "ko"
+
+
+def timed_scenes_path(run_dir: Path, lang: str) -> Path:
+    """`runs/{run_id}/scenes.timed.{lang}.json`. 시각을 읽는 곳은 언어당 이 파일 하나다 (ADR-0020)."""
+    lang = lang.strip().lower()
+    if not lang.isalpha():
+        raise ValueError(f"언어 코드가 아니다: {lang!r}")
+    return Path(run_dir) / TIMED_SCENES_PATTERN.format(lang=lang)
+
+
+def present_languages(run_dir: Path) -> list[str]:
+    """실측 파일이 있는 언어, `LANGUAGES` 순서. 없는 언어는 그 언어의 쇼츠가 없을 뿐이다 (D-3)."""
+    return [lang for lang in LANGUAGES if timed_scenes_path(run_dir, lang).exists()]
+
+
 #: 추정 → 실측 필드명 대응 (specs/02)
 RENAMED = {"est_start": "start", "est_end": "end"}
 
 #: 이 파일에 싣지 않는 대본 필드. **이미지 지시는 여기 올 이유가 없다** (ADR-0020·0022).
-#: `scenes.timed.json`을 읽는 곳은 `[7]`(클립 길이·카메라·모션)과 `[9]`(전환·자막)뿐이고
-#: 둘 다 그림이 무엇을 설명하는지도, 어떤 구도로 잡는지도 알 필요가 없다. 그림 쪽
-#: 소비자는 `prompts.json`을 읽는다 — 같은 값이 두 파일에 있으면 갈라진다.
+#: 실측 파일을 읽는 곳은 `[7]`(클립 길이)과 `[9]`(전환·자막)뿐이고 둘 다 그림이 무엇을
+#: 설명하는지도, 어떤 구도로 잡는지도 알 필요가 없다. 그림 쪽 소비자는 `prompts.json`을
+#: 읽는다 — 같은 값이 두 파일에 있으면 갈라진다.
 #:
 #: `transition`은 빠지지 않는다. `[9]`가 그 값으로 전환을 놓는다 (ADR-0033 §3).
 DROPPED: tuple[str, ...] = ("visual_goal", "framing")
@@ -54,7 +81,7 @@ TIMED_SCENES_SCHEMA: dict[str, Any] = copy.deepcopy(SCENES_SCHEMA)
 # 파생 스키마는 자기 $id를 갖는다. 원본과 같은 $id를 달면 `#/...` 참조가 레지스트리에
 # 등록된 원본으로 풀려 이름만 바꾼 이 스키마를 비껴간다.
 TIMED_SCENES_SCHEMA["$id"] = "scenes.timed.schema.json"
-TIMED_SCENES_SCHEMA["title"] = "scenes.timed.json (실측 씬 계약)"
+TIMED_SCENES_SCHEMA["title"] = "scenes.timed.{lang}.json (실측 씬 계약)"
 TIMED_SCENES_SCHEMA.pop("$defs", None)
 TIMED_SCENES_SCHEMA["properties"]["scenes"]["items"] = TIMED_SCENE_SCHEMA
 
@@ -132,14 +159,84 @@ def validate_timed_scenes(data: Any) -> tuple[list[str], list[str]]:
     return semantic_errors(data), semantic_warnings(data)
 
 
+#: 새 편(script.md) 모드 — `[3]`이 **줄 경계만** 담는다 (specs/05 계약 표, ADR-0049).
+#: 대본 속성(beat·subject·camera·…)은 `[3s]`의 `scenes.json` 소관이라 여기 없고,
+#: 소비자(`[7]`·`[9]`)는 `stages.contract.merge_scene_direction`으로 합쳐 읽는다.
+LINE_TIMED_SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "scenes.timed.line.schema.json",
+    "title": "scenes.timed.{lang}.json (줄 경계 실측)",
+    "type": "object",
+    "required": ["run_id", "topic", "total_duration", "scenes"],
+    "additionalProperties": False,
+    "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "topic": {"type": "string", "minLength": 1},
+        "total_duration": {"type": "number", "exclusiveMinimum": 0},
+        "scenes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": ["scene_id", "text", "start", "end"],
+                "additionalProperties": False,
+                "properties": {
+                    "scene_id": {"type": "integer", "minimum": 1},
+                    "text": {"type": "string", "minLength": 1},
+                    "start": {"type": "number", "minimum": 0},
+                    "end": {"type": "number", "minimum": 0},
+                },
+            },
+        },
+    },
+}
+
+_LINE_VALIDATOR = Draft202012Validator(LINE_TIMED_SCHEMA)
+
+
+def build_line_timed_scenes(
+    run_id: str,
+    topic: str,
+    lines: Sequence[str],
+    boundaries: Sequence[tuple[float, float]],
+) -> dict[str, Any]:
+    """대본 줄 + 실측 경계 → 그 언어의 scenes.timed.{lang}.json 문서 (한 줄 = 한 씬, ADR-0013)."""
+    if len(lines) != len(boundaries):
+        raise ValueError(f"줄 {len(lines)}개에 경계 {len(boundaries)}개가 왔다")
+    scenes = [
+        {"scene_id": index, "text": text, "start": start, "end": end}
+        for index, (text, (start, end)) in enumerate(zip(lines, boundaries), start=1)
+    ]
+    return {
+        "run_id": run_id,
+        "topic": topic,
+        "total_duration": scenes[-1]["end"] if scenes else 0.0,
+        "scenes": scenes,
+    }
+
+
+def validate_line_timed_scenes(data: Any) -> tuple[list[str], list[str]]:
+    """(errors, warnings) — 줄 경계 모드. 교차 규칙(연번·경계 순서·빈틈)은 공용이다."""
+    errors = []
+    for err in sorted(
+        _LINE_VALIDATOR.iter_errors(data), key=lambda e: list(e.absolute_path)
+    ):
+        location = "/".join(str(p) for p in err.absolute_path) or "(root)"
+        errors.append(f"{location}: {err.message}")
+    if errors:
+        return errors, []
+    return semantic_errors(data), semantic_warnings(data)
+
+
 def build_timed_scenes(
     source: dict[str, Any], boundaries: Sequence[tuple[float, float]]
 ) -> dict[str, Any]:
-    """`06-script.json` + 실측 경계 → scenes.timed.json 문서.
+    """씬 계약(`scenes.json` 모양) + 실측 경계 → `[7]`·`[9]`가 읽는 병합본 문서.
 
-    씬의 나머지 필드(beat·text·emphasis·subject·camera·motion·notes)는 그대로 옮긴다.
-    2부는 대본을 고치지 않는다 (ADR-0017). `visual_goal`은 뺀다 — 이미지 지시라
-    이 파일의 소비자(`[7]`·`[9]`)가 읽을 일이 없다 (`DROPPED`).
+    실운영에서는 `stages.contract.merge_scene_direction`이 실측 파일과 계약 파일에서
+    같은 병합을 한다 — 이 빌더는 병합본 **모양의 정의**이고 테스트 픽스처가 쓴다.
+    `visual_goal`은 뺀다 — 이미지 지시라 이 파일의 소비자(`[7]`·`[9]`)가 읽을 일이
+    없다 (`DROPPED`).
     """
     scenes = source.get("scenes", [])
     if len(scenes) != len(boundaries):

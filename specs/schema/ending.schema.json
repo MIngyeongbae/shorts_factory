@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ending.schema.json",
+  "title": "[8] ending 산출 — 엔딩 실사 컷 (ADR-0055)",
+  "description": "AI 그림으로 설명을 끌고 온 뒤 '그리고 이것이 실제 모습'으로 닫는 마감. `[4] refpack`이 라이선스를 확인하고 내려받아 둔 사진(ADR-0030) 중 게시해도 되는 것을 비전 세션이 큐레이션한 결과다. `[9] assemble`이 이 파일을 읽어 마지막 씬 뒤에 하드컷으로 잇는다. **파일이 없으면 엔딩이 없는 것이고 그것은 정상이다** — 실물이 없는 소재에는 붙일 사진이 없다 (specs/05 D-3).",
+  "type": "object",
+  "required": ["run_id", "photos"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "계보는 run_id로 잇는다 (ADR-0017)."
+    },
+    "topic": {"type": "string"},
+    "source_refs": {
+      "type": "string",
+      "description": "이 엔딩이 어느 참조 묶음에서 나왔는지. run 디렉터리 기준 경로다."
+    },
+    "photos": {
+      "type": "array",
+      "description": "화면에 나가는 순서 그대로. **비어 있어도 계약 위반이 아니다** — 쓸 사진이 없으면 [9]가 지금과 똑같이 돈다.",
+      "items": {"$ref": "#/$defs/photo"}
+    },
+    "rejected": {
+      "type": "array",
+      "description": "기각된 후보. **계약이 아니라 기록이다** — 재고로 엔딩이 안 서는 편이 잦은지 보는 자리이고, ADR-0055의 되돌릴 조건(전용 수집 세션으로 넓힌다)이 관측되는 곳이다.",
+      "items": {"$ref": "#/$defs/rejection"}
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "meta": {
+    "max_photos": 3,
+    "_max_photos": "엔딩에 세울 사진 수의 상한. 나레이션이 끝난 뒤 붙는 꼬리라 길어지면 마감이 아니라 슬라이드가 된다. 코드는 이 값을 로드하고 손으로 적지 않는다 (ADR-0034 §3).",
+    "photo_seconds": 2.4,
+    "_photo_seconds": "사진 한 장이 화면에 서 있는 시간(초). 레퍼런스 실측의 전환 간격 2.3~2.9초 안이다 (docs/reference-analysis.md — 생 실측값은 그 문서에만 둔다). 클립 길이는 여기에 디졸브 겹침이 더해진다 (specs/05 [7] 클립 기하, ADR-0024).",
+    "publishable_licenses": ["public-domain", "cc0", "cc-by", "cc-by-sa"],
+    "_publishable_licenses": "**화면에 게시해도 되는** 라이선스. refs.schema.json의 attachable_licenses와 값이 같지만 **축이 다르다** — 그쪽은 '이미지 프롬프트에 입력으로 붙여도 되는가'이고 이쪽은 '완성 영상에 실어 배포해도 되는가'다. 한쪽이 넓어져도 다른 쪽이 따라가지 않게 별도로 둔다 (ADR-0055).",
+    "credit_required_licenses": ["cc-by", "cc-by-sa"],
+    "_credit_required_licenses": "저작자 표시가 의무인 라이선스. `credit`이 비어 있으면 표시할 수 없으므로 **기계가 후보에서 뺀다** — 판단이 아니라 대조다 (refs.schema.json의 attachable과 같은 태도).",
+    "_no_edit": "사진은 **무수정으로** 나간다 — 크롭도 카메라 워크도 없다 (specs/03 「엔딩 실사」). SA(동일조건변경허락)가 영상 전체로 번지지 않는 근거가 '개작하지 않았다'는 사실 위에 서 있고, 크롭·zoompan은 그 축을 건드린다. 원비율을 유지하고 남는 자리는 단색으로 채운다.",
+    "_hard_cut": "엔딩 진입은 하드컷이다. 마지막 씬 클립에는 디졸브가 소진할 꼬리가 렌더되어 있지 않고(video/timeline.py의 불변식), 서사가 끊기는 자리라 연출로도 맞다 (specs/00)."
+  },
+  "$defs": {
+    "photo": {
+      "type": "object",
+      "required": ["index", "file", "seconds", "source", "source_url", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "화면에 나가는 순서. 1부터 이어진다."
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "[8]이 렌더한 클립의 run 디렉터리 기준 경로. [9]가 여는 파일이다."
+        },
+        "seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "이 사진이 화면에 서 있는 시간. 클립 파일은 여기에 디졸브 꼬리가 더 붙어 있을 수 있고, 남는 꼬리는 [9]가 trim으로 자른다."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "원본 사진의 run 디렉터리 기준 경로 (`refs/{scene_id}/NN.jpg`). [4]가 내려받아 둔 그 파일이다."
+        },
+        "scene_id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "이 사진이 어느 씬의 참조로 모였는지. 되짚는 값이지 배치를 정하지 않는다."
+        },
+        "source_url": {"type": "string", "minLength": 1},
+        "license": {"$ref": "refs.schema.json#/$defs/license"},
+        "credit": {
+          "type": "string",
+          "description": "저작자 표시 문자열. credit_required_licenses에서는 비어 있을 수 없다."
+        },
+        "credit_line": {
+          "type": "string",
+          "description": "화면에 실제로 굽는 한 줄. 없으면 굽지 않았다는 뜻이고, 그때도 credits.txt에는 남는다 (강등 사다리 `굽기+기록 → 기록`)."
+        },
+        "burned": {
+          "type": "boolean",
+          "description": "크레딧을 화면에 실제로 구웠는가. 폰트 자산이 없으면 false로 떨어지고 경고가 남는다."
+        },
+        "shows": {"type": "string", "description": "이 사진이 무엇을 보여 주는가. 한 구절."},
+        "reason": {"type": "string", "description": "왜 이 사진을 골랐는가. 판정 세션의 한 문장."}
+      }
+    },
+    "rejection": {
+      "type": "object",
+      "required": ["source", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "source_url": {"type": "string"},
+        "license": {"$ref": "refs.schema.json#/$defs/license"},
+        "scene_id": {"type": "integer", "minimum": 1},
+        "by": {
+          "enum": ["machine", "review"],
+          "description": "누가 뺐는가. `machine`은 라이선스·크레딧 대조이고 `review`는 비전 세션의 판정이다 — 되돌릴 조건을 볼 때 두 축을 갈라 봐야 한다."
+        },
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,12 +1,13 @@
-"""대본 3단계(`[1a]`·`[1s]`·`[1w]`)의 공통 배선. **판단은 없다.**
+"""헤드리스 세션 공용 배선. **판단은 없다.**
 
 프롬프트를 읽고, 헤드리스 세션을 부르고, JSON을 회수하고, 계약 값을 프롬프트가 읽을
-모양으로 옮긴다. 세 단계가 이 모듈을 공유하는 것은 서로를 부르는 것과 다르다 —
-단계끼리는 여전히 파일로만 통신한다 (ADR-0011, ADR-0034 D-1).
+모양으로 옮긴다. 옛 대본 체인은 죽었지만(ADR-0049) 이 배선은
+`[4] refpack`·`[1] draft`·`[2] factcheck`가 그대로 쓰고, `format_vocab`은
+`[3s. scenetable]`이 쓴다. 단계끼리는 여전히 파일로만 통신한다 (ADR-0011, D-1).
 
 ## 값을 프롬프트에 손으로 적지 않는다
 
-분량·어휘·시그니처를 프롬프트 마크다운에 써 넣으면 `specs/schema/`와 갈라진다
+분량·어휘를 프롬프트 마크다운에 써 넣으면 `specs/schema/`와 갈라진다
 (ADR-0034 §3). 프롬프트에는 `${limits}`·`${vocab}` 자리만 두고 **여기서 채운다.**
 """
 
@@ -72,9 +73,13 @@ _LIMIT_LABELS = {
 }
 
 
-def format_limits(*keys: str) -> str:
-    """분량 엔벨로프를 프롬프트 목록으로. 단계마다 필요한 것만 고른다."""
-    limits = vocab.limits()
+def format_limits(*keys: str, limits: dict[str, Any] | None = None) -> str:
+    """분량 엔벨로프를 프롬프트 목록으로. 단계마다 필요한 것만 고른다.
+
+    `limits`를 주면 그 dict에서 읽는다 — `[2l]`이 `vocab.locale_limits(lang)`을 넘기는
+    자리다 (ADR-0056 결정 5). 기본은 ko 엔벨로프(`vocab.limits()`).
+    """
+    limits = vocab.limits() if limits is None else limits
     lines = []
     for key in keys:
         value = limits[key]
@@ -83,18 +88,14 @@ def format_limits(*keys: str) -> str:
     return "\n".join(lines)
 
 
-def _entries(name: str, meta_name: str | None = None) -> list[tuple[str, dict[str, Any]]]:
-    """어휘 하나의 (값, 설명). 순서는 `vocab.json`의 enum 순서다.
-
-    `$defs`의 이름과 `meta`의 이름이 다른 어휘가 하나 있다(`overlay_type` ↔ `overlay`).
-    이름을 맞추는 것은 어휘 변경이라 ADR이 필요하므로 여기서 받아 준다.
-    """
-    meta = vocab.meta(meta_name or name)
+def _entries(name: str) -> list[tuple[str, dict[str, Any]]]:
+    """어휘 하나의 (값, 설명). 순서는 `vocab.json`의 enum 순서다."""
+    meta = vocab.meta(name)
     return [(value, meta.get(value, {})) for value in vocab.values(name)]
 
 
 def format_vocab() -> str:
-    """`[1s]`가 고를 어휘 전부. 값 목록의 출처는 `vocab.json` 하나다 (ADR-0033 §3)."""
+    """씬 계약이 고를 어휘 전부 (`[3s]` 몫 — ADR-0049). 출처는 `vocab.json` 하나다 (ADR-0033 §3)."""
     blocks: list[str] = []
 
     blocks.append("## beat (서사 기능의 라벨)\n")
@@ -126,7 +127,14 @@ def format_vocab() -> str:
         "\n".join(f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("camera"))
     )
 
-    # motion은 여기 없다 — [1s]는 motion을 고르지 않는다 (ADR-0039 결정 1, 전 씬 영상)
+    # motion은 없다 — 전 씬이 영상 클립이다 (ADR-0056). 어휘에서 삭제됐다.
+
+    blocks.append("\n## staging (무대, 선택 — ADR-0056 결정 4)\n")
+    blocks.append(
+        "\n".join(
+            f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("staging")
+        )
+    )
 
     blocks.append("\n## transition (이 씬으로 진입하는 전환, 선택)\n")
     blocks.append(
@@ -135,21 +143,18 @@ def format_vocab() -> str:
         )
     )
 
-    blocks.append("\n## emphasis.type (화면 강조, 선택)\n")
+    blocks.append("\n## annotation (info의 계측 표시 방식 — ADR-0056 결정 3)\n")
     blocks.append(
         "\n".join(
-            f"- `{value}` — {item.get('gloss', '')}"
-            for value, item in _entries("overlay_type", "overlay")
+            f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("annotation")
         )
     )
+
+    blocks.append("\n## unit (info.labels에 쓰는 단위 기호 — ASCII만)\n")
+    blocks.append(
+        ", ".join(f"`{value}`({item.get('gloss', '')})" for value, item in _entries("unit"))
+    )
+
+    # emphasis는 여기 없다 — 오버레이 합성은 ADR-0054가 삭제했다. 화면에 세울
+    # 숫자·라벨은 info(빨간 계측 표시 + 영어 라벨) 하나로 적는다.
     return "\n".join(blocks)
-
-
-def format_signatures() -> str:
-    """시그니처 문구. 필수가 아니라 권장이다 (ADR-0033 §2)."""
-    lines = []
-    for item in vocab.signature_phrases():
-        note = item.get("note", "")
-        primary = " **(이 채널의 대표 문구)**" if item.get("primary") else ""
-        lines.append(f'- **"{item["phrase"]}"**{primary} — {note}')
-    return "\n".join(lines)

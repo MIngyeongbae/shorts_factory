@@ -1,4 +1,4 @@
-"""[0a. topic] 단계 계약 검증."""
+"""[0. seed] 단계 계약 검증 (ADR-0049)."""
 
 import json
 from datetime import date
@@ -20,7 +20,7 @@ def test_creates_topic_package(paths):
     assert result.run_id == "20260807-hanyangdoseong-gakjaseongseok"
     assert result.topic_dir.is_dir()
     # specs/06 토픽 패키지 구조
-    assert (result.topic_dir / "05-candidates").is_dir()
+    assert (result.topic_dir / "seed.md").is_file()
     assert (result.topic_dir / "STATUS.md").is_file()
 
 
@@ -50,7 +50,7 @@ def test_backlog_moves_to_researching(paths):
 def test_run_state_records_stage(paths):
     result = run_topic_stage("한양도성 각자성석", paths=paths, today=TODAY)
     state = json.loads((result.run_dir / "state.json").read_text(encoding="utf-8"))
-    assert state["stages"]["0a-topic"]["status"] == "done"
+    assert state["stages"]["0-seed"]["status"] == "done"
     assert state["topic"] == "한양도성 각자성석"
 
 
@@ -58,7 +58,7 @@ def test_empty_indicators_do_not_reject_the_topic(paths):
     """지표가 비어도 패키지를 만든다 (ADR-0033 §1).
 
     네 지표는 전부 폐기된 고정 구조를 채우기 위한 것이었다. 지금 게이트는 매체
-    적합성 하나이고, 지표는 `[1b] score`로 흘려보내는 관측값이다.
+    적합성 하나이고, 지표는 관측값으로만 남는다 (ADR-0049).
     """
     result = run_topic_stage("미완성 소재", paths=paths, today=TODAY)
 
@@ -99,3 +99,15 @@ def test_no_candidate_raises(paths):
 
     with pytest.raises(TopicStageError):
         run_topic_stage(None, paths=paths, today=TODAY)
+
+
+def test_seed_url_reaches_contract_and_seed_md(paths):
+    """시드 기사 URL이 topic.json과 seed.md에 실린다 (ADR-0049)."""
+    result = run_topic_stage(
+        "한양도성 각자성석", paths=paths, today=TODAY,
+        seed_url="https://ko.wikipedia.org/wiki/각자성석",
+    )
+    contract = json.loads((result.run_dir / "topic.json").read_text(encoding="utf-8"))
+    assert contract["seed_url"] == "https://ko.wikipedia.org/wiki/각자성석"
+    seed = (result.topic_dir / "seed.md").read_text(encoding="utf-8")
+    assert "https://ko.wikipedia.org/wiki/각자성석" in seed

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "vocab.json",
   "title": "닫힌 어휘 — 연출을 고를 수 있는 값의 전부 (ADR-0033 §3, ADR-0034 §3)",
-  "description": "`[1s] sceneplan`은 여기 있는 값에서만 고른다. 어휘에 없는 값이 필요하면 이 파일을 고치는 PR을 먼저 만든다. $defs는 스키마가 $ref로 가져가고, meta는 코드와 세션 프롬프트가 읽는다.",
+  "description": "`[3s] scenetable`은 여기 있는 값에서만 고른다. 어휘에 없는 값이 필요하면 이 파일을 고치는 PR을 먼저 만든다. $defs는 스키마가 $ref로 가져가고, meta는 코드와 세션 프롬프트가 읽는다.",
   "$defs": {
     "beat": {
       "enum": [
@@ -36,13 +36,6 @@
         "static"
       ]
     },
-    "motion": {
-      "enum": [
-        "kenburns",
-        "mj_video",
-        "kling"
-      ]
-    },
     "framing": {
       "enum": [
         "drone_wide",
@@ -65,13 +58,11 @@
         "problem_diagram",
         "frontal_diagram",
         "cross_section",
-        "present_section"
-      ]
-    },
-    "overlay_type": {
-      "enum": [
-        "big_red_text",
-        "sparkle_particles"
+        "present_section",
+        "figure_wide",
+        "figure_medium",
+        "figure_back",
+        "figure_silhouette"
       ]
     },
     "transition": {
@@ -80,16 +71,49 @@
         "hard_cut"
       ]
     },
-    "dialect": {
+    "staging": {
       "enum": [
-        "mj",
-        "nb2"
+        "studio",
+        "location"
+      ]
+    },
+    "annotation": {
+      "enum": [
+        "dimension",
+        "arrow",
+        "leader"
+      ]
+    },
+    "unit": {
+      "enum": [
+        "mm",
+        "cm",
+        "m",
+        "km",
+        "mL",
+        "L",
+        "g",
+        "kg",
+        "t",
+        "C",
+        "%",
+        "x",
+        "s",
+        "min",
+        "h"
+      ]
+    },
+    "video_line": {
+      "enum": [
+        "local",
+        "api",
+        "art"
       ]
     }
   },
   "meta": {
     "beat": {
-      "_role": "서사 기능의 라벨이다. 연출의 분기 기준이 아니고(ADR-0033 §4) 순서·개수 제약도 없다. 기계가 이 값으로 갈라지는 곳은 스펙 04의 turning_point 차임 하나뿐이다. context_number·solution_number는 ADR-0047이 뺐다 — 씬의 임무를 '숫자를 말하는 것'으로 정의하는 라벨이라 첫 편(26씬 중 7씬)을 숫자 낭독으로 채웠다. 숫자를 든 씬은 그 숫자가 무엇을 하는지로 라벨된다.",
+      "_role": "서사 기능의 라벨이다. 연출의 분기 기준이 아니고(ADR-0033 §4) 순서·개수 제약도 없다. 기계가 이 값으로 갈라지는 곳은 연출 기본값 폴백(beat-defaults.json)뿐이다 — 마지막 분기였던 스펙 04의 turning_point 차임은 레퍼런스 채널 시그니처라 ADR-0050 개정이 뗐다. context_number·solution_number는 ADR-0047이 뺐다 — 씬의 임무를 '숫자를 말하는 것'으로 정의하는 라벨이라 첫 편(26씬 중 7씬)을 숫자 낭독으로 채웠다. 숫자를 든 씬은 그 숫자가 무엇을 하는지로 라벨된다.",
       "hook_fact": {
         "gloss": "충격 사실 제시",
         "position": "open"
@@ -127,7 +151,7 @@
       "_position": "open/close는 수미상관 검증이 어느 씬을 훅 쪽·엔딩 쪽으로 볼지의 표시다 (ADR-0033 §2). 라벨이 하나도 없는 대본에서는 앞뒤 씬으로 떨어진다."
     },
     "subject_scale": {
-      "_role": "연출이 아니라 피사체 서술이다. subject를 화면에 담는 크기이며 [1s]가 subject와 함께 쓴다 (ADR-0018).",
+      "_role": "연출이 아니라 피사체 서술이다. subject를 화면에 담는 크기이며 [3s]가 subject와 함께 쓴다 (ADR-0018).",
       "wide": {
         "gloss": "대상 전체·부지·전경"
       },
@@ -139,7 +163,7 @@
       }
     },
     "camera": {
-      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다. `video_prompt`는 `[7]`이 영상 프로바이더에 보내는 영어 구절이다 (ADR-0039) — 같은 워크를 FFmpeg zoompan과 i2v 양쪽에 쓰므로 출처가 하나여야 한다. 느린 줌·틸트·팬만인 것은 그대로다.",
+      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다. `video_prompt`는 [5]가 프롬프트 CAMERA 절에 그대로 넣는 영어 구절이다 (ADR-0039·0056) — 한 씬에 카메라는 하나이고 클립이 3~10초라 속도 수치 없이 정성 문구다. 느린 줌·틸트·팬·정지뿐이다 — 원카 프롬프트의 급속 푸시인은 그 채널의 연출이라 넣지 않는다 (ADR-0050).",
       "slow_zoom_in": {
         "gloss": "느린 줌 인",
         "video_prompt": "slow push in toward the subject"
@@ -169,29 +193,8 @@
         "video_prompt": "locked-off camera, only the subject's own motion"
       }
     },
-    "motion": {
-      "_role": "씬 이미지를 화면 움직임으로 옮기는 방식. **전 씬을 영상으로 만든다** (ADR-0039이 ADR-0006 하이브리드를 폐기했다) — relax 엔드포인트라 GPU를 쓰지 않아 편당 상한이 없다. 기본값은 beat-defaults.json이 들고 있고, 씬이 값을 비우면 영상이 된다. kenburns는 선택지가 아니라 강등 결과다.",
-      "kenburns": {
-        "gloss": "이미지 + FFmpeg zoompan. 선택지가 아니라 mj_video의 강등 결과다 (ADR-0039)",
-        "degrade": []
-      },
-      "mj_video": {
-        "gloss": "MJ 프록시 relax 엔드포인트 (ADR-0039). GPU를 쓰지 않아 편당 상한이 없다 — 전 씬 기본값이다",
-        "degrade": [
-          "kenburns",
-          "static"
-        ]
-      },
-      "kling": {
-        "gloss": "Kling v2.6급 i2v. MJ가 막혔을 때 돌아갈 곳이라 남긴다 (ADR-0006, ADR-0025)",
-        "degrade": [
-          "kenburns"
-        ],
-        "max_scenes": 10
-      }
-    },
     "framing": {
-      "_role": "구도 토큰. shot이 이미지 프롬프트에 그대로 들어간다. scale은 그 토큰이 어느 subject_scale에 어울리는지의 표시이고 강제가 아니다 — 고르는 것은 [1s]다 (ADR-0033 §3).",
+      "_role": "구도 토큰. shot이 영상 프롬프트 SUBJECT 절 뒤에 그대로 들어간다. scale은 그 토큰이 어느 subject_scale에 어울리는지의 표시이고 강제가 아니다 — 고르는 것은 [3s]다 (ADR-0033 §3).",
       "drone_wide": {
         "scale": "wide",
         "gloss": "드론 뷰/광각 전경",
@@ -296,28 +299,30 @@
         "scale": "diagram",
         "gloss": "현재 실사풍 단면/절단면",
         "shot": "present-day photoreal shot of a cut/exposed face"
-      }
-    },
-    "overlay": {
-      "_role": "화면에 얹히는 것. 전부 레이어 B(후처리 합성)다 — 레이어 A는 폐기됐고 베이스 이미지는 전 씬 클린이다 (ADR-0002, ADR-0019). negative는 베이스 이미지에서 배제할 문구다.",
-      "big_red_text": {
-        "layer": "B",
-        "gloss": "대형 빨간 숫자 텍스트",
-        "negative": "large red number text",
-        "needs_value": true,
-        "scope": "scene"
       },
-      "sparkle_particles": {
-        "layer": "B",
-        "gloss": "우하단 반짝이 파티클(✦)",
-        "negative": "sparkle particle overlay",
-        "needs_value": false,
-        "scope": "all_scenes",
-        "placement": "bottom_right"
+      "figure_wide": {
+        "scale": "wide",
+        "gloss": "풍경 속 인물 — 인물은 작게, 환경이 서사를 진다 (ADR-0051)",
+        "shot": "wide shot, a lone figure small within the landscape"
+      },
+      "figure_medium": {
+        "scale": "close",
+        "gloss": "인물 중경 — 상반신, 행위가 보인다 (ADR-0051)",
+        "shot": "medium shot of the figure, waist-up, hands and action visible"
+      },
+      "figure_back": {
+        "scale": "close",
+        "gloss": "인물 뒷모습 — 시선을 인물이 보는 곳으로 보낸다 (ADR-0051)",
+        "shot": "view from behind the figure, back to camera, facing what they see"
+      },
+      "figure_silhouette": {
+        "scale": "wide",
+        "gloss": "인물 실루엣 — 역광, 정서 씬 (ADR-0051)",
+        "shot": "backlit silhouette of the figure against the light source"
       }
     },
     "transition": {
-      "_role": "씬으로 **진입**하는 전환. [1s]가 고른다 (ADR-0033 §3). 길이 0.6초는 클립 기하가 정한 값이라 고정이다 (ADR-0024).",
+      "_role": "씬으로 **진입**하는 전환. [3s]가 고른다 (ADR-0033 §3). 길이 0.6초는 클립 기하가 정한 값이라 고정이다 (ADR-0024).",
       "dissolve": {
         "gloss": "크로스 디졸브",
         "seconds": 0.6
@@ -327,56 +332,138 @@
         "seconds": 0.0
       }
     },
-    "dialect": {
-      "_role": "프롬프트 **문법**만 고른다 (ADR-0027). 어휘·스타일·배제 항목은 방언과 무관하게 같다.",
-      "default": "mj",
-      "mj": {
-        "gloss": "Midjourney — 한 줄 콤마 나열, --ar, --no"
-      },
-      "nb2": {
-        "gloss": "Nano Banana 2 — 라벨 붙은 여러 줄"
-      }
-    },
     "style": {
-      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0023, ADR-0033 '무엇이 채널 일관성을 지키는가' 1번). 실호출로 검증한 값이라 글자 하나를 바꾸면 재검증이 필요하다 — D5(architectural 중립화)가 그 이유로 미결이다. 2026-08-19에 ADR-0038이 종이 절 둘을 걷었다 — `on white paper` 삭제, 가장자리 페이드 → 배경 채움. 수채·흑연·펜 절은 건드리지 않았다 (그 절이 스케치 느낌의 유일한 출처다).",
-      "base_style": "photorealistic architectural rendering, mixed media: the focal subject rendered with true-to-life detail, materials and lighting; colour laid in as controlled watercolour washes over fine graphite and technical-pen underdrawing, with construction and guide lines left visible; realism dominant over painterly looseness; the full environment and sky rendered edge to edge with no blank margins",
+      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0056 결정 4 — ADR-0023의 펜선·수채 문자열을 대체). 렌더 언어는 하나이고 무대(staging)만 둘이다. fal 프로브 15클립이 이 문자열(원카 레퍼런스 프롬프트의 STYLE·COLOR 절)로 찍혔다. 글자 하나를 바꾸면 재검증이 필요하다.",
+      "base_style": "semi-stylized 3D visualization render sitting halfway between clean low-poly and photoreal. STYLE: simplified readable geometry with real modeled detail, smooth shading with no visible polygon edges, matte materials, no mirror gloss, soft studio daylight with mild ambient occlusion, no sun disc. COLOR IS RICH AND CLEAN: fully saturated, no gray wash and no desaturated grading",
       "composition": "vertical 9:16",
       "aspect_ratio": "9:16",
-      "resolution": "2K",
-      "style_anchor_dir": "assets/style_anchors",
+      "resolution": "720p",
+      "multishot": {
+        "_role": "2샷 씬(ADR-0058)의 프롬프트 문구. [5]가 prompt_shot2를 만들 때 FORMAT 끝에 two_shots를 잇고, CAMERA 절 대신 SHOT ONE·SHOT TWO 절을 둔다 — 각 절은 shot_one/shot_two 문구 + 그 샷의 framing.shot + camera 문구다. info 씬의 RED 절은 red_shot_two를 접두로 단다. {cut}·{seconds}는 [7]이 채운다 (fill_seconds와 같은 자리). 프로브 5/5에서 컷 시각 ±0.08초 (runs/20260823-omni-multishot-probe).",
+        "two_shots": "The clip is made of TWO SHOTS of the same subject separated by one hard cut at exactly {cut} seconds.",
+        "shot_one": "From 0 to {cut} seconds.",
+        "shot_two": "From {cut} to {seconds} seconds, the same subject, same materials and lighting.",
+        "red_shot_two": "In SHOT TWO only."
+      },
       "negatives": {
-        "_role": "어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서 실호출로 검증된 값이고(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 기계적으로 유도하지 않는다. 종이 7항목은 ADR-0038이 더했다 — 스타일에서 종이 절을 빼는 것만으로는 4장 중 3장에 종이 가장자리가 남았다(F 실측). **금지는 의존이 아니다** — 이미지에 글자나 종이가 들어가면 안 되는 것은 자막이 없어도 유효하다.",
-        "nb2": [
-          "burned-in subtitles or caption bars",
-          "sparkle particle overlay",
-          "any legible or handwritten text, letters, numbers or annotation scribbles",
-          "white paper background",
-          "paper texture",
-          "paper edges",
-          "sheet of paper",
-          "blank margins",
-          "vignette border",
-          "framed artwork"
-        ],
-        "mj": [
+        "_role": "어느 씬에서든 클립에 들어오면 안 되는 것. [5]가 NEGATIVE 절에 'No …' 문장으로 잇는다. info가 없는 씬에는 `no_text`를 더하고, info가 있는 씬은 라벨이 유일한 텍스트라는 RED 절의 마무리 문장이 그 역할을 한다. 원카 레퍼런스 프롬프트의 네거티브 절 + 우리 실측(종이·파티클)이다.",
+        "always": [
+          "logos",
+          "watermark",
+          "lens flare",
+          "film grain",
+          "vignette",
           "burned-in subtitles",
           "caption bars",
           "sparkle particle overlay",
-          "legible text",
-          "handwritten text",
-          "letters",
-          "numbers",
-          "annotation scribbles",
           "white paper background",
           "paper texture",
-          "paper edges",
-          "sheet of paper",
-          "blank margins",
-          "vignette border",
-          "framed artwork"
-        ]
+          "framed artwork",
+          "close-up faces"
+        ],
+        "no_text": [
+          "text",
+          "letters",
+          "numbers",
+          "labels"
+        ],
+        "audio": "No background music."
       },
-      "_composition": "레이아웃 지시는 없다 (ADR-0038). 자막 자리를 비우라는 절이 있었는데 실측에서 먹지 않았고(4/4 안 비움), 비워진 만큼은 그림이 아니라 종이였다. 자막 가독성은 `[9]`가 외곽선·그림자로 책임진다 — 단계는 하류의 편의를 위해 자기 산출물을 깎지 않는다 (specs/05 D-6)."
+      "_composition": "레이아웃 지시는 없다 (ADR-0038). 자막 자리를 비우라는 절은 실측에서 먹지 않았다. 자막 가독성은 [9]가 외곽선·그림자로 책임진다 (specs/05 D-6)."
+    },
+    "staging": {
+      "_role": "무대. 렌더 언어(style.base_style)는 하나이고 무대만 둘이다 (ADR-0056 결정 4). [3s]가 씬마다 고르고 비면 beat-defaults.json의 기본값이다. phrase는 [5]가 프롬프트 STAGING 절에 그대로 넣는 영어 구절이다 — 코드는 문장을 들지 않는다 (ADR-0034).",
+      "studio": {
+        "gloss": "중성 회색 바닥 위 기술 모델 — 구조·물건·메커니즘·수치를 보이는 씬. 프로브에서 치수선·라벨이 가장 잘 붙은 무대",
+        "phrase": "SUBJECT staged as a technical model on a flat neutral pale gray studio ground with soft contact shadows, clean empty studio space around it, seen from a low three-quarter angle."
+      },
+      "location": {
+        "gloss": "실제 환경 안의 피사체 — 사건·서사·분위기 씬. 프로브 P3(괴담 골목)이 같은 렌더 언어로 성립함을 보였다",
+        "phrase": "SUBJECT placed in its real environment, the full surroundings rendered edge to edge with no blank margins."
+      }
+    },
+    "annotation": {
+      "_role": "계측 표시 방식 (ADR-0056 결정 3). info가 있는 씬의 RED 절에 들어간다. phrase 안의 {target}은 [5]가 info.target으로, {label}은 info.labels로 치환한다. 빨강은 계측 표시에만 쓴다 — 검수가 '유일한 채도 높은 빨강'을 본다.",
+      "dimension": {
+        "gloss": "치수선 + 양끝 화살촉 — 길이·폭·두께·처짐",
+        "phrase": "RED: one pure red glowing technical dimension annotation, drafting style, a thin dimension line with a small sharp arrowhead at each end exactly spanning {target}, and a small red label box beside it with white text that reads exactly \"{label}\"."
+      },
+      "arrow": {
+        "gloss": "방향 화살표 — 힘·흐름·움직임의 방향",
+        "phrase": "RED: pure red glowing arrows showing {target}, and a small red label box beside them with white text that reads exactly \"{label}\"."
+      },
+      "leader": {
+        "gloss": "지시선 + 라벨 박스 — 부품·위치의 이름",
+        "phrase": "RED: one pure red glowing leader line pointing at {target} and ending in a small red label box with white text that reads exactly \"{label}\"."
+      },
+      "_closing": "That red annotation is the only saturated red and the only text in the frame. It carries no other words."
+    },
+    "unit": {
+      "_role": "info.labels에 허용되는 단위 기호 (ADR-0056 결정 3 — 사람 확정: 단위는 영어/SI). 라벨은 ASCII만이라 °·㎡ 같은 비ASCII 기호는 없다 — 온도는 C, 면적은 m2로 쓴다. 시간은 숫자 뒤 공백 없이 s·min·h. 한글 단위(년·초)는 넣지 않는다.",
+      "mm": {
+        "gloss": "밀리미터"
+      },
+      "cm": {
+        "gloss": "센티미터"
+      },
+      "m": {
+        "gloss": "미터"
+      },
+      "km": {
+        "gloss": "킬로미터"
+      },
+      "mL": {
+        "gloss": "밀리리터"
+      },
+      "L": {
+        "gloss": "리터"
+      },
+      "g": {
+        "gloss": "그램"
+      },
+      "kg": {
+        "gloss": "킬로그램"
+      },
+      "t": {
+        "gloss": "톤"
+      },
+      "C": {
+        "gloss": "섭씨 (°는 비ASCII라 C만)"
+      },
+      "%": {
+        "gloss": "퍼센트"
+      },
+      "x": {
+        "gloss": "배수 (예: 3x)"
+      },
+      "s": {
+        "gloss": "초"
+      },
+      "min": {
+        "gloss": "분"
+      },
+      "h": {
+        "gloss": "시간"
+      }
+    },
+    "video_line": {
+      "_role": "2부 영상 생산 라인 (ADR-0059). 라인 = [7]의 어댑터 + 그 라인의 값 몇 개이고, 씬 계약·클립 계약·검수·3개 국어 공유는 라인과 무관하다. 사람이 판정 게이트(judgment/human.json `video_line`)에서 고른다 — 소재 유형 규칙으로 자동 선택하지 않는다 (ADR-0059 결정 2). `provider`는 CLI `--provider` 이름이고 null이면 미구현이라 [7]이 멈춘다. `shot2`가 false면 [3s]가 그 라인에서 2샷(ADR-0058)을 만들지 않는다.",
+      "_default": "local",
+      "local": {
+        "gloss": "로컬 GPU — ComfyUI + MiniMax H3. 변동비 0. 초기 기본 (테스트·초기 쇼츠)",
+        "provider": "comfy-h3",
+        "shot2": false
+      },
+      "api": {
+        "gloss": "유료 API — Gemini Omni Flash (ADR-0056). 인포·설명 소재, 전환 조건 충족 뒤",
+        "provider": "omni",
+        "shot2": true
+      },
+      "art": {
+        "gloss": "그림 우선 — MJ (설화·괴담·인물). ADR-0060 전까지 미구현",
+        "provider": null,
+        "shot2": false
+      }
     }
   }
 }

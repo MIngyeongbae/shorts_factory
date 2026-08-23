@@ -13,12 +13,17 @@ from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import (
     label_number_echo,
     visual_goal_overlap,
+    ANNOTATIONS,
     BEATS,
-    MAX_VIDEO_SCENES,
     SCENE_SCHEMA,
-    VIDEO_MOTIONS,
+    STAGINGS,
     validate_scenes,
 )
+
+
+def info(*labels: str, target: str = "the measured part", annotation: str = "dimension") -> dict:
+    """계측 표시 블록 (ADR-0056 결정 3) — 라벨은 ASCII, 대상은 영어 서술, 방식은 어휘."""
+    return {"labels": list(labels), "target": target, "annotation": annotation}
 
 
 def test_pass_fixture_is_valid():
@@ -41,14 +46,12 @@ def test_spec_inline_example_scene_is_valid():
         "text": "그래서 발상을 뒤집습니다.",
         "est_start": 44.0,
         "est_end": 45.8,
-        "emphasis": {"type": "big_red_text", "value": "발상"},
         "visual_goal": "축조 현장의 규모 — 자막이 말하지 않는 것",
         "subject": "성벽 축조 현장",
         "subject_scale": "wide",
         "framing": "frontal_symmetric",
         "transition": "hard_cut",
         "camera": "slow_zoom_in",
-        "motion": "kenburns",
         "notes": "",
     }
     validator = Draft202012Validator(SCENE_SCHEMA, registry=vocab.REGISTRY)
@@ -92,9 +95,10 @@ def test_compound_or_unknown_camera_is_rejected(bad_camera):
     assert any("camera" in e for e in errors)
 
 
-def test_unknown_motion_is_rejected():
+def test_motion_is_no_longer_in_the_contract():
+    """ADR-0056 — 전 씬이 영상 클립이다. motion이 오면 계약 위반이다."""
     data = load_fixture("scenes_pass.json")
-    data["scenes"][0]["motion"] = "runway"
+    data["scenes"][0]["motion"] = "kenburns"
     errors, _ = validate_scenes(data)
     assert any("motion" in e for e in errors)
 
@@ -146,7 +150,7 @@ def test_라벨_숫자를_text가_되풀이하면_반려된다():
     """화면이 지는 숫자는 나레이션이 가리키기만 한다 (ADR-0047)."""
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if "11만" in s["text"])
-    scene["info"] = {"labels": ["동원 11만 명"]}  # text가 라벨 숫자를 그대로 말한다
+    scene["info"] = info("11")  # text가 라벨 숫자를 그대로 말한다
     errors, _ = validate_scenes(data)
     assert any("되풀이" in e and "ADR-0047" in e for e in errors)
 
@@ -155,7 +159,7 @@ def test_라벨_숫자를_말이_가리키기만_하면_통과한다():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
     assert not any(ch.isdigit() for ch in scene["text"])
-    scene["info"] = {"labels": ["동원 11만 명", "기간 12년"]}
+    scene["info"] = info("110000 workers", "12 years")
     errors, _ = validate_scenes(data)
     assert errors == []
 
@@ -163,7 +167,7 @@ def test_라벨_숫자를_말이_가리키기만_하면_통과한다():
 def test_숫자_없는_라벨은_에코를_재지_않는다():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if "11만" in s["text"])
-    scene["info"] = {"labels": ["한양도성"]}
+    scene["info"] = info("Fortress wall", annotation="leader")
     errors, _ = validate_scenes(data)
     assert errors == []
 
@@ -174,26 +178,91 @@ def test_라벨_에코는_콤마를_정규화한다():
     assert label_number_echo("배관 이야기입니다.", ["1,568km"]) == 0.0
 
 
-def _with_video_count(data: dict, count: int, motion: str = "kling") -> dict:
-    """픽스처에 이미 영상 씬이 있으므로 전부 되돌린 뒤 정확히 count개만 켠다."""
-    for idx, scene in enumerate(data["scenes"]):
-        scene["motion"] = motion if idx < count else "kenburns"
-    return data
+# --- 계측 표시 info (ADR-0056 결정 3) -----------------------------------------
 
 
-@pytest.mark.parametrize("motion", VIDEO_MOTIONS)
-def test_video_motion_at_limit_is_allowed(motion):
-    data = _with_video_count(load_fixture("scenes_pass.json"), MAX_VIDEO_SCENES, motion)
+def test_info_needs_labels_target_and_annotation():
+    """존재가 곧 계측 씬이다 — 셋 중 하나라도 없으면 [5]가 RED 절을 채울 수 없다."""
+    for missing in ("labels", "target", "annotation"):
+        data = load_fixture("scenes_pass.json")
+        block = info("221 m")
+        del block[missing]
+        data["scenes"][0]["info"] = block
+        errors, _ = validate_scenes(data)
+        assert any(missing in e for e in errors), missing
+
+
+@pytest.mark.parametrize("label", ["높이 221m", "２２１ m", "4 ㎜", "22°C", "사망 22,000+"])
+def test_non_ascii_labels_are_rejected(label):
+    """화면 텍스트는 영어(ASCII)만이다 — 한글·가나·전각·°는 자막이 진다 (ADR-0002·0056)."""
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["info"] = info(label)
+    errors, _ = validate_scenes(data)
+    assert any("labels" in e for e in errors), label
+
+
+@pytest.mark.parametrize("label", ["221 m", "4 mm", "22 C", "660,000 t", "3x", "Short sag", "22,000+"])
+def test_ascii_labels_are_accepted(label):
+    data = load_fixture("scenes_pass.json")
+    scene = next(s for s in data["scenes"] if not any(ch.isdigit() for ch in s["text"]))
+    scene["info"] = info(label)
     errors, _ = validate_scenes(data)
     assert errors == []
 
 
-@pytest.mark.parametrize("motion", VIDEO_MOTIONS)
-def test_video_motion_over_limit_is_rejected(motion):
-    """specs/02 + ADR-0039: 편당 상한은 과금 차선(kling)에만 남았다. 값은 vocab이 든다."""
-    data = _with_video_count(load_fixture("scenes_pass.json"), MAX_VIDEO_SCENES + 1, motion)
+def test_target_must_be_ascii_too():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["info"] = info("221 m", target="댐의 높이")
     errors, _ = validate_scenes(data)
-    assert any(str(MAX_VIDEO_SCENES) in e for e in errors)
+    assert any("target" in e for e in errors)
+
+
+@pytest.mark.parametrize("annotation", ANNOTATIONS)
+def test_every_annotation_in_the_vocabulary_is_accepted(annotation):
+    data = load_fixture("scenes_pass.json")
+    scene = next(s for s in data["scenes"] if not any(ch.isdigit() for ch in s["text"]))
+    scene["info"] = info("221 m", annotation=annotation)
+    errors, _ = validate_scenes(data)
+    assert errors == []
+
+
+def test_annotation_outside_the_vocabulary_is_rejected():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["info"] = info("221 m", annotation="circle")
+    errors, _ = validate_scenes(data)
+    assert any("annotation" in e for e in errors)
+
+
+def test_more_than_four_labels_are_rejected():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["info"] = info("1 m", "2 m", "3 m", "4 m", "5 m")
+    errors, _ = validate_scenes(data)
+    assert any("labels" in e for e in errors)
+
+
+# --- 무대 staging (ADR-0056 결정 4) -------------------------------------------
+
+
+@pytest.mark.parametrize("staging", STAGINGS)
+def test_staging_from_the_vocabulary_is_accepted(staging):
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["staging"] = staging
+    errors, _ = validate_scenes(data)
+    assert errors == []
+
+
+def test_staging_is_optional():
+    data = load_fixture("scenes_pass.json")
+    assert all("staging" not in s for s in data["scenes"])
+    errors, warnings = validate_scenes(data)
+    assert errors == [] and warnings == []
+
+
+def test_staging_outside_the_vocabulary_is_rejected():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["staging"] = "underwater"
+    errors, _ = validate_scenes(data)
+    assert any("staging" in e for e in errors)
 
 
 def test_duration_mismatch_is_warning_not_error():
@@ -204,11 +273,10 @@ def test_duration_mismatch_is_warning_not_error():
     assert any("total_duration" in w for w in warnings)
 
 
-def test_emphasis_type_is_an_enum_from_spec_03():
-    """specs/02의 emphasis.type = specs/03의 오버레이 타입 enum (ADR-0019로 그 표가 생겼다)."""
+def test_emphasis_is_no_longer_in_the_contract():
+    """ADR-0054 — 오버레이 합성이 삭제됐다. emphasis가 오면 계약 위반이다."""
     data = load_fixture("scenes_pass.json")
-    scene = next(s for s in data["scenes"] if "emphasis" in s)
-    scene["emphasis"]["type"] = "red_crayon_x"  # ADR-0019로 폐기된 타입
+    data["scenes"][0]["emphasis"] = {"type": "big_red_text", "value": "18.6"}
     errors, _ = validate_scenes(data)
     assert any("emphasis" in e for e in errors)
 
@@ -287,3 +355,59 @@ def test_vocabulary_framing_tokens_are_accepted(token):
     data["scenes"][0]["framing"] = token
     errors, _ = validate_scenes(data)
     assert errors == []
+
+
+# --- 인물 블록: cast ↔ characters (ADR-0051) ----------------------------------
+
+
+def _with_character(data: dict, *, cast_scenes: int = 2) -> dict:
+    data["characters"] = [
+        {"id": "wonhyo", "name": "원효", "anchor": "元曉", "appearance": "잿빛 승복의 승려"}
+    ]
+    for scene in data["scenes"][:cast_scenes]:
+        scene["cast"] = ["wonhyo"]
+    return data
+
+
+def test_cast_pointing_at_a_defined_character_passes():
+    data = _with_character(load_fixture("scenes_pass.json"))
+    errors, warnings = validate_scenes(data)
+    assert errors == []
+    assert warnings == []
+
+
+def test_cast_pointing_at_a_missing_character_is_rejected():
+    """characters에 없는 id는 계약 위반이다 (specs/02, ADR-0051)."""
+    data = _with_character(load_fixture("scenes_pass.json"))
+    data["scenes"][0]["cast"] = ["dokkaebi"]
+    errors, _ = validate_scenes(data)
+    assert any("dokkaebi" in e and "ADR-0051" in e for e in errors)
+
+
+def test_cast_without_a_characters_block_is_rejected():
+    data = load_fixture("scenes_pass.json")
+    data["scenes"][0]["cast"] = ["wonhyo"]
+    errors, _ = validate_scenes(data)
+    assert any("characters에 없다" in e for e in errors)
+
+
+def test_duplicate_character_ids_are_rejected():
+    data = _with_character(load_fixture("scenes_pass.json"))
+    data["characters"].append(dict(data["characters"][0]))
+    errors, _ = validate_scenes(data)
+    assert any("2번 정의" in e for e in errors)
+
+
+def test_character_cast_in_fewer_than_two_scenes_warns():
+    """존재 기준은 '2씬 이상 반복 등장'이다 (ADR-0051) — 위반이 아니라 관측이다."""
+    data = _with_character(load_fixture("scenes_pass.json"), cast_scenes=1)
+    errors, warnings = validate_scenes(data)
+    assert errors == []
+    assert any("2씬 이상" in w for w in warnings)
+
+
+def test_no_characters_block_is_not_even_a_warning():
+    """블록이 없으면 인물 경로 전체가 스킵된다 — 부재는 경고가 아니다 (D-3)."""
+    data = load_fixture("scenes_pass.json")
+    _errors, warnings = validate_scenes(data)
+    assert not any("characters" in w for w in warnings)

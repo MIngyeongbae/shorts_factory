@@ -1,6 +1,6 @@
 """[4. refpack] — 씬별 실사 참조를 모은다. ADR-0030.
 
-입력은 실물 대본(`06-script.json`) 하나다 (ADR-0017). 세션은 페이크이고 내려받기는
+입력은 씬 계약(`scenes.json`) 하나다 (ADR-0017·0052). 세션은 페이크이고 내려받기는
 주입한 `fetch`가 받으므로 네트워크도 구독 한도도 쓰지 않는다.
 
 확인 대상:
@@ -39,10 +39,14 @@ from conftest import HOOVER, install_script
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 64
 
 
+def contract_path(paths, slug=HOOVER):
+    from conftest import load_script
+
+    return paths.run_dir(load_script(slug)["run_id"]) / "scenes.json"
+
+
 def script_of(paths, slug=HOOVER) -> dict:
-    return json.loads(
-        (paths.topic_dir(slug) / "06-script.json").read_text(encoding="utf-8")
-    )
+    return json.loads(contract_path(paths, slug).read_text(encoding="utf-8"))
 
 
 def scene_ids(paths, slug=HOOVER) -> list[int]:
@@ -118,15 +122,16 @@ def test_every_scene_of_the_script_gets_an_entry(paths, prepared):
 
 
 def test_the_output_lands_only_under_runs(paths, prepared):
-    """ADR-0017 — `topics/`는 읽기만 한다."""
+    """ADR-0017 — `topics/`에는 아무것도 쓰지 않고, 씬 계약도 고치지 않는다."""
     ids = prepared()
-    before = sorted(p.name for p in paths.topic_dir(HOOVER).iterdir())
+    before = contract_path(paths).read_bytes()
 
     result, _ = run(paths, ids)
 
     assert result.path == paths.run_dir(result.run_id) / RECORD_FILE
     assert result.path.exists()
-    assert sorted(p.name for p in paths.topic_dir(HOOVER).iterdir()) == before
+    assert contract_path(paths).read_bytes() == before
+    assert not paths.topic_dir(HOOVER).exists()
 
 
 # --- 두 경로와 강등 사다리 ---------------------------------------------------
@@ -360,7 +365,7 @@ def test_images_beyond_the_contract_limit_are_cut(paths, prepared):
 def test_a_broken_script_stops_before_the_session(paths, prepared):
     """깨진 씬으로 검색어를 만들면 세션 시간만 쓰고 쓸 수 없는 참조가 나온다."""
     prepared()
-    path = paths.topic_dir(HOOVER) / "06-script.json"
+    path = contract_path(paths)
     document = json.loads(path.read_text(encoding="utf-8"))
     document["scenes"][0].pop("subject")
     path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")

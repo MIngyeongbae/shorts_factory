@@ -48,15 +48,16 @@ import os
 import subprocess
 import tempfile
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from ..transport import Transport, TransportError, TransportTimeout
+from ..transport import urllib_transport as _urllib_transport
 from .base import (
     GeneratedImage,
     ImageClient,
     ImageGenError,
+    CharacterReference,
     ImageGenRateLimited,
     ImageGenTimeout,
     ImageRequest,
@@ -78,6 +79,31 @@ AUTH_HEADER = "mj-api-secret"
 SUBMIT_PATH = "/mj-fast/mj/submit/imagine"
 FETCH_PATH = "/mj/task/{task_id}/fetch"
 
+#: 포기한 잡을 죽인다 (ADR-0045). 제출과 같은 모드 프리픽스를 쓴다 — 취소도 모드별
+#: 라우팅을 탄다. 버려두면 프록시가 끝까지 돌려서 GPU를 태운다: 26장이 필요한 편에서
+#: MJ가 73장을 구웠다 (실측 2026-08-20).
+CANCEL_PATH = "/mj-fast/mj/task/{task_id}/cancel"
+CANCEL_TIMEOUT = 15
+
+#: 캐릭터 시트 U1 업스케일 (ADR-0051). 제출과 같은 fast 프리픽스다 — 모드는 엔드포인트
+#: 프리픽스가 정한다 (ADR-0039 §4).
+ACTION_PATH = "/mj-fast/mj/submit/action"
+
+#: 완료된 업스케일을 찾을 때 쓴다 (ADR-0051 — 같은 업스케일을 짧은 간격에 재요청하면
+#: MJ가 `Slow Down!`으로 거절한다, 실측 2026-08-21).
+TASK_LIST_PATH = "/mj/task/list"
+
+#: U1 버튼의 customId 표식. 전체 형식은 `MJ::JOB::upsample::1::{jobId}`이고 태스크의
+#: buttons에서 읽는다 — 손으로 조립하지 않는다.
+UPSCALE_MARKER = "::upsample::1::"
+
+#: 캐릭터 참조 문법 (ADR-0051 G3 실측 2026-08-21, `--ow`는 개정 2026-08-22). 계정 기본
+#: v8.2에서 `--cref`(v8 폐기)·`--oref` 둘 다 `not compatible with --version 8.2`로
+#: 거절된다 — oref는 v7 실행 전용이라 `--v 7`을 명시해야 돈다. **가중 기본(100)은
+#: 시트의 구도·흰 배경까지 복제해 씬을 잃는다** — `--ow 25`에서 동작·배경 요소가
+#: 돌아오고 정체는 유지됐다 (G4 프로브 실측). 문법이 또 바뀌면 여기 한 자리만 고친다.
+REFERENCE_SUFFIX = "--oref {url} --ow 25 --v 7"
+
 #: 계정 목록. `[6]`의 워커 수를 여기서 읽는다 (ADR-0031 G3). 응답은
 #: `{"list": [...], "pagination": ...}`이고 계정 오브젝트에 `coreSize`(fast 동시
 #: 한도)·`relaxCoreSize`(relax 동시 한도)가 있다 (실측).
@@ -90,10 +116,14 @@ ACCOUNTS_TIMEOUT = 15
 #: taskId를 준다), 22=큐 대기. 그 외는 실패다.
 SUBMIT_OK = (1, 21, 22)
 
-#: 잡 하나를 기다리는 상한(초)과 폴링 간격(초).
-#: **relax는 큐가 밀리면 분 단위다.** 짧게 잡으면 멀쩡히 돌고 있는 잡을 타임아웃으로
-#: 죽이고 재시도해서 큐를 두 배로 만든다.
-DEFAULT_TIMEOUT = 1800
+#: 잡 하나를 기다리는 상한을 **프록시 계정에서 읽는다** (ADR-0045). 어댑터가 상수를
+#: 들면 프록시가 더 짧을 때 그 상수는 한 번도 안 쓰이는 죽은 값이 된다 — 실측이
+#: 어댑터 1800초 vs 프록시 `timeoutMinutes` 15분(900초)이었고, 잡을 죽인 것은 언제나
+#: 프록시였다. `coreSize`를 읽는 것과 같은 이유·같은 경로다 (ADR-0031 G3, ADR-0032).
+#:
+#: 아래 값은 **계정을 못 읽었을 때만** 쓴다. 넉넉해도 폭주하지 않는다 — 프록시가
+#: 자기 상한을 그대로 집행하므로 이 숫자는 상한이 아니라 상한의 상한이다.
+FALLBACK_TIMEOUT = 1800
 POLL_INTERVAL = 10
 
 #: 프록시 태스크 상태. `SUCCESS`만 성공이고 나머지 종결 상태는 씬 실패다.
@@ -104,37 +134,37 @@ STATUS_FAILED = ("FAILURE", "CANCEL")
 FFMPEG = "ffmpeg"
 CROP_TIMEOUT = 120
 
-#: `(method, url, headers, body, timeout) -> (status, bytes)`. 유일한 HTTP 경계다.
-Transport = Callable[[str, str, dict[str, str], bytes | None, int], "tuple[int, bytes]"]
+#: HTTP 경계는 공용 `transport.py`다 (ADR-0056 — 휴면 어댑터가 공용 모듈에 기댄다).
+#: `Transport`는 거기서 import한 이름이고 이 어댑터의 생성자 시그니처 그대로다.
 
 
 def urllib_transport(
     method: str, url: str, headers: dict[str, str], body: bytes | None, timeout: int
 ) -> tuple[int, bytes]:
-    """stdlib 요청. 오류 응답도 본문을 살려 돌려준다 — 프록시가 사유를 적어 준다."""
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    """stdlib 요청 — 오류를 이 어댑터의 예외 계층으로 바꾼다. 호출부가 보는 것은 전과 같다."""
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.status, response.read()
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
-    except TimeoutError as exc:
-        raise ImageGenTimeout(f"{timeout}초 안에 응답이 오지 않았다") from exc
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, TimeoutError):
-            raise ImageGenTimeout(f"{timeout}초 안에 응답이 오지 않았다") from exc
-        raise ImageGenError(f"연결 실패: {exc.reason}") from exc
+        return _urllib_transport(method, url, headers, body, timeout)
+    except TransportTimeout as exc:
+        raise ImageGenTimeout(str(exc)) from exc
+    except TransportError as exc:
+        raise ImageGenError(str(exc)) from exc
 
 
 def build_prompt(request: ImageRequest) -> str:
-    """MJ에 보낼 한 줄. `prompt` + 공백 + `negative_prompt`.
+    """MJ에 보낼 한 줄. `prompt` + 공백 + `negative_prompt` (+ 캐릭터 참조).
 
     `--ar`은 이미 `prompt` 끝에, `--no`는 `negative_prompt` 전체다 (ADR-0027).
     여기서 종횡비나 배제 항목을 다시 만들지 않는다 — 출처가 둘이 되면 갈린다.
+
+    `reference_url`이 있으면 참조 플래그를 맨 끝에 잇는다 (ADR-0051). 문법이
+    프로바이더 소관이라 이 어댑터가 든다 (G3) — `[6]`은 URL만 넘긴다.
     """
     negative = request.negative_prompt.strip()
     prompt = request.prompt.strip()
-    return f"{prompt} {negative}" if negative else prompt
+    line = f"{prompt} {negative}" if negative else prompt
+    if request.reference_url:
+        line = f"{line} {REFERENCE_SUFFIX.format(url=request.reference_url)}"
+    return line
 
 
 def result_images(payload: dict[str, Any]) -> tuple[tuple[str, ...], bool]:
@@ -243,6 +273,8 @@ class MidjourneyClient(ImageClient):
     dialect = "mj"
     #: `imageUrls[0]`이 주는 `cdn.midjourney.com/.../0_0.png`가 PNG다 (실측).
     output_suffix = ".png"
+    #: 캐릭터 시트 참조를 만들 수 있다 (ADR-0051 — U1 업스케일의 Discord CDN 서명 URL).
+    supports_character_reference = True
 
     def __init__(
         self,
@@ -262,6 +294,9 @@ class MidjourneyClient(ImageClient):
         self.poll_interval = poll_interval
         self.sleep = sleep
         self.clock = clock
+        #: 계정 응답 메모. `coreSize`와 `timeoutMinutes`가 같은 응답에 있어 씬마다
+        #: 다시 물을 이유가 없다 — 26씬이면 관리 호출이 26번이 된다.
+        self._accounts: list[Any] | None = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -309,22 +344,7 @@ class MidjourneyClient(ImageClient):
         프록시가 정하므로, 큰 쪽에 맞추면 작은 쪽 계정이 429를 낸다.
         """
         try:
-            status, raw = self.transport(
-                "POST", f"{self.base_url}{ACCOUNTS_PATH}", self.headers,
-                b"{}", ACCOUNTS_TIMEOUT,
-            )
-            if status != 200:
-                raise ImageGenError(f"HTTP {status}")
-            accounts = _load(raw, what="계정 목록").get("list")
-            if not isinstance(accounts, list):
-                raise ImageGenError("응답에 list가 없다")
-            sizes = [
-                int(a["coreSize"])
-                for a in accounts
-                if isinstance(a, dict) and a.get("enable") and a.get("coreSize")
-            ]
-            if not sizes:
-                raise ImageGenError("활성 계정에 coreSize가 없다")
+            sizes = self._account_numbers("coreSize")
         except (ImageGenError, OSError, KeyError, TypeError, ValueError) as exc:
             # 비밀이 섞인 응답이라 본문을 로그에 싣지 않는다 (ADR-0032 §3).
             log.warning(
@@ -334,6 +354,68 @@ class MidjourneyClient(ImageClient):
             return 1
         return max(1, min(sizes))
 
+    def wait_budget(self) -> int:
+        """활성 계정의 `timeoutMinutes`를 초로. 잡 하나를 기다리는 상한이다 (ADR-0045).
+
+        **한 번도 예외를 올리지 않는다.** `concurrency()`와 같은 규칙이다 — 못 읽으면
+        `FALLBACK_TIMEOUT`으로 떨어진다. 넉넉한 폴백이 위험하지 않은 이유는 프록시가
+        자기 `timeoutMinutes`를 그대로 집행하기 때문이다: 우리가 더 오래 기다려도
+        잡은 프록시가 먼저 죽인다. 우리 숫자는 상한이 아니라 **상한의 상한**이다.
+
+        활성 계정이 여럿이면 **가장 작은 값**을 쓴다. 잡이 어느 계정으로 갈지는
+        프록시가 정하므로, 큰 쪽에 맞추면 작은 쪽 계정의 잡을 산 채로 기다리게 된다.
+        """
+        try:
+            minutes = self._account_numbers("timeoutMinutes")
+        except (ImageGenError, OSError, KeyError, TypeError, ValueError) as exc:
+            log.warning(
+                "timeoutMinutes를 읽지 못해 %d초로 간다 (%s: %s). "
+                "--timeout으로 직접 줄 수 있다",
+                FALLBACK_TIMEOUT, type(exc).__name__, exc,
+            )
+            return FALLBACK_TIMEOUT
+        return max(1, min(minutes) * 60)
+
+    def cancel(self, task_id: str) -> bool:
+        """포기한 잡을 프록시에서 죽인다 (ADR-0045).
+
+        **실패를 삼킨다.** 취소는 자원 회수이지 이 씬의 성패가 아니다 — 여기서 예외를
+        올리면 호출부의 폴백 사다리가 끊긴다. 이미 끝난 잡에 걸어도 무해하다.
+        """
+        url = f"{self.base_url}{CANCEL_PATH.format(task_id=task_id)}"
+        try:
+            status, _ = self.transport("POST", url, self.headers, None, CANCEL_TIMEOUT)
+        except Exception as exc:  # 취소 실패로 씬을 죽이지 않는다
+            log.warning("태스크 %s 취소를 보내지 못했다 (%s)", task_id, type(exc).__name__)
+            return False
+        if status != 200:
+            log.warning("태스크 %s 취소가 거절됐다 (HTTP %s)", task_id, status)
+            return False
+        log.info("태스크 %s를 취소했다 — 버려두면 프록시가 끝까지 돈다", task_id)
+        return True
+
+    def _account_numbers(self, field: str) -> list[int]:
+        """활성 계정에서 숫자 필드 하나를 모은다. 계정 응답은 요청당 1회만 읽는다."""
+        if self._accounts is None:
+            status, raw = self.transport(
+                "POST", f"{self.base_url}{ACCOUNTS_PATH}", self.headers,
+                b"{}", ACCOUNTS_TIMEOUT,
+            )
+            if status != 200:
+                raise ImageGenError(f"HTTP {status}")
+            accounts = _load(raw, what="계정 목록").get("list")
+            if not isinstance(accounts, list):
+                raise ImageGenError("응답에 list가 없다")
+            self._accounts = accounts
+        values = [
+            int(a[field])
+            for a in self._accounts
+            if isinstance(a, dict) and a.get("enable") and a.get(field)
+        ]
+        if not values:
+            raise ImageGenError(f"활성 계정에 {field}가 없다")
+        return values
+
     def download(self, url: str, *, timeout: int) -> bytes:
         """산출 이미지 바이트. 인증 헤더를 붙이지 않는다 — CDN 주소다."""
         status, raw = self.transport("GET", url, {}, None, timeout)
@@ -341,10 +423,121 @@ class MidjourneyClient(ImageClient):
             raise _fail(status, raw, what="이미지 내려받기")
         return raw
 
+    def character_reference(
+        self, task_id: str, *, timeout: int | None = None
+    ) -> CharacterReference:
+        """시트 잡 → U1 업스케일 → 단일 이미지의 Discord CDN 서명 URL (ADR-0051 G1·G3).
+
+        **멱등이다.** 완료된 업스케일이 있으면 그것을 재사용한다 — 같은 업스케일을 짧은
+        간격에 재요청하면 MJ가 `Slow Down!`으로 거절한다 (실측 2026-08-21). URL은 부를
+        때마다 태스크에서 새로 읽는다 — 서명 URL이라 만료가 있다.
+        """
+        budget = timeout or self.wait_budget()
+        existing = self._find_completed_upscale(task_id, timeout=budget)
+        if existing is not None:
+            return existing
+
+        parent = self.fetch(task_id, timeout=budget)
+        custom_id = next(
+            (
+                str(button.get("customId"))
+                for button in (parent.get("buttons") or [])
+                if isinstance(button, dict)
+                and UPSCALE_MARKER in str(button.get("customId"))
+            ),
+            None,
+        )
+        if not custom_id:
+            raise ImageGenError(
+                f"태스크 {task_id}에 U1 버튼이 없다 — 업스케일할 수 없는 잡이다"
+            )
+
+        body = json.dumps(
+            {"taskId": task_id, "customId": custom_id}, ensure_ascii=False
+        ).encode("utf-8")
+        status, raw = self.transport(
+            "POST", f"{self.base_url}{ACTION_PATH}", self.headers, body, budget
+        )
+        if status != 200:
+            raise _fail(status, raw, what="업스케일 제출")
+        payload = _load(raw, what="업스케일 제출 응답")
+        code = payload.get("code")
+        upscale_id = payload.get("result")
+        if code not in SUBMIT_OK or not upscale_id:
+            raise ImageGenError(
+                f"업스케일이 거절됐다 (code={code}): {payload.get('description')!r}"
+            )
+
+        deadline = self.clock() + budget
+        while True:
+            task = self.fetch(str(upscale_id), timeout=budget)
+            state = str(task.get("status") or "")
+            if state == STATUS_SUCCESS:
+                break
+            if state in STATUS_FAILED:
+                raise ImageGenError(
+                    f"업스케일 {upscale_id}가 {state}로 끝났다: "
+                    f"{task.get('failReason') or '사유 없음'}"
+                )
+            if self.clock() >= deadline:
+                # 버려두면 프록시가 끝까지 돈다 (ADR-0045 — generate와 같은 규칙).
+                self.cancel(str(upscale_id))
+                raise ImageGenTimeout(
+                    f"업스케일 {upscale_id}가 {budget}초 안에 끝나지 않았다"
+                )
+            self.sleep(self.poll_interval)
+        return self._reference_from_task(str(upscale_id), task)
+
+    def _find_completed_upscale(
+        self, task_id: str, *, timeout: int
+    ) -> CharacterReference | None:
+        """이미 성공한 업스케일 재사용. 못 읽으면 None — 재사용은 최적화지 성패가 아니다.
+
+        `[6]`은 U1만 제출하므로 부모가 같은 완료 업스케일은 U1이다 — 사람이 웹 UI에서
+        다른 사분면을 직접 업스케일한 경우만 예외인데, 그때는 그쪽이 사람의 선택이다.
+        """
+        try:
+            status, raw = self.transport(
+                "GET", f"{self.base_url}{TASK_LIST_PATH}", self.headers, None, timeout
+            )
+            if status != 200:
+                return None
+            tasks: Any = json.loads(raw)
+        except Exception:  # 목록 조회 실패로 참조 생성을 죽이지 않는다
+            return None
+        if isinstance(tasks, dict):
+            tasks = tasks.get("list") or []
+        if not isinstance(tasks, list):
+            return None
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            if (
+                task.get("action") == "UPSCALE"
+                and str(task.get("status")) == STATUS_SUCCESS
+                and str(task.get("parentId")) == str(task_id)
+            ):
+                try:
+                    return self._reference_from_task(str(task.get("id")), task)
+                except ImageGenError:
+                    continue
+        return None
+
+    @staticmethod
+    def _reference_from_task(upscale_id: str, task: dict[str, Any]) -> CharacterReference:
+        """업스케일 태스크 → 참조. **`url`(Discord CDN 서명 URL)이어야 한다** —
+        `imageUrl`은 로컬 저장소 주소라 MJ 서버가 못 가져간다 (ADR-0046 실측)."""
+        url = task.get("url")
+        if not isinstance(url, str) or not url.startswith("http"):
+            raise ImageGenError(
+                f"업스케일 {upscale_id}에 닿는 URL이 없다 (url={url!r})"
+            )
+        return CharacterReference(upscale_task_id=upscale_id, url=url)
+
     def generate(
         self, request: ImageRequest, *, timeout: int | None = None
     ) -> GeneratedImage:
-        budget = timeout or DEFAULT_TIMEOUT
+        budget = timeout or self.wait_budget()
         deadline = self.clock() + budget
 
         task_id = self.submit(request, timeout=budget)
@@ -360,11 +553,15 @@ class MidjourneyClient(ImageClient):
                     f"{payload.get('failReason') or '사유 없음'}"
                 )
             if self.clock() >= deadline:
-                # 잡은 프록시에서 계속 돈다. 죽이지 않고 taskId를 남겨 둔다 —
-                # relax 큐가 밀린 것뿐이면 같은 잡을 또 제출하는 것이 더 나쁘다.
+                # 버려두면 프록시가 끝까지 돌려 GPU를 태운다 (ADR-0045가 ADR-0035의
+                # "죽이지 않는다"를 뒤집었다). fast 생성 실측이 7~12초라, 상한까지 간
+                # 잡은 느린 것이 아니라 멈춘 것이다 — 26장이 필요한 편에서 버려둔 잡들
+                # 때문에 MJ가 73장을 구웠다.
+                cancelled = self.cancel(task_id)
+                tail = "취소했다" if cancelled else "취소하지 못했다 — 프록시에서 계속 돈다"
                 raise ImageGenTimeout(
                     f"태스크 {task_id}가 {budget}초 안에 끝나지 않았다 "
-                    f"(마지막 status={status!r}). 프록시에서는 계속 돈다"
+                    f"(마지막 status={status!r}). {tail}"
                 )
             self.sleep(self.poll_interval)
 

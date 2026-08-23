@@ -221,19 +221,59 @@ def test_a_failed_task_reports_its_reason():
 
 
 def test_a_slow_task_times_out_without_resubmitting():
-    """relax 큐가 밀린 것뿐이면 **같은 잡을 또 제출하는 것이 더 나쁘다.**"""
+    """포기해도 **같은 잡을 또 제출하지 않는다.** 재제출은 큐를 두 배로 만든다."""
     ticks = iter([0.0, 0.0, 100.0, 200.0])
     c = client(
         [
             ("submit", (200, {"code": 1, "result": "task-1"})),
             ("/fetch", (200, {"status": "IN_PROGRESS"})),
+            ("/cancel", (200, {"code": 1})),
         ],
         clock=lambda: next(ticks),
     )
     with pytest.raises(ImageGenTimeout, match="task-1"):
         c.generate(REQUEST, timeout=60)
 
-    assert [m for m, _u, _b in c.transport.calls].count("POST") == 1
+    submits = [u for m, u, _b in c.transport.calls if m == "POST" and "submit" in u]
+    assert len(submits) == 1
+
+
+def test_giving_up_cancels_the_job(caplog):
+    """ADR-0045 — 버려두면 프록시가 끝까지 돌려 GPU를 태운다.
+
+    실측(2026-08-20): 26장이 필요한 편에서 버린 잡들이 전부 완성돼 MJ가 73장을 구웠다.
+    fast 생성이 7~12초라, 상한까지 간 잡은 느린 것이 아니라 멈춘 것이다.
+    """
+    ticks = iter([0.0, 0.0, 100.0, 200.0])
+    c = client(
+        [
+            ("submit", (200, {"code": 1, "result": "task-1"})),
+            ("/fetch", (200, {"status": "IN_PROGRESS"})),
+            ("/cancel", (200, {"code": 1})),
+        ],
+        clock=lambda: next(ticks),
+    )
+    with pytest.raises(ImageGenTimeout, match="취소했다"):
+        c.generate(REQUEST, timeout=60)
+
+    cancels = [u for m, u, _b in c.transport.calls if m == "POST" and "cancel" in u]
+    assert cancels == ["http://proxy:8086/mj-fast/mj/task/task-1/cancel"]
+
+
+def test_a_failed_cancel_does_not_replace_the_timeout(caplog):
+    """취소는 자원 회수이지 씬의 성패가 아니다 — 예외를 올리면 폴백 사다리가 끊긴다."""
+    ticks = iter([0.0, 0.0, 100.0, 200.0])
+    c = client(
+        [
+            ("submit", (200, {"code": 1, "result": "task-1"})),
+            ("/fetch", (200, {"status": "IN_PROGRESS"})),
+            ("/cancel", (400, {"code": 4, "description": "演示模式，禁止操作"})),
+        ],
+        clock=lambda: next(ticks),
+    )
+    # 호출부가 보는 것은 여전히 ImageGenTimeout이다
+    with pytest.raises(ImageGenTimeout, match="취소하지 못했다"):
+        c.generate(REQUEST, timeout=60)
 
 
 # --- 응답 파싱 ---------------------------------------------------------------
@@ -382,22 +422,60 @@ def test_concurrency_uses_the_admin_endpoint_not_the_mode_prefix():
     assert "/mj-relax/" not in url and "/mj-fast/" not in url
 
 
-def test_none_falls_back_to_the_adapter_own_budget():
-    """ADR-0035 — 단계가 상한을 안 주면 어댑터가 자기 값을 쓴다.
+def test_none_reads_the_budget_from_the_proxy_account():
+    """ADR-0045 — 상한의 정본은 프록시 계정의 `timeoutMinutes`다.
 
-    이 어댑터만이 relax 큐를 보고 있다. `DEFAULT_TIMEOUT`은 "짧게 잡으면 멀쩡한 잡을
-    죽이고 재시도해 큐를 두 배로 만든다"는 이유로 크게 잡은 값이라, 아무도 상한을 주지
-    않았을 때 여기로 떨어져야 한다.
+    어댑터가 상수를 들면 프록시가 더 짧을 때 그 상수는 한 번도 안 쓰이는 죽은 값이
+    된다 (실측 2026-08-20: 어댑터 1800초 vs 프록시 900초, 잡을 죽인 것은 프록시).
+    `coreSize`를 읽는 것과 같은 이유·같은 경로다.
     """
-    from shorts_factory.imagegen.midjourney import DEFAULT_TIMEOUT
-
-    ticks = iter([0.0, 0.0, DEFAULT_TIMEOUT - 1, DEFAULT_TIMEOUT + 1])
+    accounts = {"list": [{"enable": True, "coreSize": 3, "timeoutMinutes": 3}]}
+    ticks = iter([0.0, 0.0, 179.0, 181.0])
     c = client(
         [
+            ("/mj/admin/accounts", (200, accounts)),
             ("submit", (200, {"code": 1, "result": "task-1"})),
             ("/fetch", (200, {"status": "IN_PROGRESS"})),
+            ("/cancel", (200, {"code": 1})),
         ],
         clock=lambda: next(ticks),
     )
-    with pytest.raises(ImageGenTimeout, match=str(DEFAULT_TIMEOUT)):
+    # 3분 = 180초로 읽혀야 한다
+    with pytest.raises(ImageGenTimeout, match="180초"):
         c.generate(REQUEST, timeout=None)
+
+
+def test_an_unreadable_account_falls_back_instead_of_raising():
+    """못 읽었다고 그림을 못 만드는 것이 아니다 — `concurrency()`와 같은 규칙이다.
+
+    넉넉한 폴백이 위험하지 않은 이유는 프록시가 자기 상한을 그대로 집행하기 때문이다.
+    우리 숫자는 상한이 아니라 **상한의 상한**이다.
+    """
+    from shorts_factory.imagegen.midjourney import FALLBACK_TIMEOUT
+
+    c = client([("/mj/admin/accounts", (500, b"boom"))])
+    assert c.wait_budget() == FALLBACK_TIMEOUT
+
+
+def test_the_shortest_account_budget_wins():
+    """잡이 어느 계정으로 갈지는 프록시가 정한다 — 큰 쪽에 맞추면 산 잡을 기다린다."""
+    accounts = {
+        "list": [
+            {"enable": True, "coreSize": 3, "timeoutMinutes": 15},
+            {"enable": True, "coreSize": 1, "timeoutMinutes": 3},
+            {"enable": False, "coreSize": 9, "timeoutMinutes": 1},  # 비활성은 안 센다
+        ]
+    }
+    c = client([("/mj/admin/accounts", (200, accounts))])
+    assert c.wait_budget() == 180
+
+
+def test_the_account_response_is_read_once_per_client():
+    """씬마다 다시 물으면 26씬에 관리 호출이 26번이 된다. 비밀이 섞인 응답이다."""
+    accounts = {"list": [{"enable": True, "coreSize": 2, "timeoutMinutes": 5}]}
+    c = client([("/mj/admin/accounts", (200, accounts))])
+
+    assert c.concurrency() == 2
+    assert c.wait_budget() == 300
+    admin = [u for _m, u, _b in c.transport.calls if "admin/accounts" in u]
+    assert len(admin) == 1

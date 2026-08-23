@@ -1,11 +1,12 @@
-"""[0a. topic] — 백로그 항목을 토픽 패키지로 승격한다.
+"""[0. seed] — 백로그 항목을 토픽 패키지로 승격한다 (ADR-0049).
 
 specs/05-pipeline.md:
-    topics/backlog.md → [0a. topic] → topics/{slug}/ 폴더 생성 (매체 적합성 판별, 스펙 06)
+    topics/backlog.md (소재 + 시드 기사 URL) → [0. seed] → topics/{slug}/ + runs/{run_id}/
+    (기계 단계, LLM 0회)
 
-이 단계는 백로그에 **선언된** 관측 지표를 세어 하류로 넘긴다. **반려하지 않는다**
-(ADR-0033 §1) — 지표가 비었다고 소재를 버리지 않고, 사료에 근거한 실제 판정은
-[0b. research]가 verdict로 내린다.
+**반려하지 않는다** — 매체 적합성 판정은 `[1. draft]`가 한다 (스펙 06). 여기는
+슬러그·폴더·run과 seed.md(시드 기사 URL)를 만들 뿐이다. 관측 지표는 세어 기록만 한다
+(ADR-0033 §1).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from . import status as status_mod
 
 log = logging.getLogger(__name__)
 
-STAGE = "0a-topic"
+STAGE = "0-seed"
 
 #: 지표 키 → 사람이 읽는 이름 (specs/06-topic-research.md "좋은 소재의 특징")
 CONDITION_LABELS = {
@@ -54,8 +55,8 @@ class TopicResult:
     def summary(self) -> str:
         if not self.accepted:
             names = ", ".join(CONDITION_LABELS.get(k, k) for k in self.unmet_conditions)
-            return f"[0a] 반려: '{self.topic}' — {names}"
-        prefix = "[0a] 스킵(이미 생성됨)" if self.skipped else "[0a] 생성"
+            return f"[0] 반려: '{self.topic}' — {names}"
+        prefix = "[0] 스킵(이미 생성됨)" if self.skipped else "[0] 생성"
         line = f"{prefix}: {self.topic} → topics/{self.slug}/ (run_id={self.run_id})"
         if self.unmet_conditions:
             # ADR-0033 §1 — 관측이지 판정이 아니다. 반려하지 않고 세어서 보여 준다.
@@ -83,10 +84,12 @@ def run_topic_stage(
     paths: Paths | None = None,
     today: date | None = None,
     force: bool = False,
+    seed_url: str | None = None,
 ) -> TopicResult:
     paths = paths or Paths.from_env()
     entries = backlog_mod.parse_backlog(paths.backlog)
     entry = _pick_entry(entries, needle)
+    seed_url = (seed_url or entry.seed_url or "").strip()
 
     slug = entry.slug
     run_id = make_run_id(slug, today)
@@ -125,9 +128,21 @@ def run_topic_stage(
 
     state.mark_running(STAGE)
     try:
-        # specs/06 토픽 패키지 구조
+        # specs/06 토픽 패키지 구조 (ADR-0049)
         topic_dir.mkdir(parents=True, exist_ok=True)
-        (topic_dir / "05-candidates").mkdir(exist_ok=True)
+
+        seed_path = topic_dir / "seed.md"
+        if not seed_path.exists() or force:
+            write_text(
+                seed_path,
+                f"""# {entry.topic}
+
+- 시드: {seed_url or "(미기재 — [1. draft]가 요구한다)"}
+- 등록: {date.today().isoformat() if today is None else today.isoformat()}
+
+백로그에서 승격됨. 대본은 script.md, 검증은 factcheck.md (specs/06).
+""",
+            )
 
         status_path = topic_dir / "STATUS.md"
         # 사람이 이미 go/no-go를 적었다면 덮어쓰지 않는다
@@ -139,10 +154,10 @@ def run_topic_stage(
                 slug=slug,
                 run_id=run_id,
                 reason=(
-                    "토픽 패키지 생성됨. 조사~대본 선발본이 완성된 뒤 "
-                    "사람이 go / no-go를 기록한다."
+                    "토픽 패키지 생성됨. script.md(대본)와 factcheck.md(검증)가 "
+                    "완성된 뒤 사람이 go / no-go를 기록한다 (ADR-0049)."
                 ),
-                done_stages=("topic",),
+                done_stages=("0-seed",),
             )
 
         # 단계 간 계약: runs/{run_id}/topic.json (specs/05 — 파일 기반 JSON)
@@ -152,6 +167,7 @@ def run_topic_stage(
             "topic": entry.topic,
             "slug": slug,
             "topic_dir": topic_dir.relative_to(paths.root).as_posix(),
+            "seed_url": seed_url,
             "backlog_conditions": entry.conditions,
             "sources_hint": entry.sources,
             "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

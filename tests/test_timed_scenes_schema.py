@@ -1,4 +1,4 @@
-"""scenes.timed.json 계약 (specs/02, ADR-0017).
+"""scenes.timed.{lang}.json 계약 (specs/02·05, ADR-0017·0056).
 
 specs/02는 이 파일을 "씬 스키마 그대로, `est_*`만 `start`/`end`로"라고 정의한다.
 그래서 스키마는 손으로 옮겨 적지 않고 파생시킨다 — 이 테스트가 그 파생이 실제로
@@ -12,7 +12,9 @@ from shorts_factory.schemas.scenes import SCENE_SCHEMA
 from shorts_factory.schemas.timed_scenes import (
     DROPPED,
     TIMED_SCENE_SCHEMA,
+    TIMED_SCENES_PATTERN,
     build_timed_scenes,
+    timed_scenes_path,
     validate_timed_scenes,
 )
 
@@ -27,13 +29,13 @@ def timed(**overrides):
                     "scene_id": 1, "beat": "hook_fact", "text": "가.",
                     "est_start": 0.0, "est_end": 2.0, "subject": "가",
                     "subject_scale": "wide",
-                    "camera": "static", "motion": "kenburns", "notes": "",
+                    "camera": "static", "notes": "",
                 },
                 {
                     "scene_id": 2, "beat": "ending_echo", "text": "나.",
                     "est_start": 2.0, "est_end": 4.0, "subject": "나",
                     "subject_scale": "close",
-                    "camera": "static", "motion": "kenburns", "notes": "",
+                    "camera": "static", "notes": "",
                 },
             ],
         },
@@ -157,10 +159,40 @@ def test_build_refuses_a_boundary_count_mismatch():
 
 
 def test_build_does_not_mutate_the_source_script():
-    """06-script.json은 읽기 전용이다 (ADR-0017)."""
+    """씬 계약은 읽기 전용이다 (ADR-0017)."""
     source = load_script(PISA)
     before = load_script(PISA)
 
     build_timed_scenes(source, [(s["est_start"], s["est_end"]) for s in source["scenes"]])
 
     assert source == before
+
+
+# --- 언어별 파일 (ADR-0056 결정 5) ---------------------------------------------
+
+
+@pytest.mark.parametrize("lang", ["ko", "ja", "en"])
+def test_timed_scenes_path_is_per_language(tmp_path, lang):
+    """시각을 읽는 곳은 언어당 `scenes.timed.{lang}.json` 하나다 (specs/05 계약 표)."""
+    path = timed_scenes_path(tmp_path, lang)
+    assert path == tmp_path / TIMED_SCENES_PATTERN.format(lang=lang)
+    assert path.name == f"scenes.timed.{lang}.json"
+
+
+def test_timed_scenes_path_normalises_and_rejects_garbage(tmp_path):
+    assert timed_scenes_path(tmp_path, " KO ").name == "scenes.timed.ko.json"
+    with pytest.raises(ValueError):
+        timed_scenes_path(tmp_path, "../x")
+    with pytest.raises(ValueError):
+        timed_scenes_path(tmp_path, "")
+
+
+def test_present_languages_lists_existing_files_in_contract_order(tmp_path):
+    """ko 필수 + ja·en 선택 — 파일이 있는 언어만, 늘 ko·ja·en 순서다 (specs/05)."""
+    from shorts_factory.schemas.timed_scenes import LANGUAGES, PRIMARY_LANGUAGE, present_languages
+
+    assert LANGUAGES == ("ko", "ja", "en") and PRIMARY_LANGUAGE == "ko"
+    assert present_languages(tmp_path) == []
+    timed_scenes_path(tmp_path, "en").write_text("{}", encoding="utf-8")
+    timed_scenes_path(tmp_path, "ko").write_text("{}", encoding="utf-8")
+    assert present_languages(tmp_path) == ["ko", "en"]

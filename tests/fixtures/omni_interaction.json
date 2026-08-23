@@ -1,0 +1,84 @@
+{
+  "_source": "runs/20260822-omni-api-probe/attempts.json — 2026-08-22 실호출 (3초, prompt-only). signature·id만 가렸다.",
+  "request": {
+    "model": "gemini-omni-flash-preview",
+    "input": "FORMAT: A 3-second vertical 9:16 shot, semi-stylized 3D visualization render. STAGING: SUBJECT staged as a technical model on a flat neutral pale gray studio ground. SUBJECT: a single steel bolt standing upright. CAMERA: locked-off camera. NEGATIVE: No text, no letters, no numbers, no labels. No background music.",
+    "response_format": {
+      "type": "video",
+      "aspect_ratio": "9:16",
+      "delivery": "uri"
+    }
+  },
+  "response": {
+    "id": "v1_probe-interaction-id",
+    "status": "completed",
+    "usage": {
+      "total_tokens": 18141,
+      "total_input_tokens": 79,
+      "input_tokens_by_modality": [
+        {
+          "modality": "text",
+          "tokens": 79
+        }
+      ],
+      "total_cached_tokens": 0,
+      "total_output_tokens": 17701,
+      "output_tokens_by_modality": [
+        {
+          "modality": "video",
+          "tokens": 17376
+        }
+      ],
+      "total_tool_use_tokens": 0,
+      "total_thought_tokens": 361,
+      "raw_prompt_token": 29416
+    },
+    "created": "2026-08-22T14:57:17Z",
+    "updated": "2026-08-22T14:57:17Z",
+    "service_tier": "standard",
+    "steps": [
+      {
+        "signature": "<thought-signature-redacted>",
+        "type": "thought"
+      },
+      {
+        "content": [
+          {
+            "uri": "https://generativelanguage.googleapis.com/v1beta/files/lzrjank7ejy5:download?alt=media",
+            "mime_type": "video/mp4",
+            "type": "video"
+          }
+        ],
+        "type": "model_output"
+      }
+    ],
+    "object": "interaction",
+    "model": "gemini-omni-flash-preview"
+  },
+  "download": {
+    "status": 200,
+    "content_type": "video/mp4",
+    "bytes": 753704
+  },
+  "ffprobe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 720,
+        "height": 1280,
+        "r_frame_rate": "24/1"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "r_frame_rate": "0/0"
+      }
+    ],
+    "format": {
+      "duration": "3.008000"
+    }
+  }
+}

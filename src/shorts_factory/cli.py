@@ -1,26 +1,21 @@
 """파이프라인 오케스트레이터 CLI.
 
-    python run.py topic     [--topic 소재명]
-    python run.py research  --slug SLUG [--only 01-research]
-    python run.py outline   --slug SLUG           # [1a] 팩트시트 → 훅 각도 + 단 구성
-    python run.py sceneplan --slug SLUG           # [1s] 구성안 → 씬 분할 + 그림·연출
-    python run.py write     --slug SLUG           # [1w] 씬 계획 → 자막 문장 (대본 후보)
-    python run.py draft     --slug SLUG           # 1a + 1s + 1w 연속 실행
-    python run.py score     --slug SLUG           # [1b] 후보 채점 → 06-script.json 선발
-    python run.py validate  --slug SLUG           # 최종 게이트 — 실패 시 보고·중단 (ADR-0044)
-    python run.py tts       --slug SLUG           # [2부] 대본 → narration.wav + 실측 타임스탬프
+    python run.py topic     [--topic 소재명] [--seed-url URL]  # [0] 시드 — 폴더·run 생성
+    python run.py draft     --slug SLUG           # [1] 시드 기사 → 통짜 대본 script.md
+    python run.py factcheck --slug SLUG           # [2] 대본 주장 검증·정정 → factcheck.md
+    python run.py localize  --slug SLUG [--lang ja,en]  # [2l] 정본 → script.ja.md + script.en.md (줄 1:1, ADR-0056)
+    python run.py part1     [--topic 소재명] [--seed-url URL]  # [0]+[1]+[2]+[2l] 연속 (ADR-0049·0056)
+    python run.py tts       --slug SLUG [--lang ko,ja,en]  # [2부] 대본 → narration.{lang}.wav + 실측 (언어당 1회)
+    python run.py scenetable --slug SLUG          # [2부] ko 실측 줄 경계 → 씬 계약 scenes.json
     python run.py refpack   --slug SLUG           # [2부] 씬 계약 → 씬별 실사 참조 (사진 + 서술)
-    python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 이미지 프롬프트
-    python run.py imagegen  --slug SLUG           # [2부] 프롬프트 → images/{scene_id}.jpg
-    python run.py imagereview --slug SLUG         # [2부] 이미지 판정 → 사분면 교체 / 재생성
-    python run.py info      --slug SLUG           # [2부] 인포씬 CLEAN → INFO 이미지 (NB2 편집+검수)
-    python run.py motion    --slug SLUG           # [2부] 전 씬 영상 → clips/{scene_id}.mp4
-    python run.py assemble  --slug SLUG           # [2부] 클립+씬 계약 → timeline.mp4
-    python run.py package   [--topic 소재명]      # 0a + 0b 연속 실행
-    python run.py knowledge reindex               # 소스 카드 인덱스 재생성
+    python run.py prompt    --slug SLUG           # [2부] 씬 계약 → 씬별 영상 프롬프트 (ADR-0056)
+    python run.py videogen  --slug SLUG           # [2부] [7] 씬당 텍스트→영상 클립 + 검수 (어댑터는 video_line — ADR-0059)
+    python run.py ending    --slug SLUG           # [2부] 실사 참조 → 엔딩 실사 컷 (ADR-0055)
+    python run.py assemble  --slug SLUG [--lang ko,ja,en]  # [2부] 클립+언어별 실측 → timeline.{lang}.mp4
 
 ADR-0008에 따라 LLM 단계는 claude 헤드리스 서브프로세스로 실행된다.
 `prompt`는 2부 단계이고 LLM도 네트워크도 쓰지 않는다 (순수 변환, ADR-0033 §3).
+`imagegen`·`imagereview`·`info`·`motion`은 ADR-0056이 단계째 지웠다 — 이미지 단계가 없다.
 """
 
 from __future__ import annotations
@@ -29,44 +24,21 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Callable
 
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths, load_dotenv
-from .imagegen.base import ImageClient
-from .imagegen.fake import FakeImageClient
-from .imagegen.midjourney import MidjourneyClient
-from .imagegen.nano_banana import NanoBananaClient
-from .knowledge import KnowledgeStore
 from .llm.claude_code import ClaudeCodeClient
-from .schemas.visual_rules import DEFAULT_DIALECT, DIALECTS
 from .stages.assemble import (
     AssembleStageError,
     resolve_run_id,
     run_assemble_stage,
 )
-from .stages.imagereview import (
-    ImagereviewStageError,
-    resolve_run_id as resolve_imagereview_run_id,
-    run_imagereview_stage,
+from .stages.ending import (
+    TIMEOUT as ENDING_TIMEOUT,
+    EndingStageError,
+    resolve_run_id as resolve_ending_run_id,
+    run_ending_stage,
 )
-from .stages.info import (
-    InfoStageError,
-    resolve_run_id as resolve_info_run_id,
-    run_info_stage,
-)
-from .stages.imagegen import (
-    DialectMismatch,
-    ImagegenStageError,
-    StyleAnchorsMissing,
-    run_imagegen_stage,
-)
-from .stages.motion import (
-    MotionStageError,
-    run_motion_stage,
-)
-from .stages.motion import resolve_run_id as resolve_motion_run_id
-from .videogen.base import VideoClient
-from .videogen.midjourney import MidjourneyVideoClient
-from .videogen.veo import VeoClient
 from .stages.prompt import PromptStageError, run_prompt_stage
 from .stages.refpack import (
     TIMEOUT as REFPACK_TIMEOUT,
@@ -75,19 +47,42 @@ from .stages.refpack import (
     run_refpack_stage,
     urllib_fetch,
 )
-from .stages.research import ResearchStageError, find_run_for_slug, run_research_stage
-from .stages.outline import run_outline_stage
-from .stages.sceneplan import run_sceneplan_stage
-from .stages.score import run_score_stage
-from .stages.session import ScriptSessionError
-from .stages.write import run_write_stage
+from .runstate import RunNotFound, find_run_for_slug
+from .stages.draft import DraftStageError, run_draft_stage
+from .stages.scenetable import (
+    TIMEOUT as SCENETABLE_TIMEOUT,
+    ScenetableStageError,
+    resolve_run_id as resolve_scenetable_run_id,
+    run_scenetable_stage,
+)
+from .stages.factcheck import FactcheckStageError, run_factcheck_stage
+from .stages.localize import (
+    TARGET_LANGUAGES,
+    LocalizeStageError,
+    run_localize_stage,
+)
 from .stages.topic import TopicStageError, run_topic_stage
 from .stages.tts import TTSStageError, run_tts_stage
-from .stages.validate import ValidateStageError, run_validate_stage
+from .stages.videogen import (
+    REVIEW_FULL,
+    REVIEW_MODES,
+    SESSION_TIMEOUT as VIDEOGEN_SESSION_TIMEOUT,
+    ProviderRefused,
+    VideogenStageError,
+    resolve_run_id as resolve_videogen_run_id,
+    run_videogen_stage,
+)
+from .schemas import vocab
+from .schemas.timed_scenes import LANGUAGES
 from .tts.audio import DEFAULT_TEMPO
 from .tts.base import TTSClient, TTSError, TTSNotConfigured
 from .tts.elevenlabs import ElevenLabsClient
 from .tts.fake import FakeTTSClient
+from .videogen.base import VideoClient
+from .videogen.fake import FakeVideoClient
+from .videogen.comfy_h3 import ComfyH3Client
+from .videogen.omni import OmniClient
+from .judgment import JudgmentError, read_video_line, slug_from_run_id
 
 log = logging.getLogger("shorts_factory")
 
@@ -132,7 +127,10 @@ def _make_client(args, log_dir: Path | None) -> ClaudeCodeClient:
 
 
 def _cmd_topic(args, paths: Paths) -> int:
-    result = run_topic_stage(args.topic, paths=paths, force=args.force)
+    result = run_topic_stage(
+        args.topic, paths=paths, force=args.force,
+        seed_url=getattr(args, "seed_url", None),
+    )
     print(result.summary)
     if not result.accepted:
         print(
@@ -144,144 +142,107 @@ def _cmd_topic(args, paths: Paths) -> int:
     return 0
 
 
-def _cmd_research(args, paths: Paths) -> int:
-    run_id = args.run_id
-    if not run_id:
-        run_id, _ = find_run_for_slug(paths, args.slug)
-
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
-    result = run_research_stage(
-        args.slug, llm=client, paths=paths, run_id=run_id,
-        force=args.force, only=args.only,
-    )
-    print(result.summary)
-    for warning in result.warnings:
-        print(f"  경고: {warning}")
-    if result.verdict == "fail":
-        return 3
-    return 0
+#: 1부 기계 검사 실패의 종료 코드. `[1]`·`[2]`는 4(엔벨로프), `[2l]`은 5(줄 정렬·번안 검사) —
+#: 고칠 자리가 다르다: 4는 ko 정본, 5는 번안 쪽이고 ko 정본은 그대로다.
+ENVELOPE_FAILURE = 4
+LOCALIZE_FAILURE = 5
 
 
-def _report(result) -> int:
-    """대본 3단계 공통 출력. 검증 실패는 4로 나가되 **산출물은 남긴다.**
+def _report(result, failure_code: int = ENVELOPE_FAILURE) -> int:
+    """1부 단계 공통 출력. 검증 실패는 `failure_code`로 나가되 **산출물은 남긴다.**
 
-    재청은 각 단계가 산출 직후에 이미 했다 (ADR-0044) — 여기 남은 오류는 그
-    결과다. 재생성 루프는 없다.
+    재생성 루프는 없다 (ADR-0044 원칙, ADR-0049) — 다시 돌릴지는 사람이
+    script.md를 읽고 정한다.
     """
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
     for error in result.errors:
         print(f"  오류: {error}", file=sys.stderr)
-    return 4 if result.errors else 0
+    return failure_code if result.errors else 0
 
 
-def _run_script_stage(args, paths: Paths, runner) -> int:
+def _run_script_stage(
+    args, paths: Paths, runner, *, failure_code: int = ENVELOPE_FAILURE, **extra
+) -> int:
     run_id = args.run_id
     if not run_id:
         run_id, _ = find_run_for_slug(paths, args.slug)
     client = _make_client(args, paths.run_dir(run_id) / "logs")
     return _report(
-        runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force)
+        runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force,
+               **extra),
+        failure_code,
     )
-
-
-def _cmd_outline(args, paths: Paths) -> int:
-    return _run_script_stage(args, paths, run_outline_stage)
-
-
-def _cmd_sceneplan(args, paths: Paths) -> int:
-    return _run_script_stage(args, paths, run_sceneplan_stage)
-
-
-def _cmd_write(args, paths: Paths) -> int:
-    return _run_script_stage(args, paths, run_write_stage)
-
-
-def _cmd_score(args, paths: Paths) -> int:
-    return _run_script_stage(args, paths, run_score_stage)
 
 
 def _cmd_draft(args, paths: Paths) -> int:
-    """[1a] → [1s] → [1w] 연속 실행.
+    """[1] 시드 기사 → 통짜 대본 script.md (ADR-0049)."""
+    return _run_script_stage(args, paths, run_draft_stage)
 
-    **앞 단계가 계약을 못 지키면 멈춘다.** 깨진 구성안 위에 씬 계획을 얹으면 실패가
-    한 단계 아래에서 다른 모양으로 나오고, 어디로 되돌아갈지 판단이 그때부터 틀린다.
+
+def _cmd_factcheck(args, paths: Paths) -> int:
+    """[2] 대본이 쓴 주장만 검증·정정 → factcheck.md (ADR-0049)."""
+    return _run_script_stage(args, paths, run_factcheck_stage)
+
+
+def _cmd_localize(args, paths: Paths) -> int:
+    """[2l] 검증 끝난 정본 → script.ja.md + script.en.md, 줄 1:1 (ADR-0056 결정 5).
+
+    이미 있는 언어 파일은 건드리지 않는다 — 한 언어만 다시 만들려면 그 파일을 지우고
+    돌린다. 검사 실패는 5로 나가고 실패한 언어의 파일은 쓰지 않는다.
     """
-    run_id = args.run_id
-    if not run_id:
-        run_id, _ = find_run_for_slug(paths, args.slug)
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
-
-    for runner in (run_outline_stage, run_sceneplan_stage, run_write_stage):
-        code = _report(
-            runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force)
-        )
-        if code:
-            print("\n앞 단계가 검증을 통과하지 못해 멈춘다.", file=sys.stderr)
-            return code
-    return 0
-
-
-def _cmd_validate(args, paths: Paths) -> int:
-    """[2]는 순수 기계 검증이라 LLM 세션이 없다 (ADR-0044)."""
-    result = run_validate_stage(
-        args.slug, paths=paths, run_id=args.run_id, force=args.force,
+    return _run_script_stage(
+        args, paths, run_localize_stage,
+        failure_code=LOCALIZE_FAILURE, langs=_parse_langs(args.lang),
     )
-    print(result.summary)
-    for warning in result.warnings:
-        print(f"  경고: {warning}")
-    for error in result.errors:
-        print(f"  오류: {error}", file=sys.stderr)
-    if not result.passed:
-        print(
-            "\n최종 게이트 실패 — 재생성하지 않는다 (ADR-0044). "
-            "오류가 [1s]·[1w]의 직후 검증을 통과하고 여기서 걸렸다면 그 검증기의 "
-            "구멍이니 검증기를 고치고, 대본을 다시 만들지는 사람이 정한다.",
-            file=sys.stderr,
-        )
-        return 5
-    return 0
 
 
-#: `--provider` 값 → 어댑터. 기본값이 실물인 이유는 `IMAGE_PROVIDERS`와 같다 —
-#: 페이크가 기본이면 **무음 wav**를 만들어 놓고 나레이션이 생겼다고 착각한 채
-#: 다음 단계로 간다. 페이크는 명시적으로 골라야 한다.
+#: `--provider` 값 → 어댑터 팩토리(언어 → 클라이언트). 기본값이 실물인 이유: 페이크가
+#: 기본이면 **무음 wav**를 만들어 놓고 나레이션이 생겼다고 착각한 채 다음 단계로 간다.
+#: 페이크는 명시적으로 골라야 한다. 목소리는 언어별이다 (ADR-0056 결정 7).
 TTS_PROVIDERS = {
-    "elevenlabs": ElevenLabsClient,
-    "fake": FakeTTSClient,
+    "elevenlabs": lambda lang: ElevenLabsClient(lang=lang),
+    "fake": lambda lang: FakeTTSClient(),
 }
 
 
-def _make_tts_client(args) -> TTSClient:
-    return TTS_PROVIDERS[args.provider]()
+def _make_tts_factory(args):
+    return TTS_PROVIDERS[args.provider]
+
+
+def _parse_langs(value: str | None) -> list[str] | None:
+    """`--lang ko,ja` → 목록. 비우면 None(= 있는 언어 전부)."""
+    if not value:
+        return None
+    langs = [item.strip().lower() for item in value.split(",") if item.strip()]
+    unknown = [l for l in langs if l not in LANGUAGES]
+    if unknown:
+        raise SystemExit(f"오류: 모르는 언어 {unknown} (가능: {', '.join(LANGUAGES)})")
+    return langs
 
 
 def _cmd_tts(args, paths: Paths) -> int:
-    """[3] 대본 → narration.wav + timing.json + scenes.timed.json.
+    """[3] 대본 → narration.{lang}.wav + timing.{lang}.json + scenes.timed.{lang}.json, 언어당 1회.
 
-    입력은 `topics/{slug}/06-script.json` 하나뿐이라 `--run-id`가 없다. run_id는 그
-    안에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
+    입력은 `topics/{slug}/script.md`(ko)와 `script.{ja,en}.md`(있는 것만)다 (ADR-0056).
+    run_id는 `runs/*/topic.json`에서 슬러그로 찾는다.
 
     돈이 드는 단계라 오류를 종료 코드로 구분한다. 고칠 자리가 저마다 다르다:
 
     - **11** — 키·voice_id·플랜 문제(`TTSNotConfigured`). 고칠 곳은 `.env`이고,
-      **호출 전에** 막히므로 과금이 없다
-    - **10** — 총 길이가 상한을 넘어 `scenes.timed.json`을 쓰지 않고 멈췄다.
-      고칠 곳은 **1부의 대본**이다 (ADR-0017 단방향 경계). `narration.wav`와
-      `timing.json`은 남는다 — 편당 과금이라 다시 사지 않아도 되게
-    - **9** — 그 밖의 호출·계약 실패
-
-    `judgment/human.json`의 게이트(`decision: go`)는 여기서 보지 않는다. 2부 진입점의
-    몫인데 그 진입점이 아직 없고, `imagegen`·`motion`·`assemble`도 마찬가지다 —
-    `[3]`에만 게이트를 다는 것은 정책을 한 커맨드에 숨기는 일이다.
+      **호출 전에** 막히므로 과금이 없다 (세 언어 전부 확인한 뒤에야 첫 호출이 나간다)
+    - **10** — 어느 언어의 총 길이가 상한을 넘어 그 언어의 실측 파일을 쓰지 않고 멈췄다.
+      고칠 곳은 **1부의 대본**이다 (ADR-0017 단방향 경계). 나레이션과 timing은 남는다
+    - **9** — 그 밖의 호출·계약 실패 (줄 수 불일치 포함 — 호출 전에 막힌다)
     """
     try:
         result = run_tts_stage(
             args.slug,
-            tts=_make_tts_client(args),
+            tts=_make_tts_factory(args),
             paths=paths,
             tempo=args.tempo,
+            langs=_parse_langs(args.lang),
             force=args.force,
             ffmpeg=args.ffmpeg,
         )
@@ -298,10 +259,38 @@ def _cmd_tts(args, paths: Paths) -> int:
     return 10 if result.over_length else 0
 
 
+def _cmd_scenetable(args, paths: Paths) -> int:
+    """[3s] 실측 줄 경계 → 씬 계약 scenes.json (ADR-0049 §5).
+
+    계약 위반은 보고·중단이고 scenes.json을 쓰지 않는다 (ADR-0044) — 세션 출력
+    원본은 logs/에 남으므로 사람이 읽고 다시 돌릴지 정한다.
+    """
+    try:
+        run_id = args.run_id or resolve_scenetable_run_id(paths, args.slug)
+        result = run_scenetable_stage(
+            args.slug,
+            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
+            paths=paths,
+            run_id=run_id,
+            force=args.force,
+            timeout=args.timeout or SCENETABLE_TIMEOUT,
+        )
+    except ScenetableStageError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 15
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    for error in result.errors:
+        print(f"  계약 위반: {error}", file=sys.stderr)
+    return 15 if result.errors else 0
+
+
 def _cmd_refpack(args, paths: Paths) -> int:
     """[4] 씬 계약 → 씬별 실사 참조 사진과 서술 (ADR-0030).
 
-    `[3]`·`[5]`와 선후가 없다 — 셋 다 06-script.json만 읽는다. 세션은 구독이라
+    `[5]`와 선후가 없다 — 둘 다 씬 계약(scenes.json)만 읽는다. 세션은 구독이라
     한계비용이 0이고 사진 내려받기도 무료다. 드는 것은 벽시계뿐이다.
 
     `--no-download`는 강등 사다리의 **서술** 칸으로 내려서 돈다 — 주소와 라이선스는
@@ -335,219 +324,152 @@ def _cmd_refpack(args, paths: Paths) -> int:
 
 
 def _cmd_prompt(args, paths: Paths) -> int:
-    """[5] 씬 계약 → 씬별 이미지 프롬프트.
+    """[5] 씬 계약 → 씬별 영상 프롬프트 (ADR-0056).
 
     run_id를 받지 않는다. 2부 산출물은 대본과 같은 run 디렉터리에 놓이고
-    그 run_id는 06-script.json에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
+    그 run_id는 씬 계약(scenes.json)에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
 
-    `--dialect`는 프롬프트 **문법**만 고른다 (ADR-0027). 구도도 네거티브 항목도 같은 룰
-    테이블에서 나오므로, 방언을 바꿔도 연출은 바뀌지 않는다. 무료·결정적이라 프로바이더를
-    바꿀 때 그냥 다시 돌리면 된다.
+    방언 옵션은 없다 — 프로바이더가 하나다 (ADR-0027의 분기는 ADR-0056이 접었다).
+    무료·결정적이라 어휘나 계약이 바뀌면 그냥 다시 돌린다.
     """
-    result = run_prompt_stage(
-        args.slug, paths=paths, force=args.force, dialect=args.dialect
-    )
+    result = run_prompt_stage(args.slug, paths=paths, force=args.force)
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
     return 0
 
 
-#: `--provider` 값 → 어댑터. 기본값이 실물인 이유는 nano_banana.py에 적혀 있다 —
-#: 페이크가 기본이면 단색 PNG를 들고 "이미지를 만들었다"고 착각한 채 다음 단계로 간다.
-#: 기본값이 `midjourney`인 이유는 ADR-0025다 — 실물 경로가 MJ이고 `[5]`의 기본 방언도
-#: `mj`다 (ADR-0027). 기본을 `nano-banana`로 두면 기본 프롬프트와 기본 어댑터가 서로
-#: 어긋나 매번 `DialectMismatch`로 멈춘다.
-IMAGE_PROVIDERS = {
-    "midjourney": MidjourneyClient,
-    "nano-banana": NanoBananaClient,
-    "fake": FakeImageClient,
+#: `--provider` 값 → 영상 어댑터. **기본은 사람이 판정 게이트에서 고른 영상 라인**이다
+#: (`judgment/human.json`의 `video_line` → `vocab.json meta.video_line.{line}.provider`,
+#: ADR-0059 결정 2). `--provider`를 주면 그것이 이긴다 — 디버깅·페이크용.
+#: CLI의 페이크는 FFmpeg `testsrc`로 **재생되는** 클립을 만든다 — 배관을 끝까지 통과시켜 보는
+#: 용도라 껍데기 바이트로는 정규화에서 막힌다.
+VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
+    "omni": OmniClient,
+    "comfy-h3": ComfyH3Client,
+    "fake": lambda: FakeVideoClient(synth=True),
 }
 
 
-def _make_image_client(args) -> ImageClient:
-    return IMAGE_PROVIDERS[args.provider]()
-
-
-#: `--video` 값 → 영상 어댑터. `none`은 어댑터를 안 만든다는 뜻이고 그때 `[7]`은 전 씬을
-#: Ken Burns로 돌린다 (단계 독립 D-3 — 선택적 입력의 부재는 경고가 아니다).
-#:
-#: 기본값이 실물인 이유는 ADR-0039다 — **전 씬 영상이 기본**이고, `motion` 기본값도
-#: `mj_video`다. 기본을 `none`으로 두면 전 씬이 조용히 강등된다.
-VIDEO_PROVIDERS: dict[str, type[VideoClient] | None] = {
-    "midjourney": MidjourneyVideoClient,
-    "none": None,
-}
-
-
-def _make_video_client(args) -> VideoClient | None:
-    factory = VIDEO_PROVIDERS[args.video]
-    return None if factory is None else factory()
-
-
-#: `--info-video` 값 → 인포씬 영상 어댑터 (ADR-0043). `none`이면 인포씬이 INFO
-#: 정지(zoompan)로 강등되고 경고가 남는다 (ADR-0043 개정) — 라벨은 화면에 남고,
-#: 조용히 사라지지 않는다. 영상 없는 테스트 배치가 이 칸으로 돈다.
-INFO_VIDEO_PROVIDERS: dict[str, type[VideoClient] | None] = {
-    "veo": VeoClient,
-    "none": None,
-}
-
-
-def _make_info_video_client(args) -> VideoClient | None:
-    factory = INFO_VIDEO_PROVIDERS[args.info_video]
-    return None if factory is None else factory()
-
-
-def _cmd_imagegen(args, paths: Paths) -> int:
-    """[6] 씬별 이미지 프롬프트 → 베이스 이미지.
-
-    입력은 runs/{run_id}/prompts.json 하나다 (ADR-0020). --slug는 run_id를 찾기 위한
-    편의일 뿐이라 --run-id를 주면 대본을 열지도 않는다.
-
-    돈이 드는 단계라 오류를 종료 코드로 구분한다 — 6은 생성 실패, 7은 앵커 0장 차단,
-    12는 방언 불일치다. 셋 다 고칠 자리가 다르다 (12는 `[5]`를 다시 돌린다).
-    """
-    try:
-        result = run_imagegen_stage(
-            images=_make_image_client(args),
-            run_id=args.run_id,
-            slug=args.slug,
-            paths=paths,
-            force=args.force,
-            allow_missing_anchors=args.allow_missing_anchors,
-            jobs=args.jobs,
-            timeout=args.timeout,
+def _resolve_video_provider(args, paths: Paths, run_id: str) -> str:
+    """`--provider` 또는 사람의 영상 라인 → 어댑터 이름. 라인이 미구현이면 멈춘다 (조용히 다른
+    라인으로 내려가지 않는다 — ADR-0059 결정 2)."""
+    if args.provider:
+        return str(args.provider)
+    slug = args.slug or slug_from_run_id(run_id)
+    line = read_video_line(paths, slug)
+    provider = vocab.video_line_meta(line).get("provider")
+    if not provider:
+        raise VideogenStageError(
+            f"영상 라인 '{line}'은 아직 어댑터가 없다 (ADR-0060 전) — judgment/human.json의 "
+            "video_line을 바꾸거나 --provider로 지정하라"
         )
-    except DialectMismatch as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 12
-    except StyleAnchorsMissing as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 7
-    except ImagegenStageError as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 6
-
-    print(result.summary)
-    for warning in result.warnings:
-        print(f"  경고: {warning}")
-    return 0
+    if provider not in VIDEO_PROVIDERS:
+        raise VideogenStageError(
+            f"vocab.json meta.video_line.{line}.provider={provider!r}가 CLI 어댑터 목록에 없다 "
+            f"(있는 것: {', '.join(sorted(VIDEO_PROVIDERS))})"
+        )
+    return str(provider)
 
 
-def _cmd_imagereview(args, paths: Paths) -> int:
-    """[6r] 만든 이미지를 판정해 사분면을 고르고 실패 씬만 다시 산다 (ADR-0031).
+def _make_video_client(args, paths: Paths, run_id: str) -> VideoClient:
+    return VIDEO_PROVIDERS[_resolve_video_provider(args, paths, run_id)]()
 
-    사분면 교체는 **이미 산 것을 고르는 일이라 과금이 0이다.** 돈이 드는 것은 `redo`
-    씬뿐이고 상한 1회다. `--no-redo`를 주면 판정만 하고 다시 사지 않는다 — 그때
-    redo 판정은 기록에 남고 이미지는 그대로 간다.
+
+def _cmd_videogen(args, paths: Paths) -> int:
+    """[7] 씬당 텍스트→영상 클립 1개 + OCR·비전 검수 + 강등 사다리 (ADR-0056).
+
+    **유료 라인(Omni)이면 토픽당 ≈$8이 나가는 단계다** (로컬 라인은 0 — ADR-0059). 종료 코드로 고칠 자리를 가른다:
+
+    - **17** — 프로바이더 전체 거절(키·플랜·파라미터). 남은 씬을 시도하지 않고 멈췄다.
+      산 클립과 기록은 남고, 고친 뒤 다시 돌리면 done 씬은 건너뛴다
+    - **8** — 그 밖의 단계 실패 (입력 부재, 클립을 못 만든 씬)
+
+    `--review none|ocr|full`: full(기본)은 씬당 비전 세션 1회가 붙는다. 세션 없이 배관만
+    보려면 ocr·none. `--provider fake`는 네트워크 없이 껍데기 클립을 만든다.
     """
     if not args.run_id and not args.slug:
         print("오류: --slug나 --run-id 중 하나는 있어야 한다", file=sys.stderr)
-        return 13
-
-    images = None if args.no_redo else _make_image_client(args)
+        return 8
     try:
-        run_id = args.run_id or resolve_imagereview_run_id(paths, args.slug)
-    except ImagereviewStageError as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 13
-
-    try:
-        result = run_imagereview_stage(
-            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
-            images=images,
-            run_id=run_id,
-            slug=args.slug,
+        run_id = resolve_videogen_run_id(paths, run_id=args.run_id, slug=args.slug)
+        llm = (
+            _make_client(args, paths.run_dir(run_id) / "logs")
+            if args.review == REVIEW_FULL else None
+        )
+        result = run_videogen_stage(
+            run_id,
+            client=_make_video_client(args, paths, run_id),
             paths=paths,
+            llm=llm,
+            review=args.review,
             force=args.force,
-            timeout=args.timeout,
-        )
-    except ImagereviewStageError as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 13
-
-    print(result.summary)
-    for warning in result.warnings:
-        print(f"  경고: {warning}")
-    return 0
-
-
-def _cmd_motion(args, paths: Paths) -> int:
-    """[7] 베이스 이미지 + 씬 계약 → 씬마다 클립 하나.
-
-    **전 씬을 영상으로 만든다** (ADR-0039). 영상은 relax라 GPU를 쓰지 않지만 씬당
-    200초 넘게 기다리므로 편당 30분대다. `--video none`이면 로컬 인코딩만 돌아
-    과금도 대기도 없다.
-
-    영상 입력은 `image_source.json`에서 온다 (ADR-0041). 그 파일이 없거나 씬의 항목이
-    없으면 그 씬은 kenburns로 **기록을 남기며** 내려간다 — 조용히 넘어가지 않는다.
-    """
-    run_id = resolve_motion_run_id(paths, run_id=args.run_id, slug=args.slug)
-    try:
-        result = run_motion_stage(
-            run_id, paths=paths, force=args.force, ffmpeg=args.ffmpeg,
-            video=_make_video_client(args),
-            video_timeout=args.video_timeout,
             jobs=args.jobs,
-            info_video=_make_info_video_client(args),
+            video_timeout=args.video_timeout,
+            session_timeout=args.timeout or VIDEOGEN_SESSION_TIMEOUT,
+            ffmpeg=args.ffmpeg,
         )
-    except MotionStageError as exc:
+    except ProviderRefused as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 17
+    except (VideogenStageError, JudgmentError) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 8
 
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
+    for outcome in result.outcomes:
+        for warning in outcome.warnings:
+            print(f"  경고: 씬 {outcome.scene_id}: {warning}")
     return 0
 
 
-def _cmd_info(args, paths: Paths) -> int:
-    """[6i] 인포씬의 CLEAN에 라벨·수치를 얹어 INFO 이미지를 만든다 (ADR-0043).
+def _cmd_ending(args, paths: Paths) -> int:
+    """[8] `[4]`가 모아 둔 실사진 → 엔딩 실사 컷 (ADR-0055).
 
-    검수를 포함한다 — 렌더된 글자를 계약 문자열과 자소 대조하고 구도 이탈을 본다.
-    검수 실패 씬은 재생성 1회 후에도 안 되면 **인포 없는 일반 영상으로 강등**되고,
-    그것은 이 커맨드의 실패가 아니다 (D-5).
+    **새로 수집하지 않는다** — 이미 라이선스를 확인하고 내려받아 둔 재고를 고른다.
+    과금 0(구독 세션 1회 + 로컬 인코딩)이고, 쓸 사진이 없으면 `ending.json`을 쓰지
+    않은 채 성공으로 끝난다. 그때 `[9]`는 엔딩 없이 지금과 똑같이 돈다 (D-3).
     """
     if not args.run_id and not args.slug:
         print("오류: --slug나 --run-id 중 하나는 있어야 한다", file=sys.stderr)
-        return 14
+        return 16
 
     try:
-        run_id = args.run_id or resolve_info_run_id(paths, args.slug)
-    except InfoStageError as exc:
-        print(f"오류: {exc}", file=sys.stderr)
-        return 14
-
-    try:
-        result = run_info_stage(
+        run_id = args.run_id or resolve_ending_run_id(paths, args.slug)
+        result = run_ending_stage(
             llm=_make_client(args, paths.run_dir(run_id) / "logs"),
-            editor=NanoBananaClient(),
             run_id=run_id,
             slug=args.slug,
             paths=paths,
             force=args.force,
-            timeout=args.timeout,
+            timeout=args.timeout or ENDING_TIMEOUT,
+            ffmpeg=args.ffmpeg,
         )
-    except InfoStageError as exc:
+    except EndingStageError as exc:
         print(f"오류: {exc}", file=sys.stderr)
-        return 14
+        return 16
 
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
-    return 0
+    for error in result.errors:
+        print(f"  계약 위반: {error}", file=sys.stderr)
+    return 16 if result.errors else 0
 
 
 def _cmd_assemble(args, paths: Paths) -> int:
-    """[9] 클립 + 씬 계약 → 자막이 박힌 timeline.mp4.
+    """[9] 클립 + 언어별 실측 → 자막·나레이션이 실린 timeline.{lang}.mp4, 언어당 1회.
 
-    입력이 전부 run 디렉터리에 있어서 `--run-id`만으로 돈다. `--slug`를 주면 경계면
-    파일(`06-script.json`)에서 run_id만 읽는다 (ADR-0017).
+    입력이 전부 run 디렉터리에 있어서 `--run-id`만으로 돈다. `--slug`를 주면
+    씬 계약(scenes.json)에서 run_id만 읽는다 (ADR-0017). `--lang`을 비우면 실측 파일이
+    있는 언어 전부다.
     """
     run_id = resolve_run_id(paths, run_id=args.run_id, slug=args.slug)
     result = run_assemble_stage(
-        run_id, paths=paths, force=args.force, ffmpeg=args.ffmpeg,
+        run_id, paths=paths, langs=_parse_langs(args.lang),
+        force=args.force, ffmpeg=args.ffmpeg,
     )
     print(result.summary)
     for warning in result.warnings:
@@ -555,27 +477,50 @@ def _cmd_assemble(args, paths: Paths) -> int:
     return 0
 
 
-def _cmd_package(args, paths: Paths) -> int:
-    topic_result = run_topic_stage(args.topic, paths=paths, force=args.force)
+def _cmd_part1(args, paths: Paths) -> int:
+    """[0]+[1]+[2]+[2l] 연속 실행 (ADR-0049·0056) — 토픽당 LLM 세션 3회.
+
+    앞 단계가 실패하면 멈춘다. 매체 부적합 반려는 3, 정본 검증 실패는 4, 번안 검사
+    실패는 5로 나간다 — 어느 쪽이든 산출물은 topics/{slug}/에 남아 있어 사람이 읽는다.
+    """
+    topic_result = run_topic_stage(
+        args.topic, paths=paths, force=args.force,
+        seed_url=getattr(args, "seed_url", None),
+    )
     print(topic_result.summary)
     if not topic_result.accepted:
         return 2
 
     client = _make_client(args, topic_result.run_dir / "logs")
-    research_result = run_research_stage(
+    draft_result = run_draft_stage(
         topic_result.slug, llm=client, paths=paths,
         run_id=topic_result.run_id, force=args.force,
     )
-    print(research_result.summary)
-    for warning in research_result.warnings:
-        print(f"  경고: {warning}")
-    return 3 if research_result.verdict == "fail" else 0
+    code = _report(draft_result)
+    if code:
+        return 3 if draft_result.unfit else code
 
+    factcheck_result = run_factcheck_stage(
+        topic_result.slug, llm=client, paths=paths,
+        run_id=topic_result.run_id, force=args.force,
+    )
+    code = _report(factcheck_result)
+    if code:
+        return code
 
-def _cmd_knowledge(args, paths: Paths) -> int:
-    store = KnowledgeStore(paths.knowledge)
-    count = store.reindex()
-    print(f"소스 카드 {count}건 → {store.index_path}")
+    localize_result = run_localize_stage(
+        topic_result.slug, llm=client, paths=paths,
+        run_id=topic_result.run_id, force=args.force,
+    )
+    code = _report(localize_result, LOCALIZE_FAILURE)
+    if code:
+        return code
+
+    print(
+        f"\n대본 완성 — topics/{topic_result.slug}/script.md 와 factcheck.md 를 읽고 "
+        "STATUS.md에 go / no-go를 기록하라 (ADR-0009). "
+        f"번안({', '.join(TARGET_LANGUAGES)})은 줄 1:1이라 ko의 go가 셋의 go다 (ADR-0056)."
+    )
     return 0
 
 
@@ -604,7 +549,7 @@ def build_parser() -> argparse.ArgumentParser:
     common = _common_options()
     parser = argparse.ArgumentParser(
         prog="shorts-factory",
-        description="지식 쇼츠 파이프라인 (1부: 토픽 패키지 생산)",
+        description="지식 쇼츠 파이프라인 (1부: 대본 생산 — ADR-0049)",
         parents=[common],
     )
     # 여기서 set_defaults를 쓰면 안 된다. parents=로 공유된 액션 객체의 default까지
@@ -614,39 +559,33 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_topic = sub.add_parser("topic", parents=[common],
-                             help="[0a] 백로그 → 토픽 패키지 폴더 생성")
+                             help="[0] 시드 — 백로그 → 토픽 폴더 + seed.md (LLM 0회)")
     p_topic.add_argument("--topic", default=None, help="소재명 또는 슬러그 (기본: 첫 '후보' 항목)")
+    p_topic.add_argument("--seed-url", default=None,
+                         help="시드 기사 URL (기본: 백로그의 '시드' 컬럼)")
     p_topic.set_defaults(func=_cmd_topic)
 
-    p_research = sub.add_parser("research", parents=[common],
-                                help="[0b] 조사→검증→비판→팩트시트")
-    p_research.add_argument("--slug", required=True)
-    p_research.add_argument("--run-id", default=None)
-    p_research.add_argument(
-        "--only", default=None,
-        help="서브스텝 하나만 실행 (01-research | 02-verify | 03-critique | 04-factsheet)",
-    )
-    p_research.set_defaults(func=_cmd_research)
-
-    # [1a]/[1s]/[1w] — 옛 [1] script 하나를 가른 것이다 (ADR-0029). 인자는 셋이 같고
-    # draft가 셋을 순서대로 부른다.
     for name, help_text, func in (
-        ("outline", "[1a] 팩트시트 → 훅 각도 + 단 구성", _cmd_outline),
-        ("sceneplan", "[1s] 구성안 → 씬 분할 + 그림·연출", _cmd_sceneplan),
-        ("write", "[1w] 씬 계획 → 자막 문장 (대본 후보)", _cmd_write),
-        ("score", "[1b] 후보 채점 → 06-script.json 선발", _cmd_score),
-        ("draft", "[1a]+[1s]+[1w] 연속 실행", _cmd_draft),
+        ("draft", "[1] 시드 기사 → 통짜 대본 script.md (ADR-0049)", _cmd_draft),
+        ("factcheck", "[2] 대본이 쓴 주장만 검증·정정 → factcheck.md (ADR-0049)", _cmd_factcheck),
     ):
         stage_parser = sub.add_parser(name, parents=[common], help=help_text)
         stage_parser.add_argument("--slug", required=True)
         stage_parser.add_argument("--run-id", default=None)
         stage_parser.set_defaults(func=func)
 
-    p_validate = sub.add_parser("validate", parents=[common],
-                                help="[2] 후보 검증 → 실패 종류에 따라 [1w]/[1s]/[1a] 재진입 (최대 3회)")
-    p_validate.add_argument("--slug", required=True)
-    p_validate.add_argument("--run-id", default=None)
-    p_validate.set_defaults(func=_cmd_validate)
+    p_localize = sub.add_parser(
+        "localize", parents=[common],
+        help="[2l] 검증 끝난 정본 → script.ja.md + script.en.md, 줄 1:1 (헤드리스 1회 — ADR-0056)",
+    )
+    p_localize.add_argument("--slug", required=True)
+    p_localize.add_argument("--run-id", default=None)
+    p_localize.add_argument(
+        "--lang", default=None,
+        help=f"번안할 언어, 쉼표 구분 (기본: {','.join(TARGET_LANGUAGES)}. "
+             "이미 있는 파일은 건드리지 않는다 — 다시 만들려면 지우고 돌린다)",
+    )
+    p_localize.set_defaults(func=_cmd_localize)
 
     p_tts = sub.add_parser(
         "tts", parents=[common],
@@ -664,7 +603,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_tts.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
     )
+    p_tts.add_argument(
+        "--lang", default=None,
+        help="돌릴 언어, 쉼표 구분 (기본: 대본 파일이 있는 언어 전부. ko는 항상 든다)",
+    )
     p_tts.set_defaults(func=_cmd_tts)
+
+    p_scenetable = sub.add_parser(
+        "scenetable", parents=[common],
+        help="[3s] 실측 줄 경계 → 씬 계약 scenes.json (2부, 헤드리스 1회 — ADR-0049)",
+    )
+    p_scenetable.add_argument("--slug", required=True)
+    p_scenetable.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
+    p_scenetable.add_argument(
+        "--timeout", type=int, default=None,
+        help=f"연출표 세션 상한(초) (기본: {SCENETABLE_TIMEOUT})",
+    )
+    p_scenetable.set_defaults(func=_cmd_scenetable)
 
     p_refpack = sub.add_parser(
         "refpack", parents=[common],
@@ -682,117 +637,78 @@ def build_parser() -> argparse.ArgumentParser:
     p_refpack.set_defaults(func=_cmd_refpack)
 
     p_prompt = sub.add_parser("prompt", parents=[common],
-                              help="[5] 씬 계약 → 씬별 이미지 프롬프트 (2부, 스펙 03 룰)")
+                              help="[5] 씬 계약 → 씬별 영상 프롬프트 (2부, 스펙 03 골격 — ADR-0056)")
     p_prompt.add_argument("--slug", required=True)
-    p_prompt.add_argument(
-        "--dialect", choices=sorted(DIALECTS), default=DEFAULT_DIALECT,
-        help=f"프롬프트 문법 (기본: {DEFAULT_DIALECT}. ADR-0027)",
-    )
     p_prompt.set_defaults(func=_cmd_prompt)
 
-    p_imagegen = sub.add_parser(
-        "imagegen", parents=[common],
-        help="[6] 씬별 이미지 프롬프트 → images/{scene_id}.jpg (2부, 편당 과금)",
+    p_videogen = sub.add_parser(
+        "videogen", parents=[common],
+        help="[7] 씬당 텍스트→영상 클립 + OCR·비전 검수 (2부 — 어댑터는 영상 라인이 정한다, ADR-0056·0059)",
     )
-    p_imagegen.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
-    p_imagegen.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
-    p_imagegen.add_argument(
-        "--provider", choices=sorted(IMAGE_PROVIDERS), default="midjourney",
-        help="이미지 어댑터 (기본: midjourney — fast, ADR-0039. 개발·테스트는 fake)",
+    p_videogen.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
+    p_videogen.add_argument("--run-id", default=None)
+    p_videogen.add_argument(
+        "--provider", choices=sorted(VIDEO_PROVIDERS), default=None,
+        help="영상 어댑터 (기본: judgment/human.json의 video_line이 정한다 — ADR-0059. "
+             "배관 확인은 fake — FFmpeg testsrc 클립, 네트워크 없음)",
     )
-    p_imagegen.add_argument(
-        "--allow-missing-anchors", action="store_true",
-        help="스타일 앵커 0장이어도 진행한다 (ADR-0005 룩 일관성 수단 없이 과금)",
+    p_videogen.add_argument(
+        "--review", choices=REVIEW_MODES, default=REVIEW_FULL,
+        help="검수 — full: 끝 프레임 OCR + 씬당 비전 세션 (기본) / ocr: OCR만 / none: 검수 없음",
     )
-    p_imagegen.add_argument(
+    p_videogen.add_argument(
         "--jobs", type=int, default=None,
-        help="동시 제출 워커 수 (기본: 프로바이더에게 묻는다 — MJ는 계정 coreSize)",
+        help="동시 워커 수 (기본: 영상 프로바이더에게 묻는다 — 429면 1로 줄인다)",
     )
-    p_imagegen.add_argument(
+    p_videogen.add_argument(
+        "--video-timeout", type=int, default=None,
+        help="영상 호출 하나를 기다리는 상한(초) (기본: 프로바이더가 정한다 — ADR-0035)",
+    )
+    p_videogen.add_argument(
         "--timeout", type=int, default=None,
-        help="잡 하나를 기다리는 상한(초) (기본: 프로바이더가 정한다 — ADR-0035)",
+        help=f"비전 검수 세션 상한(초) (기본: {VIDEOGEN_SESSION_TIMEOUT})",
     )
-    p_imagegen.set_defaults(func=_cmd_imagegen)
-
-    p_imagereview = sub.add_parser(
-        "imagereview", parents=[common],
-        help="[6r] 이미지 판정 → 사분면 교체 / 재생성 (ADR-0031, 교체는 과금 0)",
-    )
-    p_imagereview.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
-    p_imagereview.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
-    p_imagereview.add_argument(
-        "--provider", choices=sorted(IMAGE_PROVIDERS), default="midjourney",
-        help="redo 씬을 다시 살 어댑터 (기본: midjourney — fast, ADR-0039)",
-    )
-    p_imagereview.add_argument(
-        "--no-redo", action="store_true",
-        help="판정만 하고 재생성하지 않는다 (사분면 교체는 그대로 적용된다)",
-    )
-    p_imagereview.add_argument(
-        "--timeout", type=int, default=None,
-        help="판정 세션과 redo 잡의 상한(초) (기본: 각 프로바이더가 정한다 — ADR-0035)",
-    )
-    p_imagereview.set_defaults(func=_cmd_imagereview)
-
-    p_info = sub.add_parser(
-        "info", parents=[common],
-        help="[6i] 인포씬 CLEAN → INFO 이미지 (NB2 편집 + 자소 대조 검수, ADR-0043)",
-    )
-    p_info.add_argument("--slug", default=None, help="run_id를 대본에서 찾는다")
-    p_info.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
-    p_info.add_argument(
-        "--timeout", type=int, default=None,
-        help="편집 호출·검수 세션의 상한(초) (기본: 각 프로바이더가 정한다)",
-    )
-    p_info.set_defaults(func=_cmd_info)
-
-    p_motion = sub.add_parser(
-        "motion", parents=[common],
-        help="[7] 이미지+씬 계약 → clips/{scene_id}.mp4 (2부, 전 씬 영상 — ADR-0039)",
-    )
-    p_motion.add_argument("--slug", default=None, help="run_id를 대본에서 읽는다")
-    p_motion.add_argument("--run-id", default=None)
-    p_motion.add_argument(
+    p_videogen.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
     )
-    p_motion.add_argument(
-        "--video", choices=sorted(VIDEO_PROVIDERS), default="midjourney",
-        help="영상 어댑터 (기본: midjourney — relax, GPU 0). none이면 전 씬 Ken Burns",
+    p_videogen.set_defaults(func=_cmd_videogen)
+
+    p_ending = sub.add_parser(
+        "ending", parents=[common],
+        help="[8] 실사 참조 → 엔딩 실사 컷 (2부, 과금 0 — ADR-0055. 쓸 사진 없으면 스킵)",
     )
-    p_motion.add_argument(
-        "--jobs", type=int, default=None,
-        help="동시 워커 수 (기본: 영상 프로바이더에게 묻는다. 영상 씬이 없으면 1)",
+    p_ending.add_argument("--slug", default=None, help="run_id를 씬 계약에서 찾는다")
+    p_ending.add_argument("--run-id", default=None, help="run 디렉터리를 직접 지정")
+    p_ending.add_argument(
+        "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
     )
-    p_motion.add_argument(
-        "--video-timeout", type=int, default=None,
-        help="영상 잡 하나를 기다리는 상한(초) (기본: 프로바이더가 정한다 — ADR-0035)",
+    p_ending.add_argument(
+        "--timeout", type=int, default=None,
+        help=f"판정 세션 상한(초) (기본: {ENDING_TIMEOUT})",
     )
-    p_motion.add_argument(
-        "--info-video", choices=sorted(INFO_VIDEO_PROVIDERS), default="veo",
-        help="인포씬 영상 어댑터 (기본: veo — ADR-0043). none이면 INFO 정지(zoompan)로 강등 — 라벨은 남는다",
-    )
-    p_motion.set_defaults(func=_cmd_motion)
+    p_ending.set_defaults(func=_cmd_ending)
 
     p_assemble = sub.add_parser(
         "assemble", parents=[common],
-        help="[9] 클립+씬 계약 → timeline.mp4 (2부, 디졸브+자막 번인)",
+        help="[9] 클립+언어별 실측(+엔딩) → timeline.{lang}.mp4 (2부, 디졸브+자막 번인, 언어당 1회)",
     )
-    p_assemble.add_argument("--slug", default=None, help="run_id를 대본에서 읽는다")
+    p_assemble.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
     p_assemble.add_argument("--run-id", default=None)
+    p_assemble.add_argument(
+        "--lang", default=None,
+        help="조립할 언어, 쉼표 구분 (기본: 실측 파일이 있는 언어 전부)",
+    )
     p_assemble.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
     )
     p_assemble.set_defaults(func=_cmd_assemble)
 
-    p_package = sub.add_parser("package", parents=[common], help="[0a]+[0b] 연속 실행")
-    p_package.add_argument("--topic", default=None)
-    p_package.set_defaults(func=_cmd_package)
-
-    p_knowledge = sub.add_parser("knowledge", parents=[common],
-                                 help="소스 카드 라이브러리 (ADR-0012)")
-    p_knowledge.add_argument("action", choices=["reindex"],
-                             help="reindex: 카드 frontmatter에서 index.md를 다시 만든다")
-    p_knowledge.set_defaults(func=_cmd_knowledge)
+    p_part1 = sub.add_parser("part1", parents=[common],
+                             help="[0]+[1]+[2]+[2l] 연속 실행 — 토픽당 LLM 세션 3회 (ADR-0049·0056)")
+    p_part1.add_argument("--topic", default=None)
+    p_part1.add_argument("--seed-url", default=None,
+                         help="시드 기사 URL (기본: 백로그의 '시드' 컬럼)")
+    p_part1.set_defaults(func=_cmd_part1)
 
     return parser
 
@@ -829,8 +745,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args, paths)
     except (
-        TopicStageError, ResearchStageError, ScriptSessionError, ValidateStageError,
-        PromptStageError, AssembleStageError,
+        TopicStageError, DraftStageError, FactcheckStageError, LocalizeStageError,
+        RunNotFound, PromptStageError, AssembleStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1

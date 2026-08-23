@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "scene.schema.json",
-  "title": "06-script.json (씬 계약)",
-  "description": "1부의 최종 산출물이자 2부의 읽기 전용 입력 (ADR-0017). 사람이 읽는 근거는 specs/02-beat-schema.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3).",
+  "title": "scenes.json (씬 계약)",
+  "description": "[3s. scenetable]의 산출물이자 씬 계약 소비자 단계의 읽기 전용 입력 (ADR-0049 §5·0052). 사람이 읽는 근거는 specs/02-beat-schema.md에 있고, 기계가 읽는 계약은 이 파일이다 (ADR-0034 §3).",
   "type": "object",
   "required": [
     "run_id",
@@ -23,6 +23,42 @@
     "total_duration": {
       "type": "number",
       "exclusiveMinimum": 0
+    },
+    "characters": {
+      "type": "array",
+      "minItems": 1,
+      "description": "선택. 여러 씬에 반복 등장하는 인물의 정의 (ADR-0051). [3s]가 '같은 인물이 2씬 이상 반복 등장하고 서사를 지는가'를 판정해 필요할 때만 적는다. 없으면 인물 경로([6]의 시트 생성·참조 주입) 전체가 스킵된다 — 부재는 경고가 아니다 (D-3).",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "appearance"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "씬의 cast가 가리키는 키."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "한국어 이름 (대본 표기)."
+          },
+          "anchor": {
+            "type": "string",
+            "minLength": 1,
+            "description": "선택. 1차 자료 언어의 고유명사 (ADR-0042)."
+          },
+          "appearance": {
+            "type": "string",
+            "minLength": 1,
+            "description": "외형 서술 한국어 구절 — 시트 프롬프트와 cast 씬 프롬프트에 그대로 들어간다 (ADR-0027)."
+          }
+        }
+      }
     },
     "scenes": {
       "type": "array",
@@ -95,7 +131,7 @@
         },
         "framing": {
           "$ref": "vocab.json#/$defs/framing",
-          "description": "선택. [1s]가 구도 토큰 어휘에서 고른다 (ADR-0033 §3). 없으면 [5]가 beat-defaults.json의 기본값으로 떨어지고 그 씬 수를 요약에 낸다."
+          "description": "선택. [3s]가 구도 토큰 어휘에서 고른다 (ADR-0033 §3). 없으면 [5]가 beat-defaults.json의 기본값으로 떨어지고 그 씬 수를 요약에 낸다."
         },
         "transition": {
           "$ref": "vocab.json#/$defs/transition",
@@ -104,32 +140,39 @@
         "camera": {
           "$ref": "vocab.json#/$defs/camera"
         },
-        "motion": {
-          "$ref": "vocab.json#/$defs/motion"
-        },
-        "emphasis": {
+        "shot2": {
           "type": "object",
-          "description": "선택. 화면 강조 요소 (레이어 B). 숫자를 화면에 세울 씬에 [1s]가 단다.",
           "required": [
-            "type",
-            "value"
+            "framing",
+            "camera"
           ],
           "additionalProperties": false,
           "properties": {
-            "type": {
-              "$ref": "vocab.json#/$defs/overlay_type"
+            "framing": {
+              "$ref": "vocab.json#/$defs/framing"
             },
-            "value": {
-              "type": "string",
-              "minLength": 1
+            "camera": {
+              "$ref": "vocab.json#/$defs/camera"
             }
-          }
+          },
+          "description": "선택. 같은 피사체·무대의 두 번째 샷 — 있으면 2샷 씬 (ADR-0058). 샷 1은 이 씬의 framing·camera다. subject·staging·info는 씬 공통. [3s]가 어휘에서 고른다. 기본값은 없다 — 비우면 1샷. 컷 시각과 2샷 자격은 [7]이 정한다 (beat-defaults.json multishot)."
+        },
+        "cast": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": "선택. 이 씬에 등장하는 characters의 id (ADR-0051). [6]이 이 씬의 프롬프트에 캐릭터 시트 참조를 잇는다. 최상위 characters에 없는 id는 계약 위반이다."
         },
         "info": {
           "type": "object",
-          "description": "선택. 인포씬 표시 + 화면에 그려질 라벨 문구·수치 (ADR-0043). 존재하면 인포씬이다 — [6i]가 NB2 편집으로 INFO 이미지를 만들고 [7]이 Veo first/last로 영상을 만든다. labels는 화면에 그려질 문자열 그대로이고, 문자열 속 수치는 팩트시트 그라운딩 대상이다 (ADR-0007). 배치·색·지시선은 계약하지 않는다 — NB2 재량이다.",
+          "description": "선택. 화면 계측 표시 — 빨간 치수선·화살표·지시선 + 영어 라벨 (ADR-0056 결정 3). [3s]가 단다. 존재하면 [5]가 RED 절을 넣고 [7]이 끝 프레임 OCR + 비전 검수로 확인한다. labels는 화면에 그려질 문자열 그대로이고 ASCII만이다 — 한글·가나·한자는 자막이 진다 (ADR-0002). 문자열 속 수치는 factcheck.md가 검증한 것만 쓴다 (ADR-0007). target은 무엇을 재는지의 영어 서술(내용, 자유 기술), annotation은 표시 방식(어휘).",
           "required": [
-            "labels"
+            "labels",
+            "target",
+            "annotation"
           ],
           "additionalProperties": false,
           "properties": {
@@ -139,13 +182,29 @@
               "maxItems": 4,
               "items": {
                 "type": "string",
-                "minLength": 1
-              }
+                "minLength": 1,
+                "maxLength": 24,
+                "pattern": "^[ -~]+$"
+              },
+              "description": "ASCII만. 숫자 + 단위(vocab unit)가 기본, 짧은 영어 단어(3단어 이하)도 된다."
+            },
+            "target": {
+              "type": "string",
+              "minLength": 3,
+              "pattern": "^[ -~]+$",
+              "description": "무엇을 재는지 — 영어 서술. 예: the diameter of the hole / how far the cable sags below its anchor line"
+            },
+            "annotation": {
+              "$ref": "vocab.json#/$defs/annotation"
             }
           }
         },
         "notes": {
           "type": "string"
+        },
+        "staging": {
+          "$ref": "vocab.json#/$defs/staging",
+          "description": "선택. 무대 — studio(기술 모델) | location(실제 환경). [3s]가 고른다 (ADR-0056 결정 4). 비면 beat-defaults.json의 기본값."
         }
       }
     }

@@ -40,6 +40,10 @@ _HEADER_ALIASES: dict[str, str] = {
     "숫자": "numbers",
     "구체적숫자": "numbers",
     "현재접점": "present_link",
+    "시드": "seed_url",
+    "시드url": "seed_url",
+    "기사": "seed_url",
+    "url": "seed_url",
     "출처후보": "sources",
     "출처": "sources",
     "상태": "status",
@@ -61,6 +65,7 @@ class BacklogEntry:
     conditions: dict[str, bool]
     status: str
     sources: str = ""
+    seed_url: str = ""  #: 시드 기사 URL (ADR-0049)
     notes: str = ""
     line_no: int = -1  # 0-based, 상태 갱신용
     raw_cells: dict[str, str] = field(default_factory=dict)
@@ -150,6 +155,7 @@ def parse_backlog(path: Path) -> list[BacklogEntry]:
                 conditions={key: _parse_mark(row.get(key, "")) for key in CONDITION_KEYS},
                 status=row.get("status", "").strip(),
                 sources=row.get("sources", "").strip(),
+                seed_url=row.get("seed_url", "").strip().strip("<>"),
                 notes=row.get("notes", "").strip(),
                 line_no=idx,
                 raw_cells=row,

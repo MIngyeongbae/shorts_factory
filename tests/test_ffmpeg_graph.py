@@ -202,12 +202,38 @@ def test_output_matches_the_delivery_format(three_scenes):
     assert cmd[cmd.index("-crf") + 1] == str(CRF)
 
 
-def test_timeline_carries_no_audio(three_scenes):
-    """나레이션·SFX·BGM은 [10. mix]가 붙인다 (specs/05)."""
+def test_timeline_carries_no_audio_without_narration(three_scenes):
+    """나레이션이 없으면 소리 없는 영상이다. SFX·BGM은 [10. mix]가 붙인다 (specs/05)."""
     cmd = build_command(
         three_scenes, inputs=["a", "b", "c"], filter_graph="x", output="timeline.mp4"
     )
     assert "-an" in cmd
+
+
+def test_narration_is_the_last_input_and_mapped_as_audio(three_scenes):
+    """스펙 05 [9] — 그 언어의 narration.{lang}.wav를 싣는다 (ADR-0056 언어 루프)."""
+    cmd = build_command(
+        three_scenes, inputs=["a", "b", "c"], filter_graph="x", output="timeline.ko.mp4",
+        audio="narration.ko.wav",
+    )
+    inputs = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-i"]
+    assert inputs == ["a", "b", "c", "narration.ko.wav"]
+    assert "-an" not in cmd
+    assert cmd[cmd.index("-map", cmd.index("-map") + 1) + 1] == "3:a"
+    assert cmd[cmd.index("-c:a") + 1] == "aac"
+
+
+def test_pad_clones_the_last_frame_before_the_trim():
+    """[7]의 10초 클램프 — 클립이 씬보다 짧으면 tpad가 trim 앞에 선다 (스펙 05 [9])."""
+    step = clip_filter(2, length=10.4, label="c2", pad=True)
+    assert step.index("tpad=stop_mode=clone:stop_duration=10.400") < step.index("trim=end=10.400")
+    assert "tpad" not in clip_filter(2, length=10.4, label="c2")
+
+
+def test_pad_indices_select_inputs(three_scenes):
+    graph = build_filter_graph(three_scenes, subtitles="s.ass", pad_indices=[1])
+    steps = graph.split(";")
+    assert "tpad" not in steps[0] and "tpad" in steps[1] and "tpad" not in steps[2]
 
 
 def test_input_count_must_match_the_clips(three_scenes):

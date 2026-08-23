@@ -12,21 +12,18 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 
 | 파일 | 무엇 | 읽는 곳 |
 |---|---|---|
-| `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·motion·구도 토큰·오버레이·전환·방언 + 검증된 스타일 문자열 | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[1s]` 세션 프롬프트 |
-| `scene.schema.json` | 씬 계약(`06-script.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
-| `outline.schema.json` | `[1a]` 산출(`07-outline.json`) — 훅 각도와 단 구성 (ADR-0029) | `schemas/outline.py` |
-| `sceneplan.schema.json` | `[1s]` 산출(`08-sceneplan.json`) — 씬 분할·글/그림 분담·연출 선택 (ADR-0029) | `schemas/sceneplan.py` |
-| `factsheet.schema.json` | `[0b]` 산출(`04-factsheet.json`) — 하류의 유일한 사실 원천 (ADR-0007) | `schemas/factsheet.py` |
-| `script-rules.json` | 대본 결과 제약(분량 엔벨로프)과 시그니처 문구 | `schemas/script_rules.py` |
+| `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·구도 토큰·전환·무대(staging)·계측 표시(annotation)·단위(unit) + 스타일 문자열과 **프롬프트 영어 문구** (ADR-0056) | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[3s]` 세션 프롬프트, `[5]` 프롬프트 골격 |
+| `scene.schema.json` | 씬 계약(`scenes.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
+| `sceneplan.schema.json` | `[3s]` 세션 산출(씬 연출표) — 실측 줄 위의 연출·무대·계측 표시·인물 선택 (ADR-0049 §5) . 필드 정의는 `scene.schema.json`을 `$ref`한다 | `schemas/sceneplan.py` |
+| `script-rules.json` | 대본 결과 제약(분량 엔벨로프·검사 값) + 언어별 로케일 블록 자리 (ADR-0056) | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
-| `score.schema.json` | `[1b]` 산출(`09-score.json`) — 후보 채점·선발 기록 (ADR-0040) | `schemas/score.py` |
-| `image-source.schema.json` | `[6]`·`[6r]` 산출(`image_source.json`) — `[7]` 영상 입력의 사이드카 계약 (ADR-0041) | `schemas/image_source.py` |
-| `refs.schema.json` | `[4]` 산출(`refs.json`) — 씬별 실사 참조와 첨부 가능 라이선스 (ADR-0030) | `schemas/refs.py` |
+| `refs.schema.json` | `[4]` 산출(`refs.json`) — 씬별 실사 참조(서술)와 게시 가능 라이선스 (ADR-0030·0055) | `schemas/refs.py`, `[8]` |
+| `ending.schema.json` | `[8]` 산출(`ending.json`) — 엔딩 실사 컷 계약 (ADR-0055) | `schemas/ending.py` |
 
-세 스키마는 대본 하나가 세 단계를 지나며 자라는 모습이다. `08-sceneplan.json`에서
-`06-script.json`으로 **어느 필드가 그대로 건너가는지는 아무 데도 손으로 적지 않는다** —
-두 스키마의 교집합이고 `sceneplan.carried_fields()`가 계산한다.
+씬 연출표에서 `scenes.json`으로 **어느 필드가 그대로 건너가는지는 아무 데도 손으로
+적지 않는다** — `sceneplan.schema.json`과 `scene.schema.json`의 교집합이고
+`sceneplan.carried_fields()`가 계산한다 (ADR-0034).
 
 ## 규칙
 

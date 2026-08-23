@@ -37,7 +37,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from .timeline import DISSOLVE, HARD_CUT, Timeline
 
@@ -46,6 +46,7 @@ WIDTH = 1080
 HEIGHT = 1920
 FPS = 30
 VIDEO_CODEC = "libx264"
+AUDIO_CODEC = "aac"
 PIXEL_FORMAT = "yuv420p"
 PRESET = "medium"
 CRF = 18
@@ -94,15 +95,21 @@ def clip_filter(
     width: int = WIDTH,
     height: int = HEIGHT,
     fps: int = FPS,
+    pad: bool = False,
 ) -> str:
     """입력 클립 하나를 규격에 맞춘다.
 
     `trim`이 자르는 길이는 timeline.py가 정한 `clip_length`다 — 디졸브가 뒤따르면
     겹침 0.6초를 포함하고, 하드컷이나 마지막 클립이면 씬 길이만 남는다. `xfade`와
     `concat`은 두 입력의 해상도·SAR·픽셀 포맷이 같아야 하므로 여기서 통일한다.
+
+    `pad=True`면 `trim` 앞에 `tpad`로 마지막 프레임을 `length`까지 복제한다 — 클립이 씬보다
+    짧을 때(`[7]`의 10초 클램프)만이다 (스펙 05 `[9]`). 길면 `trim`이 그대로 자른다.
     """
+    head = f"tpad=stop_mode=clone:stop_duration={length:.3f}," if pad else ""
     return (
         f"[{index}:v]"
+        f"{head}"
         f"trim=end={length:.3f},setpts=PTS-STARTPTS,"
         f"scale={width}:{height},setsar=1,fps={fps},settb=1/{fps},"
         f"format={PIXEL_FORMAT}"
@@ -119,15 +126,18 @@ def build_filter_graph(
     height: int = HEIGHT,
     fps: int = FPS,
     output_label: str = "vout",
+    pad_indices: Sequence[int] = (),
 ) -> str:
     """전환 계획 + 자막 파일 → `-filter_complex` 문자열.
 
     `subtitles`/`fontsdir`은 **이미 escape된** 경로 문자열이다 (`escape_filter_path`).
+    `pad_indices`는 마지막 프레임을 정지로 늘려야 하는 입력 번호다 (`clip_filter`의 `pad`).
     """
     segments = timeline.segments
     if not segments:
         raise FFmpegError("클립이 없다")
 
+    padded = set(pad_indices)
     steps = [
         clip_filter(
             index,
@@ -136,6 +146,7 @@ def build_filter_graph(
             width=width,
             height=height,
             fps=fps,
+            pad=index in padded,
         )
         for index, segment in enumerate(segments)
     ]
@@ -181,10 +192,13 @@ def build_command(
     crf: int = CRF,
     preset: str = PRESET,
     output_label: str = "vout",
+    audio: str | None = None,
 ) -> list[str]:
     """FFmpeg 인자 배열. `inputs`는 씬 순서와 같아야 한다.
 
-    소리는 넣지 않는다(`-an`). 나레이션·SFX·BGM은 `[10. mix]`가 붙인다 (specs/05).
+    `audio`(그 언어의 `narration.{lang}.wav`, 스펙 05 `[9]` 입력)가 있으면 마지막 입력으로
+    붙여 그대로 싣는다 — 영상이 나레이션보다 길면(엔딩 꼬리) 그 구간은 무음이고 `[10. mix]`가
+    BGM으로 덮는다. 없으면 소리 없는 영상이다(`-an`). SFX·BGM은 `[10]`이 붙인다.
     """
     if len(inputs) != len(timeline.segments):
         raise FFmpegError(
@@ -194,10 +208,14 @@ def build_command(
     cmd = [executable, "-y", "-hide_banner", "-loglevel", "error"]
     for source in inputs:
         cmd += ["-i", source]
+    if audio:
+        cmd += ["-i", audio]
+    cmd += ["-filter_complex", filter_graph, "-map", f"[{output_label}]"]
+    if audio:
+        cmd += ["-map", f"{len(inputs)}:a", "-c:a", AUDIO_CODEC]
+    else:
+        cmd += ["-an"]
     cmd += [
-        "-filter_complex", filter_graph,
-        "-map", f"[{output_label}]",
-        "-an",
         "-c:v", VIDEO_CODEC,
         "-preset", preset,
         "-crf", str(crf),

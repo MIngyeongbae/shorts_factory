@@ -1,251 +1,222 @@
-"""`[1s] sceneplan` 계약 검증. CLAUDE.md 최소 기준: 픽스처 JSON → 스키마 검증 통과.
+"""`[3s. scenetable]` 세션 산출(씬 연출표) 계약 검증. CLAUDE.md 최소 기준: 픽스처 JSON → 스키마 검증 통과.
 
-**계약 테스트다** (ADR-0034 §4). `stages/`에 `[1s]`가 아직 없어도 돈다.
+**계약 테스트다** (ADR-0034 §4). 옛 씬 계획 계약(`act`·`says`·`char_budget`)의 테스트는
+그 단계와 함께 죽었다 (ADR-0049) — 여기 남은 것은 새 계약이 지키는 것들이다:
 
-이 파일이 지키는 것은 셋이다 — `says`와 `text`의 경계(`[1s]`↔`[1w]`), 단 예산의
-연결(`[1a]`↔`[1s]`), 그리고 계획이 대본으로 **그대로** 건너가는가(`[1w]`).
+- 연출은 닫힌 어휘에서만 고른다 (ADR-0033 §3)
+- 필드 정의는 `scene.schema.json`의 `$ref`다 — 두 스키마가 갈라질 수 없다 (ADR-0034)
+- 어느 필드가 `scenes.json`으로 건너가는지는 교집합(`carried_fields`)이 계산한다
+- 연출 공백은 관측이지 판정이 아니다 (ADR-0033 되돌릴 조건의 관측 수단)
 """
 
-import copy
+from __future__ import annotations
 
 import pytest
 
-from conftest import load_fixture
+from conftest import HOOVER, load_script
 from shorts_factory.schemas import vocab
 from shorts_factory.schemas.sceneplan import (
-    ACT_BUDGET_TOLERANCE,
     PLANNED_SCENE_SCHEMA,
-    act_budget_errors,
     carried_fields,
-    carry_errors,
     direction_summary,
-    plan_only_fields,
-    says_intrusions,
     validate_sceneplan,
 )
 
 
-@pytest.fixture
-def plan() -> dict:
-    return load_fixture("sceneplan_pass.json")
+def table_of(slug: str = HOOVER) -> dict:
+    """실물 씬 계약 → `[3s]` 세션이 냈을 모양의 연출표.
 
-
-@pytest.fixture
-def outline() -> dict:
-    return load_fixture("outline_pass.json")
-
-
-def as_script(plan: dict) -> dict:
-    """계획을 `[1w]`가 규칙대로 옮긴 `06-script.json`."""
-    scenes = []
-    start = 0.0
-    for planned in plan["scenes"]:
-        scene = {f: planned[f] for f in carried_fields() if f in planned}
-        scene["text"] = f"{planned['says']}입니다."
-        scene["est_start"] = start
-        scene["est_end"] = start = start + 3.8
-        scenes.append(scene)
+    `text`·`est_*`는 실측 파일의 몫이라 뺀다.
+    """
+    script = load_script(slug)
+    fields = set(carried_fields())
     return {
-        "run_id": "20260813-hubeodaem",
-        "topic": plan["topic"],
-        "total_duration": start,
-        "scenes": scenes,
+        "scenes": [
+            {key: value for key, value in scene.items() if key in fields}
+            for scene in script["scenes"]
+        ]
     }
 
 
-def test_pass_fixture_is_valid(plan):
-    assert validate_sceneplan(plan) == ([], [])
+@pytest.fixture
+def plan() -> dict:
+    return table_of()
 
 
-def test_pass_fixture_matches_its_outline(plan, outline):
-    assert validate_sceneplan(plan, outline) == ([], [])
+def test_real_script_as_a_table_is_valid(plan):
+    """실물 씬 계약에서 [3s] 몫만 추리면 연출표 계약을 그대로 통과해야 한다."""
+    errors, _warnings = validate_sceneplan(plan)
+    assert errors == []
 
 
-def test_outline_is_optional(plan):
-    """선택적 입력의 부재는 경고가 아니다 (ADR-0034 D-3)."""
-    errors, warnings = validate_sceneplan(plan, None)
-    assert errors == [] and warnings == []
-
-
-# --- says와 text의 경계 (ADR-0029) ---------------------------------------
-
-
-@pytest.mark.parametrize(
-    "says, expect",
-    [
-        ("후버댐이 한 덩어리가 아니라는 사실", False),
-        ("블록마다 따로 붓고 따로 식힌다", False),
-        ("230개 블록으로 나눈 이유", False),
-        ("후버댐은 한 덩어리가 아닙니다", True),
-        ("따로 붓고 따로 식혔죠", True),
-        ("그럼 어떻게 식혔을까?", True),
-        ("그래서 발상을 뒤집습니다", True),
-        ("환장할 노릇이죠", True),
-    ],
-)
-def test_says_is_a_gist_not_a_sentence(says, expect):
-    """존댓말 종결어미·수사 의문문·시그니처 셋만 본다. 평서 '한다'체는 요지다."""
-    assert bool(says_intrusions(says)) is expect
-
-
-def test_noun_ending_in_yo_is_not_flagged():
-    """'수요'·'필요'처럼 요로 끝나는 명사가 요지에 흔하다 — 오탐을 고정한다."""
-    assert says_intrusions("냉각 설비에 들어간 전력 수요") == []
-
-
-def test_sentence_in_says_is_an_error(plan):
-    plan["scenes"][3]["says"] = "통으로 부으려고 했습니다"
-    errors, _ = validate_sceneplan(plan)
-    assert any("says" in e and "[1w]" in e for e in errors)
-
-
-def test_라벨_숫자를_says가_되풀이하면_반려된다(plan):
-    """화면이 지는 숫자는 말이 가리키기만 한다 (ADR-0047) — [1s]에서 먼저 잡는다."""
-    scene = plan["scenes"][3]
-    scene["says"] = "공사에 3년과 2억 달러가 든 사실"
-    scene["info"] = {"labels": ["공사 3년", "2억 달러"]}
-    errors, _ = validate_sceneplan(plan)
-    assert any("says가 info.labels" in e and "ADR-0047" in e for e in errors)
-
-
-def test_라벨_숫자를_says가_가리키기만_하면_통과한다(plan):
-    scene = plan["scenes"][3]
-    scene["says"] = "공사 규모가 상상 이상이었다는 것"
-    scene["info"] = {"labels": ["공사 3년", "2억 달러"]}
+def test_topic_key_is_optional(plan):
+    plan["topic"] = "후버댐"
     errors, _ = validate_sceneplan(plan)
     assert errors == []
 
 
-# --- 분량과 씬 수 ---------------------------------------------------------
+# --- 씬 경계는 [3]의 실측이다 ---------------------------------------------
 
 
-def test_scene_count_out_of_range(plan):
-    plan["scenes"] = plan["scenes"][:8]
+def test_duplicate_scene_ids_are_rejected(plan):
+    """중복만 여기서 잡는다 — 누락·날조는 [3s]가 실측 줄과 대조해 잡는다."""
+    plan["scenes"][4]["scene_id"] = plan["scenes"][3]["scene_id"]
     errors, _ = validate_sceneplan(plan)
-    assert any("씬 8개" in e for e in errors)
+    assert any("2번 나온다" in e for e in errors)
 
 
-def test_scene_ids_must_be_sequential(plan):
-    plan["scenes"][4]["scene_id"] = 99
+def test_text_is_not_the_sessions_to_write(plan):
+    """대본 문장은 실측 파일의 값이다 (ADR-0020). 세션이 내면 계약 위반이다."""
+    plan["scenes"][0]["text"] = "세션이 지어낸 문장"
     errors, _ = validate_sceneplan(plan)
-    assert any("연번" in e for e in errors)
+    assert errors
 
 
-def test_char_budget_over_line_max_is_an_error(plan):
-    plan["scenes"][0]["char_budget"] = 60
+def test_measured_time_is_not_the_sessions_to_write(plan):
+    plan["scenes"][0]["est_start"] = 0.0
     errors, _ = validate_sceneplan(plan)
-    assert any("한 줄에 안 들어가면" in e for e in errors)
+    assert errors
 
 
-# --- 단 예산의 연결 (ADR-0029) --------------------------------------------
+def test_motion_is_not_a_field_any_more(plan):
+    """전 씬이 영상 클립이다 (ADR-0056). 세션이 motion을 내면 위반이다."""
+    plan["scenes"][0]["motion"] = "kenburns"
+    errors, _ = validate_sceneplan(plan)
+    assert errors
 
 
-def test_act_budget_within_tolerance_passes(plan, outline):
-    plan["scenes"][0]["char_budget"] += ACT_BUDGET_TOLERANCE
-    plan["scenes"][1]["char_budget"] -= ACT_BUDGET_TOLERANCE
-    assert act_budget_errors(plan, outline) == []
+def test_staging_is_the_sessions_to_choose(plan):
+    """무대는 [3s]가 어휘에서 고른다 (ADR-0056 결정 4) — 어휘 밖은 위반, 비면 기본값이다."""
+    plan["scenes"][0]["staging"] = "location"
+    assert validate_sceneplan(plan)[0] == []
+    plan["scenes"][0]["staging"] = "underwater"
+    assert any("staging" in e for e in validate_sceneplan(plan)[0])
 
 
-def test_act_budget_drift_is_an_error(plan, outline):
-    plan["scenes"][0]["char_budget"] += ACT_BUDGET_TOLERANCE + 1
-    errors = act_budget_errors(plan, outline)
-    assert any("acts/1" in e for e in errors)
+def test_info_takes_ascii_labels_target_and_annotation(plan):
+    """계측 표시 (ADR-0056 결정 3) — 라벨은 ASCII, 대상은 영어 서술, 방식은 어휘."""
+    plan["scenes"][0]["info"] = {
+        "labels": ["221 m"], "target": "the full height of the dam", "annotation": "dimension",
+    }
+    assert validate_sceneplan(plan)[0] == []
+    plan["scenes"][0]["info"]["labels"] = ["높이 221m"]
+    assert any("labels" in e for e in validate_sceneplan(plan)[0])
 
 
-def test_scene_pointing_at_a_missing_act(plan, outline):
-    plan["scenes"][0]["act"] = 7
-    errors = act_budget_errors(plan, outline)
-    assert any("07-outline.json에 없다" in e for e in errors)
+# --- 닫힌 어휘 (ADR-0033 §3) -----------------------------------------------
 
 
-def test_act_with_no_scenes(plan, outline):
-    """단을 배분해 놓고 씬을 안 만들면 그 단은 대본에서 사라진다."""
-    plan["scenes"] = [s for s in plan["scenes"] if s["act"] != 3]
-    for index, scene in enumerate(plan["scenes"], start=1):
-        scene["scene_id"] = index
-    errors = act_budget_errors(plan, outline)
-    assert any("acts/3" in e and "씬이 하나도" in e for e in errors)
+def test_unknown_framing_is_rejected(plan):
+    plan["scenes"][0]["framing"] = "dutch_angle"
+    errors, _ = validate_sceneplan(plan)
+    assert any("framing" in e for e in errors)
+
+
+def test_unknown_beat_is_rejected(plan):
+    plan["scenes"][0]["beat"] = "cliffhanger"
+    errors, _ = validate_sceneplan(plan)
+    assert any("beat" in e for e in errors)
+
+
+def test_figure_framing_is_available():
+    """인물 framing 4종은 어휘에 있다 (ADR-0051) — 연출표가 고를 수 있어야 한다."""
+    assert "figure_back" in vocab.values("framing")
+
+
+# --- 인물 블록 (ADR-0051) ---------------------------------------------------
+
+
+def test_characters_block_is_optional(plan):
+    """없으면 인물 경로 전체가 스킵된다 — 부재는 경고가 아니다 (D-3)."""
+    errors, warnings = validate_sceneplan(plan)
+    assert errors == []
+    assert not any("characters" in w for w in warnings)
+
+
+def test_characters_block_validates(plan):
+    plan["characters"] = [
+        {"id": "wonhyo", "name": "원효", "anchor": "元曉", "appearance": "잿빛 승복의 승려"}
+    ]
+    plan["scenes"][0]["cast"] = ["wonhyo"]
+    errors, _ = validate_sceneplan(plan)
+    assert errors == []
+
+
+def test_character_without_appearance_is_rejected(plan):
+    """appearance가 프롬프트에 그대로 들어간다 (ADR-0027) — 없으면 시트를 만들 수 없다."""
+    plan["characters"] = [{"id": "wonhyo", "name": "원효"}]
+    errors, _ = validate_sceneplan(plan)
+    assert any("appearance" in e for e in errors)
+
+
+def test_cast_id_format_is_checked(plan):
+    plan["scenes"][0]["cast"] = ["원효"]
+    errors, _ = validate_sceneplan(plan)
+    assert any("cast" in e for e in errors)
 
 
 # --- 연출 공백은 관측이지 판정이 아니다 (ADR-0033) --------------------------
 
 
 def test_blank_framing_warns_but_does_not_block(plan):
+    total = len(plan["scenes"])
     for scene in plan["scenes"]:
         scene.pop("framing", None)
     errors, warnings = validate_sceneplan(plan)
     assert errors == []
-    assert any("framing이 빈 씬 25/25개" in w for w in warnings)
+    assert any(f"framing이 빈 씬 {total}/{total}개" in w for w in warnings)
+
+
+def test_all_blank_anchors_warn(plan):
+    for scene in plan["scenes"]:
+        scene.pop("subject_anchor", None)
+    _errors, warnings = validate_sceneplan(plan)
+    assert any("subject_anchor가 전 씬에서" in w for w in warnings)
 
 
 def test_direction_summary_counts_without_judging(plan):
+    total = len(plan["scenes"])
     summary = direction_summary(plan)
-    assert summary["scene_count"] == 25
-    assert sum(summary["framing"].values()) == 25
-    assert summary["emphasis"] == 5
-    plan["scenes"][0].pop("transition")
-    assert direction_summary(plan)["transition"]["(없음)"] == 1
+    assert summary["scene_count"] == total
+    assert sum(summary["framing"].values()) == total
+    plan["scenes"][0]["info"] = {
+        "labels": ["221 m"], "target": "the full height of the dam", "annotation": "dimension",
+    }
+    assert direction_summary(plan)["info"] == 1
+    assert "staging" in summary
 
 
-# --- 계획 → 대본 복사 (ADR-0029의 [1w] 계약) ------------------------------
+def test_blank_staging_is_counted_not_blocked(plan):
+    """specs/05 [3s] — 빈 framing·transition·staging 씬 수를 기록에 남긴다."""
+    total = len(plan["scenes"])
+    for scene in plan["scenes"]:
+        scene.pop("staging", None)
+    errors, warnings = validate_sceneplan(plan)
+    assert errors == []
+    assert any(f"staging이 빈 씬 {total}/{total}개" in w for w in warnings)
+
+
+# --- 두 스키마는 갈라질 수 없다 (ADR-0034) ---------------------------------
 
 
 def test_carried_fields_is_the_intersection_of_two_schemas():
-    """목록을 손으로 적지 않는다. 스키마에 필드가 늘면 대조가 저절로 따라온다."""
+    """목록을 손으로 적지 않는다. 스키마에 필드가 늘면 병합이 저절로 따라온다."""
     plan_props = set(PLANNED_SCENE_SCHEMA["properties"])
     scene_props = set(vocab.SCENE_SCHEMA_DOC["$defs"]["scene"]["properties"])
     assert set(carried_fields()) == plan_props & scene_props
-    assert set(plan_only_fields()) == {"act", "says", "char_budget"}
+    # 씬 계약에만 있는 것 = 실측 파일의 몫(text·시각)뿐이다 — motion은 ADR-0056이 지웠다
     assert scene_props - plan_props == {"text", "est_start", "est_end"}
+    # 연출표에만 있는 필드는 없다 — 전부 scenes.json으로 건너간다
+    assert plan_props - scene_props == set()
 
 
-def _without_descriptions(node):
-    if isinstance(node, dict):
-        return {k: _without_descriptions(v) for k, v in node.items() if k != "description"}
-    if isinstance(node, list):
-        return [_without_descriptions(v) for v in node]
-    return node
+def test_every_planned_field_is_a_ref_into_the_scene_contract():
+    """필드 정의를 복사하지 않고 `$ref`로 가리킨다 — 정의가 갈라질 자리 자체가 없다."""
+    for name, prop in PLANNED_SCENE_SCHEMA["properties"].items():
+        assert set(prop) == {"$ref"}, f"{name}: $ref가 아니라 복사다"
+        assert prop["$ref"].startswith("scene.schema.json#/"), name
 
 
-def test_carried_fields_are_defined_identically_in_both_schemas():
-    """복사되는 필드의 **정의**가 두 스키마에서 갈리면 [1w]가 통과시킨 값이 [2]에서 걸린다."""
-    plan_props = PLANNED_SCENE_SCHEMA["properties"]
-    scene_props = vocab.SCENE_SCHEMA_DOC["$defs"]["scene"]["properties"]
-    for field in carried_fields():
-        assert _without_descriptions(plan_props[field]) == _without_descriptions(
-            scene_props[field]
-        ), f"{field}: 두 스키마의 정의가 다르다"
-
-
-def test_faithful_copy_has_no_carry_errors(plan):
-    assert carry_errors(plan, as_script(plan)) == []
-
-
-def test_changed_field_is_caught(plan):
-    script = as_script(plan)
-    script["scenes"][6]["subject"] = "다른 피사체"
-    errors = carry_errors(plan, script)
-    assert any("scenes/7/subject" in e for e in errors)
-
-
-def test_merged_scene_is_caught(plan):
-    """[1w]는 씬을 합칠 수 없다 — 합치면 그 씬의 그림 계획 하나가 버려진다."""
-    script = as_script(plan)
-    del script["scenes"][10]
-    errors = carry_errors(plan, script)
-    assert any("씬을 만들거나 합칠 수 없다" in e for e in errors)
-
-
-def test_dropped_optional_field_is_caught(plan):
-    """`subject_anchor`가 조용히 새던 자리다 (ADR-0028)."""
-    script = as_script(plan)
-    script["scenes"][0].pop("subject_anchor")
-    errors = carry_errors(plan, script)
-    assert any("subject_anchor" in e for e in errors)
-
-
-def test_carried_scenes_satisfy_the_scene_contract(plan):
-    """계획을 그대로 옮긴 대본이 씬 계약을 통과하는가 — 두 스키마가 실제로 이어지는지."""
-    from shorts_factory.schemas.scenes import schema_errors
-
-    assert schema_errors(as_script(copy.deepcopy(plan))) == []
+def test_characters_block_is_a_ref_into_the_scene_contract():
+    prop = vocab.SCENEPLAN_SCHEMA_DOC["properties"]["characters"]
+    assert prop == {"$ref": "scene.schema.json#/properties/characters"}

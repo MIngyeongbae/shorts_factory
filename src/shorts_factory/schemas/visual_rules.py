@@ -1,27 +1,33 @@
-"""시각 연출 어휘와 이미지 프롬프트 조립. specs/03-visual-rules.md.
+"""시각 연출 어휘와 영상 프롬프트 골격. specs/03-visual-rules.md 「프롬프트 골격」.
 
-**어휘는 이 파일에 없다.** `specs/schema/vocab.json`에서 로드한다 (ADR-0034 §3) —
-구도 토큰·오버레이 타입·스타일 문자열·배제 목록 전부. 여기 있는 것은 그 값을 프롬프트
-문자열로 조립하는 방법뿐이다.
+**어휘도 문구도 이 파일에 없다.** `specs/schema/vocab.json`에서 로드한다 (ADR-0034 §3) —
+구도 토큰·무대 문구·카메라 문구·계측 표시 문구·스타일 문자열·배제 목록 전부. 여기
+있는 것은 **절의 순서와 치환**뿐이다 (스펙 03: "코드는 순서와 치환만 안다").
 
 ## 연출을 고르는 것은 이 모듈이 아니다 (ADR-0033 §3)
 
-씬마다 무엇을 쓸지는 `[1s. sceneplan]`이 정해 씬 계약에 적는다. `[5. prompt]`는
-그 값을 방언으로 옮기는 변환기이고, 씬이 값을 비웠을 때만 `beat-defaults.json`의
-**기본값**으로 떨어진다 (`vocab.default_framing`). 그 표는 지시가 아니라 폴백이며
-ADR-0033을 되돌릴 자리다.
+씬마다 무엇을 쓸지는 `[3s. scenetable]`이 정해 씬 계약에 적는다. `[5. prompt]`는
+그 값을 골격에 채우는 변환기이고, 씬이 값을 비웠을 때만 `beat-defaults.json`의
+**기본값**으로 떨어진다 (`resolve_framing`·`resolve_staging`). 그 표는 지시가 아니라
+폴백이며 ADR-0033을 되돌릴 자리다.
 
-## 방언 (ADR-0027)
+## 골격 (ADR-0056 — 원카 레퍼런스 프롬프트의 구조, 프로브 15클립이 이 골격으로 찍혔다)
 
-프롬프트 **문법**은 프로바이더마다 다르다 (`build_scene_prompt`). 어휘는 다르지 않다 —
-스타일 문자열·구도 토큰·배제 항목은 방언과 무관하게 같은 값이고, 바뀌는 것은 그것을
-어떻게 적느냐뿐이다.
+    FORMAT    A {composition} shot, {seconds} seconds long, {style.base_style}.   ← 초 수는 [7]이 채운다
+    STAGING   {staging.*.phrase}
+    SUBJECT   {subject}, {subject_anchor…}, {refs.description}, {cast appearance…}. {framing.shot}.
+    CAMERA    {camera.*.video_prompt}.
+    RED       {annotation.*.phrase}(target·label 치환) + {annotation._closing}   ← info 씬만
+    NEGATIVE  No {negatives.always…}. (info 없는 씬) No {negatives.no_text…}. {negatives.audio}
+
+절 이름은 대문자 표제로 프롬프트에 그대로 박힌다. 방언은 없다 — 프로바이더가 하나다
+(ADR-0027의 분기는 ADR-0056이 접었다).
 
 ## 이 모듈이 다루지 않는 것
 
-- 전환·자막 스타일: 스펙 03에 있지만 `[9. assemble]` 소관이다
-- 카메라 워크 파라미터: `[7. motion]` 소관이다 (스펙 03의 표)
-- 레이어 A 어노테이션: 폐기됐다 (ADR-0019). 베이스 이미지는 전 씬 클린이다
+- 전환·자막 스타일: `[9. assemble]` 소관이다
+- 클립 길이: `[7]`이 실측에서 정하고 FORMAT의 `{seconds}`를 그때 채운다
+- 한국어 번역: 하지 않는다 (ADR-0001·0014). `subject`·앵커·서술은 원어 그대로다
 """
 
 from __future__ import annotations
@@ -35,33 +41,54 @@ from jsonschema import Draft202012Validator
 from . import vocab
 
 # --- 베이스 스타일 (vocab.json meta.style) -----------------------------------
-#
-# 실호출 6회로 검증한 문구다. "realism dominant"가 핵심이다 — 수채로 뭉개면 재질이
-# 사라지고, 이 채널에서 재질은 곧 설명이다 (ADR-0022·0023).
 
 BASE_STYLE: str = vocab.style("base_style")
 COMPOSITION: str = vocab.style("composition")
 ASPECT_RATIO: str = vocab.style("aspect_ratio")
 RESOLUTION: str = vocab.style("resolution")
-STYLE_ANCHOR_DIR: str = vocab.style("style_anchor_dir")
 
-#: 어느 씬에서든 베이스 이미지에 들어오면 안 되는 것. 두 목록은 각자의 프로바이더에서
-#: 실호출로 검증된 값이라(NB2 6회 / MJ 9잡) 한쪽에서 다른 쪽을 유도하지 않는다.
-GLOBAL_NEGATIVES: tuple[str, ...] = tuple(vocab.style("negatives")["nb2"])
-MJ_GLOBAL_NEGATIVES: tuple[str, ...] = tuple(vocab.style("negatives")["mj"])
+#: 어느 씬에서든 클립에 들어오면 안 되는 것 (`negatives.always`).
+GLOBAL_NEGATIVES: tuple[str, ...] = tuple(vocab.negatives("always"))
+#: `info`가 없는 씬에만 더하는 글자 금지 (`negatives.no_text`). info 씬은 RED 절의
+#: 마무리 문장("the only text in the frame")이 그 역할을 한다.
+NO_TEXT_NEGATIVES: tuple[str, ...] = tuple(vocab.negatives("no_text"))
+#: Omni가 내는 오디오는 버리지만 프롬프트에서도 막는다 (`negatives.audio`).
+AUDIO_NEGATIVE: str = str(vocab.negatives("audio"))
 
 # --- 어휘 -------------------------------------------------------------------
 
 SUBJECT_SCALES: tuple[str, ...] = vocab.values("subject_scale")
 FRAMING_TOKENS: tuple[str, ...] = vocab.values("framing")
-OVERLAY_TYPES: tuple[str, ...] = vocab.values("overlay_type")
-DIALECTS: tuple[str, ...] = vocab.values("dialect")
-DEFAULT_DIALECT: str = vocab.meta("dialect")["default"]
+STAGING_TOKENS: tuple[str, ...] = vocab.values("staging")
+ANNOTATION_TOKENS: tuple[str, ...] = vocab.values("annotation")
+
+#: 무대 → 문구. STAGING 절에 그대로 들어간다 (ADR-0056 결정 4).
+STAGINGS: dict[str, str] = {token: vocab.phrase("staging", token) for token in STAGING_TOKENS}
+#: 계측 표시 방식 → 문구 (`{target}`·`{label}` 자리 포함). RED 절에 들어간다 (결정 3).
+ANNOTATIONS: dict[str, str] = {
+    token: vocab.phrase("annotation", token) for token in ANNOTATION_TOKENS
+}
+#: RED 절의 마무리 — 라벨이 유일한 텍스트·유일한 채도 높은 빨강이라는 못.
+ANNOTATION_CLOSING: str = vocab.annotation_closing()
+#: 카메라 워크 → 영상 문구. CAMERA 절에 그대로 들어간다.
+CAMERA_PROMPTS: dict[str, str] = {
+    token: vocab.video_prompt(token) for token in vocab.values("camera")
+}
+
+#: FORMAT 절의 초 수 자리. `[5]`는 길이를 쓰지 않는다 — `[7]`이 실측에서 채운다 (스펙 05).
+SECONDS_PLACEHOLDER = "{seconds}"
+
+#: 골격의 절 이름 — 이 순서로 프롬프트에 박힌다 (스펙 03 「프롬프트 골격」).
+SECTIONS: tuple[str, ...] = ("FORMAT", "STAGING", "SUBJECT", "CAMERA", "RED", "NEGATIVE")
+
+#: 구도가 씬 계약에서 왔는지 기본값으로 떨어졌는지 (ADR-0033 되돌릴 조건의 관측 수단).
+FROM_SCENE = "scene"
+FROM_DEFAULT = "beat_default"
 
 
 @dataclass(frozen=True)
 class Framing:
-    """구도 토큰 하나. `shot`이 프롬프트에 그대로 들어간다."""
+    """구도 토큰 하나. `shot`이 SUBJECT 절 뒤에 그대로 들어간다."""
 
     token: str
     shot: str
@@ -75,41 +102,6 @@ FRAMINGS: dict[str, Framing] = {
 }
 
 
-@dataclass(frozen=True)
-class Overlay:
-    """오버레이 타입 하나.
-
-    `layer`는 ADR-0002가 정한 두 계층이다. ADR-0019로 레이어 A가 폐기돼 지금은 B뿐이다 —
-    베이스 이미지는 전 씬 클린이고, 화면에 얹히는 것은 전부 후처리 합성이다.
-    """
-
-    type: str
-    layer: str
-    #: 베이스(클린) 이미지에서 배제할 문구.
-    negative: str
-    #: emphasis.value 같은 표시할 문자열이 필요한가.
-    needs_value: bool = False
-
-
-OVERLAYS: dict[str, Overlay] = {
-    name: Overlay(name, item["layer"], item["negative"], item["needs_value"])
-    for name, item in vocab.meta("overlay").items()
-}
-
-#: 씬 항목이 아니라 전 씬 공통으로 얹히는 오버레이. `prompts.json`의 style 블록에 실린다.
-#: 소비자는 `[8. overlay]`다.
-GLOBAL_OVERLAYS: tuple[dict[str, Any], ...] = tuple(
-    {
-        "type": name,
-        "layer": item["layer"],
-        "placement": item.get("placement", ""),
-        "scope": item["scope"],
-    }
-    for name, item in vocab.meta("overlay").items()
-    if item.get("scope") == "all_scenes"
-)
-
-
 def resolve_framing(scene: dict[str, Any]) -> tuple[str, str]:
     """`(구도 토큰, 출처)`. 씬이 고른 값이 먼저다 (ADR-0033 §3).
 
@@ -119,8 +111,16 @@ def resolve_framing(scene: dict[str, Any]) -> tuple[str, str]:
     """
     token = scene.get("framing")
     if token in FRAMINGS:
-        return token, "scene"
-    return vocab.default_framing(scene["beat"], scene["subject_scale"]), "beat_default"
+        return token, FROM_SCENE
+    return vocab.default_framing(scene["beat"], scene["subject_scale"]), FROM_DEFAULT
+
+
+def resolve_staging(scene: dict[str, Any]) -> tuple[str, str]:
+    """`(무대, 출처)`. `resolve_framing`과 같은 태도다 (ADR-0056 결정 4)."""
+    token = scene.get("staging")
+    if token in STAGINGS:
+        return token, FROM_SCENE
+    return vocab.default_staging(scene["beat"]), FROM_DEFAULT
 
 
 # --- 프롬프트 조립 -----------------------------------------------------------
@@ -130,169 +130,207 @@ def clean_anchors(anchors: Sequence[str]) -> list[str]:
     """`subject_anchor`를 프롬프트에 실을 수 있는 형태로 다듬는다 (ADR-0028).
 
     **거르지 않는다.** 씬마다 어느 명사가 더 센지는 이 모듈이 알 수단이 없다 —
-    고르는 것은 `[1s. sceneplan]`이다 (G2). 여기서 하는 일은 공백 제거와 빈 항목
-    탈락뿐이다.
+    고르는 것은 `[3s]`다 (G2). 여기서 하는 일은 공백 제거와 빈 항목 탈락뿐이다.
     """
     return [item.strip() for item in anchors if item.strip()]
 
 
-def build_prompt(
-    shot: str,
+def _sentence(text: str) -> str:
+    """끝에 마침표가 없으면 붙인다. 어휘 문구는 마침표로 끝나고 씬 값은 그렇지 않다."""
+    text = text.strip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def _negation(items: Sequence[str]) -> str:
+    """배제 항목을 'No a, no b, no c.' 한 문장으로 (vocab `negatives._role`)."""
+    items = [item.strip() for item in items if item.strip()]
+    if not items:
+        return ""
+    return "No " + ", no ".join(items) + "."
+
+
+def _section(name: str, text: str) -> str:
+    """`NAME: text`. 어휘 문구가 이미 그 표제로 시작하면(RED 절) 겹쳐 붙이지 않는다."""
+    text = text.strip()
+    if text.upper().startswith(f"{name}:"):
+        return text
+    return f"{name}: {text}"
+
+
+def format_line(*, seconds: str = SECONDS_PLACEHOLDER) -> str:
+    """FORMAT 절. 초 수 자리는 `[7]`이 채운다 — 여기서는 자리표시자 그대로다."""
+    return f"A {COMPOSITION} shot, {seconds} seconds long, {BASE_STYLE}."
+
+
+def subject_line(
     subject: str,
-    visual_goal: str = "",
-    anchors: Sequence[str] = (),
-) -> str:
-    """베이스(클린) 이미지 프롬프트.
-
-    `subject`는 한국어 그대로 넣는다. 번역하면 `[1s]`가 고른 피사체가 이 단계의
-    판단으로 바뀌고(ADR-0014·0033), 외부 의존도 생긴다. 대신 그 한국어가 화면에
-    글자로 그려지지 않도록 못을 박는다 (ADR-0002).
-
-    `visual_goal`도 한국어 그대로 싣는다 (ADR-0022). **이 그림이 무엇을 설명해야
-    하는지를 모델에게 알려 주는 줄이다** — 피사체만 주면 모델은 그것을 그릴 뿐이고,
-    그 그림이 왜 거기 있는지는 모른다. 필드가 없는 옛 대본도 있으므로 비면 뺀다.
-
-    `anchors`(ADR-0028)는 **Subject 줄에 콤마 항목으로 잇는다.** 별개 줄로 빼면 그
-    한국어가 "글자로 쓰지 마라"는 지시 밖에 놓인다 — 앵커도 한국어라 같은 못이 필요하다.
-    """
-    subject_line = ", ".join([subject, *clean_anchors(anchors)])
-    lines = [
-        "Subject (Korean description — depict it; "
-        f"do not write these words in the image): {subject_line}",
-    ]
-    if visual_goal.strip():
-        lines.append(
-            "This image must explain (Korean; depict it, do not write it): "
-            f"{visual_goal}"
-        )
-    lines.extend((f"Shot: {shot}", f"Style: {BASE_STYLE}", f"Framing: {COMPOSITION}"))
-    return "\n".join(lines)
-
-
-def build_negative(overlay_types: tuple[str, ...]) -> str:
-    """베이스 이미지에서 배제할 것 = 전 씬 공통 + 이 씬에 붙는 오버레이 전부.
-
-    레이어 A가 없어져(ADR-0019) 베이스에 그려야 할 오버레이는 하나도 없다. 씬에 붙는
-    오버레이는 전부 레이어 B이므로 여기서는 **전부 배제 대상**이다.
-    """
-    items = list(GLOBAL_NEGATIVES)
-    for name in overlay_types:
-        negative = OVERLAYS[name].negative
-        if negative not in items:
-            items.append(negative)
-    return "Do not include: " + "; ".join(items) + "."
-
-
-# --- Midjourney 방언 (ADR-0027) ----------------------------------------------
-#
-# 같은 어휘의 **표기 변환**이다. 스타일 문자열도 구도 토큰도 방언마다 달라지지 않는다 —
-# 달라지는 것은 문법뿐이다: 한 줄 콤마 나열, `--ar`, `--no`.
-#
-# 실측 근거는 `runs/20260812-mj-lang-probe/`와 ADR-0025의 G3·단면 탐침이다. 특히
-# **한국어 `subject`를 그대로 넘긴다** — 영어로 옮겨도 품질이 같았고, 실패 지점은
-# 언어가 아니라 재질·정체 명사의 부재였다 (ADR-0028).
-
-
-def flatten_clauses(text: str) -> str:
-    """여러 절을 한 줄 콤마 나열로. MJ는 `:`·`;`를 구분자로 읽지 않는다."""
-    return text.replace(": ", ", ").replace("; ", ", ")
-
-
-def _mj_composition(composition: str) -> str:
-    """구도 문구에서 MJ가 쓸 부분만 남긴다. `COMPOSITION`이 유일한 출처다.
-
-    **종횡비 절은 뗀다** — `--ar`가 정하므로 프롬프트 본문에 남기면 같은 것을 두 곳에서
-    말하게 된다. 지금은 그것이 전부라 **남는 것이 없고 빈 문자열이 정상이다**
-    (ADR-0038이 레이아웃 지시를 걷어냈다).
-
-    옛 버전은 `" for subtitles"`도 잘라 냈다. *"자막을 위해 비운다는 것은 스펙의 이유이지
-    모델에게 할 말이 아니다"*가 그 이유였는데, **이유만 지우고 지시는 남겨 둔 것**이
-    문제였다 — 지금은 지시 자체가 없어져 우회가 필요 없다.
-    """
-    rest = "; ".join(
-        clause for clause in composition.split("; ") if not clause.startswith("vertical ")
-    )
-    return flatten_clauses(rest)
-
-
-#: 지금은 빈 문자열이다. `[5]`가 프롬프트를 조립할 때 걸러 낸다.
-MJ_COMPOSITION = _mj_composition(COMPOSITION)
-
-
-def build_mj_prompt(
-    shot: str,
-    subject: str,
-    visual_goal: str = "",
-    anchors: Sequence[str] = (),
-) -> str:
-    """MJ 방언의 양성 프롬프트. `--ar`까지 포함하고 `--no`는 `build_mj_negative()`가 낸다.
-
-    라벨(`Subject:`·`Shot:`)을 붙이지 않는다 — MJ는 그것을 구분자가 아니라 그릴 대상으로
-    읽는다. 그래서 NB2 프롬프트가 라벨로 하던 일("이 한국어를 그리되 글자로 쓰지 마라")은
-    `--no legible text, letters, …`가 대신한다.
-
-    앵커는 **`subject` 바로 뒤**다 (ADR-0028 G1). 실측한 문자열이 그 자리이고
-    (`홈이 파인 블록 접합면 클로즈업, 콘크리트` → 콘크리트 4/4), 뒤로 밀면 스타일·구도
-    토큰 뒤에 놓여 검증한 적 없는 배치가 된다.
-    """
-    parts = [subject.strip(), *clean_anchors(anchors)]
-    if visual_goal.strip():
-        parts.append(visual_goal.strip())
-    parts.extend((shot, flatten_clauses(BASE_STYLE), MJ_COMPOSITION))
-    # 빈 절을 거른다 — 레이아웃 지시가 없어져 MJ_COMPOSITION이 비었다 (ADR-0038).
-    # 그대로 이으면 프롬프트 끝에 쉼표만 남는다.
-    return ", ".join(p for p in parts if p.strip()) + f" --ar {ASPECT_RATIO}"
-
-
-def build_mj_negative(overlay_types: tuple[str, ...]) -> str:
-    """MJ 방언의 `--no`. 문장이 아니라 항목 나열이다."""
-    items = list(MJ_GLOBAL_NEGATIVES)
-    for name in overlay_types:
-        negative = OVERLAYS[name].negative
-        if negative not in items:
-            items.append(negative)
-    return "--no " + ", ".join(items)
-
-
-def build_scene_prompt(
-    dialect: str,
     *,
     shot: str,
-    subject: str,
-    visual_goal: str,
-    overlay_types: tuple[str, ...],
     anchors: Sequence[str] = (),
-) -> tuple[str, str]:
-    """`(prompt, negative_prompt)`를 방언에 맞게 조립한다. `[5]`가 부르는 유일한 입구다.
+    description: str = "",
+    appearances: Sequence[str] = (),
+) -> str:
+    """SUBJECT 절 — `subject`, 앵커…, 참조 서술, 인물 외형… 순서 (스펙 03).
 
-    `anchors`는 선택 필드라 비어 있는 채로 올 수 있다 (ADR-0028). 두 방언 모두 값이
-    있을 때만 싣는다 — 빈 목록이면 문자열이 앵커 도입 전과 한 바이트도 다르지 않다.
+    앵커는 **`subject` 바로 뒤**다 (ADR-0028 G1). 서술(ADR-0030)은 앵커 뒤 — 앵커가
+    대상이 무엇인가를 고정하고 서술이 어떻게 생겼는가를 더한다. 인물 외형(ADR-0051
+    서술 경로)은 그 뒤다. 전부 원어 그대로이고 번역하지 않는다 (ADR-0042).
+    구도 문구(`framing.shot`)는 그 뒤에 문장으로 붙는다 (vocab `framing._role`).
     """
-    if dialect == "mj":
-        return (
-            build_mj_prompt(shot, subject, visual_goal, anchors),
-            build_mj_negative(overlay_types),
+    parts = [subject.strip(), *clean_anchors(anchors)]
+    if description.strip():
+        parts.append(description.strip())
+    parts.extend(clean_anchors(appearances))
+    return f"{_sentence(', '.join(parts))} {_sentence(shot)}"
+
+
+#: 어휘 문구 안의 치환 자리 (vocab `annotation._role`).
+TARGET_SLOT = "{target}"
+LABEL_SLOT = "{label}"
+
+
+def split_label_clause(phrase: str) -> tuple[str, str]:
+    """계측 문구를 `(머리, 라벨 박스 절)`로 가른다.
+
+    라벨 박스 절은 **`{label}` 앞의 마지막 " and "부터 끝까지**다 — 세 어휘 문구가 전부
+    "…{target} and/, and a small red label box … reads exactly "{label}"." 꼴이고, 이
+    모양이 여러 라벨을 "각각 reads exactly로 잇는" 근거다 (스펙 03). 문구가 그 꼴이 아니면
+    실패한다 — 어휘를 고친 사람이 알아야 한다.
+    """
+    label_at = phrase.find(LABEL_SLOT)
+    if label_at < 0 or TARGET_SLOT not in phrase:
+        raise ValueError(
+            f"annotation 문구에 {TARGET_SLOT}·{LABEL_SLOT} 자리가 없다: {phrase!r}"
         )
-    if dialect == "nb2":
-        return (
-            build_prompt(shot, subject, visual_goal, anchors),
-            build_negative(overlay_types),
+    cut = phrase.rfind(" and ", 0, label_at)
+    if cut < 0:
+        raise ValueError(
+            f"annotation 문구의 라벨 절을 찾을 수 없다 (' and … {LABEL_SLOT}' 꼴이어야 한다): "
+            f"{phrase!r}"
         )
-    raise ValueError(f"모르는 방언이다: {dialect!r} (허용: {', '.join(DIALECTS)})")
+    return phrase[:cut].rstrip(","), phrase[cut:].rstrip(".")
+
+
+def red_line(*, annotation: str, target: str, labels: Sequence[str]) -> str:
+    """RED 절 — `info`가 있는 씬만. 라벨 문자열은 계약 그대로 따옴표 안에 들어간다.
+
+    어휘 문구의 `{target}`·`{label}`을 치환한다. 라벨이 하나면 문구 그대로이고, **여럿이면
+    라벨 박스 절을 라벨마다 하나씩 이어 각각 "reads exactly"가 된다** (스펙 03). 마무리
+    문장(`_closing`)이 "유일한 텍스트·유일한 빨강"을 못 박는다. 영어 문장은 전부 어휘의
+    것이다 — 여기서는 자르고 치환하고 잇기만 한다.
+    """
+    if annotation not in ANNOTATIONS:
+        raise ValueError(
+            f"annotation 어휘에 '{annotation}'이 없다 (허용: {', '.join(ANNOTATION_TOKENS)})"
+        )
+    labels = [str(label) for label in labels if str(label).strip()]
+    if not labels:
+        raise ValueError("info.labels가 비어 있다 — 계약이 막았어야 한다")
+    phrase = ANNOTATIONS[annotation]
+    target = target.strip()
+    if len(labels) == 1:
+        text = phrase.replace(TARGET_SLOT, target).replace(LABEL_SLOT, labels[0])
+    else:
+        head, clause = split_label_clause(phrase)
+        text = head.replace(TARGET_SLOT, target) + ",".join(
+            clause.replace(TARGET_SLOT, target).replace(LABEL_SLOT, label) for label in labels
+        )
+    return f"{_sentence(text)} {ANNOTATION_CLOSING}"
+
+
+def negative_items(*, has_info: bool) -> tuple[str, ...]:
+    """NEGATIVE 항목 목록 — 프로바이더의 네거티브 필드에 넣는 값. info 씬은 글자 금지를 뺀다."""
+    items = list(GLOBAL_NEGATIVES)
+    if not has_info:
+        items.extend(NO_TEXT_NEGATIVES)
+    return tuple(items)
+
+
+def negative_line(*, has_info: bool) -> str:
+    """NEGATIVE 절 — 'No …' 문장 + (info 없는 씬) 글자 금지 + 오디오 금지."""
+    sentences = [_negation(GLOBAL_NEGATIVES)]
+    if not has_info:
+        sentences.append(_negation(NO_TEXT_NEGATIVES))
+    sentences.append(AUDIO_NEGATIVE)
+    return " ".join(s for s in sentences if s)
+
+
+def build_video_prompt(
+    *,
+    subject: str,
+    shot: str,
+    staging: str,
+    camera: str,
+    anchors: Sequence[str] = (),
+    description: str = "",
+    appearances: Sequence[str] = (),
+    info: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """`(prompt, negative_prompt)` — 씬 계약을 골격에 채운 결과. `[5]`가 부르는 유일한 입구다.
+
+    판단이 없다. 씬이 준 값을 절 순서대로 놓고 어휘 문구로 치환할 뿐이다. `info`가
+    없으면 RED 절이 없고 NEGATIVE에 글자 금지가 든다; 있으면 RED 절이 있고 글자 금지는
+    RED의 마무리 문장이 대신한다 (vocab `negatives._role`).
+    """
+    if staging not in STAGINGS:
+        raise ValueError(
+            f"staging 어휘에 '{staging}'이 없다 (허용: {', '.join(STAGING_TOKENS)})"
+        )
+    if camera not in CAMERA_PROMPTS:
+        raise ValueError(
+            f"camera 어휘에 '{camera}'이 없다 (허용: {', '.join(CAMERA_PROMPTS)})"
+        )
+    has_info = bool(info)
+    lines = [
+        _section("FORMAT", format_line()),
+        _section("STAGING", STAGINGS[staging]),
+        _section(
+            "SUBJECT",
+            subject_line(
+                subject, shot=shot, anchors=anchors,
+                description=description, appearances=appearances,
+            ),
+        ),
+        _section("CAMERA", _sentence(CAMERA_PROMPTS[camera])),
+    ]
+    if has_info:
+        lines.append(
+            _section(
+                "RED",
+                red_line(
+                    annotation=str(info["annotation"]),
+                    target=str(info["target"]),
+                    labels=list(info["labels"]),
+                ),
+            )
+        )
+    lines.append(_section("NEGATIVE", negative_line(has_info=has_info)))
+    return "\n".join(lines), ", ".join(negative_items(has_info=has_info))
+
+
+def fill_seconds(prompt: str, seconds: int) -> str:
+    """FORMAT 절의 `{seconds}` 자리를 채운다 — `[7]`이 실측에서 정한 길이로 (스펙 05)."""
+    if SECONDS_PLACEHOLDER not in prompt:
+        raise ValueError(f"프롬프트에 {SECONDS_PLACEHOLDER} 자리가 없다 — [5]의 산출물이 아니다")
+    return prompt.replace(SECONDS_PLACEHOLDER, str(int(seconds)))
+
+
+def demote_info(prompt: str, negative_prompt: str) -> tuple[str, str]:
+    """RED 절을 뺀 변종 — 검수 실패 사다리의 `demoted_from: info` 칸 (스펙 05 `[7]`, ADR-0056 결정 6).
+
+    `prompts.json`의 문자열에서 `RED:` 절을 지우고 NEGATIVE 절을 **info 없는 씬의 것**으로
+    다시 만든다 (글자 금지가 든다). 어휘 문구만 쓴다 — 여기서 영어 문장을 짓지 않는다.
+    RED 절이 없는 프롬프트에 부르면 실패한다 — 강등할 것이 없다.
+    """
+    kept = [line for line in prompt.split("\n") if not line.upper().startswith("RED:")]
+    if len(kept) == len(prompt.split("\n")):
+        raise ValueError("RED 절이 없는 프롬프트다 — info 씬이 아니라 강등할 것이 없다")
+    kept = [line for line in kept if not line.upper().startswith("NEGATIVE:")]
+    kept.append(_section("NEGATIVE", negative_line(has_info=False)))
+    return "\n".join(kept), ", ".join(negative_items(has_info=False))
 
 
 # --- prompts.json 스키마 -----------------------------------------------------
-
-OVERLAY_ITEM_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "required": ["type", "layer", "value"],
-    "additionalProperties": False,
-    "properties": {
-        "type": {"enum": list(OVERLAY_TYPES)},
-        "layer": {"enum": ["A", "B"]},
-        "value": {"type": ["string", "null"]},
-    },
-}
 
 PROMPT_SCENE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -301,12 +339,13 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "beat",
         "subject_scale",
         "camera",
-        "motion",
+        "staging",
+        "staging_source",
         "framing",
         "framing_source",
+        "has_info",
         "prompt",
         "negative_prompt",
-        "overlays",
     ],
     "additionalProperties": False,
     "properties": {
@@ -314,20 +353,32 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "beat": {"type": "string", "minLength": 1},
         "subject_scale": {"enum": list(SUBJECT_SCALES)},
         "camera": {"type": "string", "minLength": 1},
-        "motion": {"type": "string", "minLength": 1},
+        # ADR-0056 결정 4 — 무대. 씬 계약의 값이거나 기본값이고, 어느 쪽인지는
+        # staging_source가 밝힌다 (framing_source와 같은 관측 수단).
+        "staging": {"enum": list(STAGING_TOKENS)},
+        "staging_source": {"enum": [FROM_SCENE, FROM_DEFAULT]},
         "framing": {"enum": list(FRAMING_TOKENS)},
         # ADR-0033 — 구도가 씬 계약에서 왔는지 기본값으로 떨어졌는지. 되돌릴 조건의
         # 관측 수단이라 산출물에 남긴다.
-        "framing_source": {"enum": ["scene", "beat_default"]},
+        "framing_source": {"enum": [FROM_SCENE, FROM_DEFAULT]},
+        # ADR-0056 결정 3·6 — 이 씬의 프롬프트에 RED 절이 있는가. [7]의 OCR 대조와
+        # 강등 사다리(RED 절을 뺀 재생성)가 이 값으로 갈린다.
+        "has_info": {"type": "boolean"},
         "prompt": {"type": "string", "minLength": 1},
         "negative_prompt": {"type": "string", "minLength": 1},
-        "overlays": {"type": "array", "items": OVERLAY_ITEM_SCHEMA},
+        # ADR-0051 — 선택. 이 씬에 등장하는 인물 id. 씬 계약의 cast를 그대로 복사해 온
+        # 값이다 (고치는 곳은 씬 계약 하나다 — ADR-0020). 외형 서술은 prompt 안에 있다.
+        "cast": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+        },
     },
 }
 
 PROMPTS_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "prompts.json ([5. prompt] 산출물)",
+    "title": "prompts.json ([5. prompt] 산출물 — 씬별 영상 지시)",
     "type": "object",
     "required": ["run_id", "topic", "source_script", "style", "scenes"],
     "additionalProperties": False,
@@ -337,27 +388,13 @@ PROMPTS_SCHEMA: dict[str, Any] = {
         "source_script": {"type": "string", "minLength": 1},
         "style": {
             "type": "object",
-            "required": [
-                "dialect",
-                "base_style",
-                "composition",
-                "aspect_ratio",
-                "resolution",
-                "style_anchors",
-                "global_overlays",
-            ],
+            "required": ["base_style", "composition", "aspect_ratio", "resolution"],
             "additionalProperties": False,
             "properties": {
-                # ADR-0027 — 이 파일이 어느 프로바이더 문법으로 쓰였는가. [6]이 자기
-                # 프로바이더와 대조한다. 필수라서 옛 prompts.json은 위반이 되는데,
-                # [5]는 무료·결정적이라 다시 돌리면 된다 (마이그레이션 단계 없음).
-                "dialect": {"enum": list(DIALECTS)},
                 "base_style": {"type": "string", "minLength": 1},
                 "composition": {"type": "string", "minLength": 1},
                 "aspect_ratio": {"const": ASPECT_RATIO},
                 "resolution": {"const": RESOLUTION},
-                "style_anchors": {"type": "string", "minLength": 1},
-                "global_overlays": {"type": "array", "items": {"type": "object"}},
             },
         },
         "scenes": {"type": "array", "minItems": 1, "items": PROMPT_SCENE_SCHEMA},

@@ -12,13 +12,13 @@ ADR-0028이 텍스트로 대상을 고정하는 데까지 갔지만 **텍스트 
 
 ## 경계 (ADR-0017)
 
-입력은 `topics/{slug}/06-script.json` 하나이고 **읽기 전용**이다. 산출은
+입력은 씬 계약(`runs/{run_id}/scenes.json`) 하나이고 **읽기 전용**이다. 산출은
 `runs/{run_id}/` 아래뿐이다 — `refs.json`과 내려받은 파일. `topics/` 아래에 아무것도
 쓰지 않는다. `[3]`·`[5]`와 선후가 없다.
 
 ## 이 단계가 판단하지 않는 것
 
-- **무엇을 그릴지.** `subject`·`subject_anchor`가 `[1s]`에서 이미 정해졌다.
+- **무엇을 그릴지.** `subject`·`subject_anchor`가 `[3s]`에서 이미 정해졌다.
   `description`은 **그것이 실제로 어떻게 생겼는지**를 더할 뿐이고, 겹치면 `subject`가
   이긴다 (ADR-0020·0030)
 - **첨부해도 되는지.** 세션은 라이선스를 **보고**하고 대조는 `_apply_license()`가 한다.
@@ -59,6 +59,7 @@ from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..llm.base import LLMClient
 from ..runstate import RunState
+from .contract import SceneContractNotFound, load_scene_contract
 from ..schemas import refs as refs_schema
 from ..schemas.scenes import validate_scenes
 from .session import ScriptSessionError, ask_json, load_prompt
@@ -67,7 +68,6 @@ log = logging.getLogger(__name__)
 
 STAGE = "4-refpack"
 PROMPT = "13-refpack.md"
-SCRIPT_FILE = "06-script.json"
 REFS_FILE = refs_schema.RECORD_FILE
 REFS_DIR = "refs"
 
@@ -180,12 +180,13 @@ def resolve_run_id(paths: Paths, slug: str) -> str:
 
     세션 로그를 어느 run 디렉터리에 남길지 정하려고 단계 실행 **전에** 필요하다.
     """
-    script = _load_json(paths.topic_dir(slug) / SCRIPT_FILE, f"씬 계약({SCRIPT_FILE})")
+    try:
+        script, _path = load_scene_contract(paths, slug)
+    except SceneContractNotFound as exc:
+        raise RefpackStageError(str(exc)) from exc
     run_id = script.get("run_id")
     if not run_id:
-        raise RefpackStageError(
-            f"{paths.topic_dir(slug) / SCRIPT_FILE}에 run_id가 없다"
-        )
+        raise RefpackStageError(f"씬 계약에 run_id가 없다 (slug={slug})")
     return str(run_id)
 
 
@@ -392,8 +393,10 @@ def run_refpack_stage(
     """`fetch=None`이면 내려받지 않고 서술만 쓴다 (`--no-download`)."""
     paths = paths or Paths.from_env()
 
-    script_path = paths.topic_dir(slug) / SCRIPT_FILE
-    script = _load_json(script_path, f"씬 계약({SCRIPT_FILE})")
+    try:
+        script, script_path = load_scene_contract(paths, slug)
+    except SceneContractNotFound as exc:
+        raise RefpackStageError(str(exc)) from exc
 
     # 읽기 전용 입력이지만 계약 위반은 여기서 막는다. 깨진 씬으로 검색어를 만들면
     # 세션 시간만 쓰고 쓸 수 없는 참조가 나온다.
