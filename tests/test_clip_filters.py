@@ -63,8 +63,9 @@ def test_frame_command_seeks_before_input():
 
 def info_prompt():
     return build_video_prompt(
-        subject="종의 구멍", shot="close-up", staging="studio", camera="static",
-        info={"labels": ["4 mm"], "target": "the diameter of the hole", "annotation": "dimension"},
+        subject_prompt="a bronze bell hanging from a beam, the small hole in its crown facing the camera",
+        staging="studio", camera="static", camera_target="holding on the hole",
+        red_prompt='one pure red dimension line spanning the diameter of the hole with a small red label box beside it with white text that reads exactly "4 mm"',
     )
 
 
@@ -103,7 +104,7 @@ def test_demote_info_keeps_the_other_sections():
 
 def test_demote_info_refuses_a_plain_scene():
     prompt, negative = build_video_prompt(
-        subject="댐", shot="wide", staging="location", camera="static",
+        subject_prompt="a concrete dam seen whole in its canyon", staging="location", camera="static",
     )
     with pytest.raises(ValueError, match="RED"):
         demote_info(prompt, negative)

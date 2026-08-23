@@ -11,7 +11,8 @@ from jsonschema import Draft202012Validator
 from conftest import load_fixture
 from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import (
-    label_number_echo,
+    labels_not_in_line,
+    line_numbers,
     visual_goal_overlap,
     ANNOTATIONS,
     BEATS,
@@ -146,22 +147,22 @@ def test_emphasis_없는_숫자_씬은_경고가_아니다():
     assert not any("emphasis" in w for w in warnings)
 
 
-def test_라벨_숫자를_text가_되풀이하면_반려된다():
-    """화면이 지는 숫자는 나레이션이 가리키기만 한다 (ADR-0047)."""
+def test_라벨_숫자는_그_줄이_말하는_숫자면_통과한다():
+    """ADR-0060 결정 4 — "11만"을 말하는 줄 위의 `110,000`은 맞는 라벨이다."""
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if "11만" in s["text"])
-    scene["info"] = info("11")  # text가 라벨 숫자를 그대로 말한다
+    scene["info"] = info("110,000 workers")
     errors, _ = validate_scenes(data)
-    assert any("되풀이" in e and "ADR-0047" in e for e in errors)
+    assert errors == []
 
 
-def test_라벨_숫자를_말이_가리키기만_하면_통과한다():
+def test_줄이_말하지_않는_숫자_라벨은_반려된다():
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
     assert not any(ch.isdigit() for ch in scene["text"])
     scene["info"] = info("110000 workers", "12 years")
     errors, _ = validate_scenes(data)
-    assert errors == []
+    assert any("말하지 않는다" in e and "ADR-0060" in e for e in errors)
 
 
 def test_숫자_없는_라벨은_에코를_재지_않는다():
@@ -172,10 +173,25 @@ def test_숫자_없는_라벨은_에코를_재지_않는다():
     assert errors == []
 
 
-def test_라벨_에코는_콤마를_정규화한다():
-    """`1,568`과 `1568`은 같은 수다 — 표기 차로 에코가 빠져나가면 안 된다."""
-    assert label_number_echo("전체 길이가 1568km였죠.", ["1,568km"]) == 1.0
-    assert label_number_echo("배관 이야기입니다.", ["1,568km"]) == 0.0
+def test_라벨_숫자는_그_줄이_말하는_숫자다():
+    """ADR-0060 결정 4 — 표기 차이는 허용하고, 줄이 말하지 않는 숫자는 잡는다."""
+    assert labels_not_in_line("전체 길이가 1568km였죠.", ["1,568 km"]) == []
+    assert labels_not_in_line("한강이 12센티 넘게 얼면", ["12 cm"]) == []
+    assert labels_not_in_line("서빙고 한 곳에만 13만 덩이가", ["130,000"]) == []
+    assert labels_not_in_line("바닥 배수로는 5도 기울여", ["5 deg"]) == []
+    assert labels_not_in_line("여섯 달 뒤에도 99%가 남았습니다", ["6 months", "99%"]) == []
+    assert labels_not_in_line("녹는 양이 0.4%뿐이에요", ["No straw 38.4%", "50% fill"]) == ["No straw 38.4%", "50% fill"]
+    assert labels_not_in_line("더운 공기는 위로 뜨니까", ["Hot air"]) == []
+    assert line_numbers("13만") == {13.0, 130000.0}
+
+
+def test_scene_with_unspoken_label_number_is_rejected():
+    data = load_fixture("scenes_pass.json")
+    scene = data["scenes"][0]
+    scene["text"] = "돌은 아무 말도 하지 않습니다."
+    scene["info"] = info("221 m")
+    errors, _ = validate_scenes(data)
+    assert any("말하지 않는다" in e for e in errors)
 
 
 # --- 계측 표시 info (ADR-0056 결정 3) -----------------------------------------
@@ -205,6 +221,8 @@ def test_non_ascii_labels_are_rejected(label):
 def test_ascii_labels_are_accepted(label):
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if not any(ch.isdigit() for ch in s["text"]))
+    # 라벨 숫자는 그 줄이 말해야 한다 (ADR-0060) — 라벨의 숫자를 줄에 넣어 둔다.
+    scene["text"] = scene["text"] + " 숫자는 221, 4, 22, 66만, 3, 2만 2천입니다."
     scene["info"] = info(label)
     errors, _ = validate_scenes(data)
     assert errors == []
@@ -221,7 +239,7 @@ def test_target_must_be_ascii_too():
 def test_every_annotation_in_the_vocabulary_is_accepted(annotation):
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if not any(ch.isdigit() for ch in s["text"]))
-    scene["info"] = info("221 m", annotation=annotation)
+    scene["info"] = info("Fortress wall", annotation=annotation)
     errors, _ = validate_scenes(data)
     assert errors == []
 

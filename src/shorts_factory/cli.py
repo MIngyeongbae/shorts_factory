@@ -1,10 +1,11 @@
 """파이프라인 오케스트레이터 CLI.
 
     python run.py topic     [--topic 소재명] [--seed-url URL]  # [0] 시드 — 폴더·run 생성
+    python run.py seedfetch --slug SLUG           # [0f] 시드 URL → seed-body.md (헤드리스 렌더, ADR-0061)
     python run.py draft     --slug SLUG           # [1] 시드 기사 → 통짜 대본 script.md
     python run.py factcheck --slug SLUG           # [2] 대본 주장 검증·정정 → factcheck.md
     python run.py localize  --slug SLUG [--lang ja,en]  # [2l] 정본 → script.ja.md + script.en.md (줄 1:1, ADR-0056)
-    python run.py part1     [--topic 소재명] [--seed-url URL]  # [0]+[1]+[2]+[2l] 연속 (ADR-0049·0056)
+    python run.py part1     [--topic 소재명] [--seed-url URL]  # [0]+[0f]+[1]+[2]+[2l] 연속 (ADR-0049·0056·0061)
     python run.py tts       --slug SLUG [--lang ko,ja,en]  # [2부] 대본 → narration.{lang}.wav + 실측 (언어당 1회)
     python run.py scenetable --slug SLUG          # [2부] ko 실측 줄 경계 → 씬 계약 scenes.json
     python run.py refpack   --slug SLUG           # [2부] 씬 계약 → 씬별 실사 참조 (사진 + 서술)
@@ -39,7 +40,11 @@ from .stages.ending import (
     resolve_run_id as resolve_ending_run_id,
     run_ending_stage,
 )
-from .stages.prompt import PromptStageError, run_prompt_stage
+from .stages.prompt import (
+    TIMEOUT as PROMPT_TIMEOUT,
+    PromptStageError,
+    run_prompt_stage,
+)
 from .stages.refpack import (
     TIMEOUT as REFPACK_TIMEOUT,
     RefpackStageError,
@@ -49,6 +54,7 @@ from .stages.refpack import (
 )
 from .runstate import RunNotFound, find_run_for_slug
 from .stages.draft import DraftStageError, run_draft_stage
+from .stages.seedfetch import SeedfetchStageError, run_seedfetch_stage
 from .stages.scenetable import (
     TIMEOUT as SCENETABLE_TIMEOUT,
     ScenetableStageError,
@@ -147,6 +153,11 @@ def _cmd_topic(args, paths: Paths) -> int:
 ENVELOPE_FAILURE = 4
 LOCALIZE_FAILURE = 5
 
+#: `[0f]`가 시드 본문을 못 얻었을 때. **파이프라인을 세우는 코드가 아니다** (D-5) —
+#: `part1`은 이 실패를 무시하고 `[1]`로 넘어가고(WebFetch 사다리가 있다), 단계를 따로
+#: 부른 사람에게만 0이 아닌 값으로 알린다.
+SEEDFETCH_FAILURE = 6
+
 
 def _report(result, failure_code: int = ENVELOPE_FAILURE) -> int:
     """1부 단계 공통 출력. 검증 실패는 `failure_code`로 나가되 **산출물은 남긴다.**
@@ -174,6 +185,23 @@ def _run_script_stage(
                **extra),
         failure_code,
     )
+
+
+def _report_seedfetch(result) -> int:
+    """`[0f]` 공통 출력. 실패는 경고로 끝난다 — 산출물이 없을 뿐 사다리가 남아 있다."""
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0 if result.passed else SEEDFETCH_FAILURE
+
+
+def _cmd_seedfetch(args, paths: Paths) -> int:
+    """[0f] 시드 URL → seed-body.md (헤드리스 렌더, ADR-0061)."""
+    result = run_seedfetch_stage(
+        args.slug, paths=paths, run_id=args.run_id, force=args.force,
+        browser=getattr(args, "browser", None),
+    )
+    return _report_seedfetch(result)
 
 
 def _cmd_draft(args, paths: Paths) -> int:
@@ -324,19 +352,32 @@ def _cmd_refpack(args, paths: Paths) -> int:
 
 
 def _cmd_prompt(args, paths: Paths) -> int:
-    """[5] 씬 계약 → 씬별 영상 프롬프트 (ADR-0056).
+    """[5] 씬 계약 → 씬별 영상 프롬프트 — 헤드리스 세션 1회 (ADR-0060).
 
     run_id를 받지 않는다. 2부 산출물은 대본과 같은 run 디렉터리에 놓이고
     그 run_id는 씬 계약(scenes.json)에 적혀 있다 (ADR-0017 "계보는 run_id로 잇는다").
 
-    방언 옵션은 없다 — 프로바이더가 하나다 (ADR-0027의 분기는 ADR-0056이 접었다).
-    무료·결정적이라 어휘나 계약이 바뀌면 그냥 다시 돌린다.
+    세션 산출이 샷 서술 계약(promptplan)을 어기면 보고·중단이고 prompts.json을 쓰지
+    않는다 (ADR-0044) — 원본은 logs/에 남는다.
     """
-    result = run_prompt_stage(args.slug, paths=paths, force=args.force)
+    try:
+        run_id = resolve_scenetable_run_id(paths, args.slug)
+        result = run_prompt_stage(
+            args.slug,
+            llm=_make_client(args, paths.run_dir(run_id) / "logs"),
+            paths=paths,
+            force=args.force,
+            timeout=args.timeout or PROMPT_TIMEOUT,
+        )
+    except (PromptStageError, ScenetableStageError) as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 16
     print(result.summary)
     for warning in result.warnings:
         print(f"  경고: {warning}")
-    return 0
+    for error in result.errors:
+        print(f"  계약 위반: {error}", file=sys.stderr)
+    return 16 if result.errors else 0
 
 
 #: `--provider` 값 → 영상 어댑터. **기본은 사람이 판정 게이트에서 고른 영상 라인**이다
@@ -478,7 +519,7 @@ def _cmd_assemble(args, paths: Paths) -> int:
 
 
 def _cmd_part1(args, paths: Paths) -> int:
-    """[0]+[1]+[2]+[2l] 연속 실행 (ADR-0049·0056) — 토픽당 LLM 세션 3회.
+    """[0]+[0f]+[1]+[2]+[2l] 연속 실행 (ADR-0049·0056·0061) — 토픽당 LLM 세션 3회.
 
     앞 단계가 실패하면 멈춘다. 매체 부적합 반려는 3, 정본 검증 실패는 4, 번안 검사
     실패는 5로 나간다 — 어느 쪽이든 산출물은 topics/{slug}/에 남아 있어 사람이 읽는다.
@@ -490,6 +531,17 @@ def _cmd_part1(args, paths: Paths) -> int:
     print(topic_result.summary)
     if not topic_result.accepted:
         return 2
+
+    # [0f] 시드 본문 렌더. **실패해도 멈추지 않는다** (D-5) — `[1]`이 WebFetch로
+    # 내려간다 (ADR-0061). 단계를 시작조차 못 하는 오류도 여기서는 경고다:
+    # 시드 본문은 있으면 좋은 것이지 체인의 조건이 아니다.
+    try:
+        _report_seedfetch(run_seedfetch_stage(
+            topic_result.slug, paths=paths, run_id=topic_result.run_id, force=args.force,
+            browser=getattr(args, "browser", None),
+        ))
+    except SeedfetchStageError as exc:
+        print(f"[0f] 건너뛴다 — {exc}")
 
     client = _make_client(args, topic_result.run_dir / "logs")
     draft_result = run_draft_stage(
@@ -565,6 +617,19 @@ def build_parser() -> argparse.ArgumentParser:
                          help="시드 기사 URL (기본: 백로그의 '시드' 컬럼)")
     p_topic.set_defaults(func=_cmd_topic)
 
+    p_seedfetch = sub.add_parser(
+        "seedfetch", parents=[common],
+        help="[0f] 시드 URL → seed-body.md (헤드리스 브라우저 렌더, LLM 0회 — ADR-0061)",
+    )
+    p_seedfetch.add_argument("--slug", required=True)
+    p_seedfetch.add_argument("--run-id", default=None)
+    p_seedfetch.add_argument(
+        "--browser", default=None,
+        help="브라우저 실행 파일 경로 (기본: Chrome → Edge 순으로 찾는다. "
+             "환경변수 SEEDFETCH_BROWSER도 같은 자리)",
+    )
+    p_seedfetch.set_defaults(func=_cmd_seedfetch)
+
     for name, help_text, func in (
         ("draft", "[1] 시드 기사 → 통짜 대본 script.md (ADR-0049)", _cmd_draft),
         ("factcheck", "[2] 대본이 쓴 주장만 검증·정정 → factcheck.md (ADR-0049)", _cmd_factcheck),
@@ -637,8 +702,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_refpack.set_defaults(func=_cmd_refpack)
 
     p_prompt = sub.add_parser("prompt", parents=[common],
-                              help="[5] 씬 계약 → 씬별 영상 프롬프트 (2부, 스펙 03 골격 — ADR-0056)")
+                              help="[5] 씬 계약 → 씬별 영상 프롬프트 (2부, 헤드리스 세션 1회 — 스펙 03 골격, ADR-0060)")
     p_prompt.add_argument("--slug", required=True)
+    p_prompt.add_argument(
+        "--timeout", type=int, default=None,
+        help=f"세션 상한(초) (기본 {PROMPT_TIMEOUT})",
+    )
     p_prompt.set_defaults(func=_cmd_prompt)
 
     p_videogen = sub.add_parser(
@@ -704,8 +773,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_assemble.set_defaults(func=_cmd_assemble)
 
     p_part1 = sub.add_parser("part1", parents=[common],
-                             help="[0]+[1]+[2]+[2l] 연속 실행 — 토픽당 LLM 세션 3회 (ADR-0049·0056)")
+                             help="[0]+[0f]+[1]+[2]+[2l] 연속 실행 — 토픽당 LLM 세션 3회 (ADR-0049·0056·0061)")
     p_part1.add_argument("--topic", default=None)
+    p_part1.add_argument("--browser", default=None,
+                         help="[0f]가 쓸 브라우저 실행 파일 경로 (기본: 자동 탐색)")
     p_part1.add_argument("--seed-url", default=None,
                          help="시드 기사 URL (기본: 백로그의 '시드' 컬럼)")
     p_part1.set_defaults(func=_cmd_part1)
@@ -745,7 +816,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args, paths)
     except (
-        TopicStageError, DraftStageError, FactcheckStageError, LocalizeStageError,
+        TopicStageError, SeedfetchStageError, DraftStageError, FactcheckStageError,
+        LocalizeStageError,
         RunNotFound, PromptStageError, AssembleStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)

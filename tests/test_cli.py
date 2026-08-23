@@ -203,15 +203,17 @@ def test_force_utf8_tolerates_streams_without_reconfigure(monkeypatch):
     assert sys.stdout.getvalue().strip() == KOREAN_SUMMARY
 
 
-# --- part1 체인 (ADR-0049·0056) ---------------------------------------------
+# --- part1 체인 (ADR-0049·0056·0061) -----------------------------------------
 
 
 def _ok(**extra):
     return SimpleNamespace(summary="ok", warnings=[], errors=[], unfit=False, **extra)
 
 
-def _patch_part1(monkeypatch, order: list[str], *, localize=None):
+def _patch_part1(monkeypatch, order: list[str], *, localize=None, seedfetch=None):
     """[0]~[2l]을 전부 페이크로 갈아 끼우고 호출 순서만 기록한다."""
+    # `seedfetch`는 `[0f]`(ADR-0061). 페이크의 기본은 **성공**이고, 실패해도
+    # 체인이 안 서는 것은 아래 test_part1_continues_when_seedfetch_fails가 본다.
     from shorts_factory import cli
 
     topic = SimpleNamespace(
@@ -219,6 +221,12 @@ def _patch_part1(monkeypatch, order: list[str], *, localize=None):
         summary="[0] ok",
     )
     monkeypatch.setattr(cli, "run_topic_stage", lambda *a, **k: (order.append("topic"), topic)[1])
+    monkeypatch.setattr(
+        cli, "run_seedfetch_stage",
+        lambda *a, **k: (order.append("seedfetch"),
+                         seedfetch or SimpleNamespace(summary="[0f] ok", warnings=[],
+                                                      passed=True))[1],
+    )
     monkeypatch.setattr(cli, "_make_client", lambda *a, **k: object())
     monkeypatch.setattr(cli, "run_draft_stage", lambda *a, **k: (order.append("draft"), _ok())[1])
     monkeypatch.setattr(
@@ -236,7 +244,7 @@ def test_part1_runs_localize_after_factcheck(monkeypatch, capsys):
     cli = _patch_part1(monkeypatch, order)
     code = cli._cmd_part1(parse(["part1"]), None)
     assert code == 0
-    assert order == ["topic", "draft", "factcheck", "localize"]
+    assert order == ["topic", "seedfetch", "draft", "factcheck", "localize"]
 
 
 def test_part1_exits_5_when_localize_check_fails(monkeypatch, capsys):
@@ -245,6 +253,33 @@ def test_part1_exits_5_when_localize_check_fails(monkeypatch, capsys):
     cli = _patch_part1(monkeypatch, order, localize=failed)
     assert cli._cmd_part1(parse(["part1"]), None) == cli.LOCALIZE_FAILURE == 5
     assert order[-1] == "localize"
+
+
+def test_part1_continues_when_seedfetch_fails(monkeypatch):
+    """`[0f]` 실패는 파이프라인을 세우지 않는다 (D-5, ADR-0061) — `[1]`이 WebFetch로 내려간다."""
+    order: list[str] = []
+    failed = SimpleNamespace(summary="[0f] 본문을 못 얻었다", warnings=["브라우저 없음"],
+                             passed=False)
+    cli = _patch_part1(monkeypatch, order, seedfetch=failed)
+
+    assert cli._cmd_part1(parse(["part1"]), None) == 0
+    assert order == ["topic", "seedfetch", "draft", "factcheck", "localize"]
+
+
+def test_part1_survives_a_seedfetch_error(monkeypatch):
+    """단계가 시작조차 못 해도 마찬가지다 — 예외가 체인을 끊지 않는다 (D-5)."""
+    from shorts_factory import cli as cli_mod
+
+    order: list[str] = []
+    cli = _patch_part1(monkeypatch, order)
+
+    def boom(*_a, **_kw):
+        order.append("seedfetch")
+        raise cli_mod.SeedfetchStageError("topic.json이 없다")
+
+    monkeypatch.setattr(cli, "run_seedfetch_stage", boom)
+    assert cli._cmd_part1(parse(["part1"]), None) == 0
+    assert order == ["topic", "seedfetch", "draft", "factcheck", "localize"]
 
 
 def test_part1_stops_before_localize_when_factcheck_fails(monkeypatch):

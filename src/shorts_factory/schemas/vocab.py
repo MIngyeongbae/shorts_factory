@@ -51,6 +51,7 @@ def load(name: str) -> dict[str, Any]:
 VOCAB: dict[str, Any] = load("vocab.json")
 SCENE_SCHEMA_DOC: dict[str, Any] = load("scene.schema.json")
 SCENEPLAN_SCHEMA_DOC: dict[str, Any] = load("sceneplan.schema.json")
+PROMPTPLAN_SCHEMA_DOC: dict[str, Any] = load("promptplan.schema.json")
 REFS_SCHEMA_DOC: dict[str, Any] = load("refs.schema.json")
 ENDING_SCHEMA_DOC: dict[str, Any] = load("ending.schema.json")
 SUBTITLE_STYLE: dict[str, Any] = load("subtitle-style.json")
@@ -64,6 +65,7 @@ REGISTRY: Registry = Registry().with_resources(
         ("vocab.json", VOCAB),
         ("scene.schema.json", SCENE_SCHEMA_DOC),
         ("sceneplan.schema.json", SCENEPLAN_SCHEMA_DOC),
+        ("promptplan.schema.json", PROMPTPLAN_SCHEMA_DOC),
         ("refs.schema.json", REFS_SCHEMA_DOC),
         ("ending.schema.json", ENDING_SCHEMA_DOC),
     )
@@ -133,6 +135,22 @@ def video_prompt(camera: str) -> str:
         return str(VOCAB["meta"]["camera"][camera]["video_prompt"])
     except KeyError as exc:  # pragma: no cover - 계약 파일이 깨진 경우
         raise KeyError(f"vocab.json meta.camera.{camera}에 video_prompt가 없다") from exc
+
+
+def camera_target_forbidden_words() -> tuple[str, ...]:
+    """`camera_target`에 들어오면 안 되는 카메라 워크 단어 (`meta.camera._target_forbidden_words`, ADR-0060).
+
+    워크는 어휘의 `camera` 문구에서만 온다 — 세션의 착지 구절이 새 워크를 지시하면 닫힌 어휘가 샌다.
+    """
+    return tuple(str(w) for w in VOCAB["meta"]["camera"].get("_target_forbidden_words", []))
+
+
+def only_in_red_words() -> tuple[str, ...]:
+    """SUBJECT·착지에 들어오면 안 되는 계측 표시 단어 (`meta.annotation._only_in_red_words`, ADR-0060).
+
+    빨강·화살표·라벨은 RED 절의 것이다 — 다른 절에 새면 RED를 뗀 강등 재생성에서도 빨강이 남는다.
+    """
+    return tuple(str(w) for w in VOCAB["meta"]["annotation"].get("_only_in_red_words", []))
 
 
 def annotation_closing() -> str:

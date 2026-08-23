@@ -2,6 +2,7 @@ from .draft import DraftResult, DraftStageError, run_draft_stage
 from .factcheck import FactcheckResult, FactcheckStageError, run_factcheck_stage
 from .prompt import PromptResult, PromptStageError, run_prompt_stage
 from .scenetable import ScenetableResult, ScenetableStageError, run_scenetable_stage
+from .seedfetch import SeedfetchResult, SeedfetchStageError, run_seedfetch_stage
 from .topic import TopicResult, TopicStageError, run_topic_stage
 
 __all__ = [
@@ -17,6 +18,9 @@ __all__ = [
     "ScenetableResult",
     "ScenetableStageError",
     "run_scenetable_stage",
+    "SeedfetchResult",
+    "SeedfetchStageError",
+    "run_seedfetch_stage",
     "TopicResult",
     "TopicStageError",
     "run_topic_stage",

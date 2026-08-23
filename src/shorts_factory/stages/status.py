@@ -34,9 +34,10 @@ _STATUS_RE = re.compile(r"^#\s*STATUS:\s*(\S+)", re.MULTILINE)
 
 #: 체크리스트 항목 = RunState의 단계 키다 (`stages/*.py`의 `STAGE` 상수와 같은 값).
 #: 라벨을 따로 적어 두지 않는 이유는 두 벌이 되면 갈라지기 때문이고, 키에서 만든다.
-#: 1부는 네 단계다 (ADR-0049 + ADR-0056의 `[2l]`).
+#: 1부는 다섯 단계다 (ADR-0049 + ADR-0056의 `[2l]` + ADR-0061의 `[0f]`).
 _CHECKLIST: tuple[str, ...] = (
     "0-seed",
+    "0f-seedfetch",
     "1-draft",
     "2-factcheck",
     "2l-localize",

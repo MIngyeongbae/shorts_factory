@@ -21,8 +21,9 @@
 | 스타일 | **고르지 않는다** | `vocab.json` `style` — 전 씬 공통 고정 |
 | 모션 | **없다** — 전 씬이 영상 클립이다 (ADR-0056). `motion` 어휘는 삭제됐다 | — |
 
-`[5. prompt]`는 판단하지 않는다. 씬 계약을 아래 「프롬프트 골격」에 채우는 변환기다.
-씬이 연출 필드를 비웠을 때만 `specs/schema/beat-defaults.json`의 기본값으로 떨어지고,
+`[5. prompt]`는 **연출을 고르지 않는다** — 씬 계약의 선택을 서술로 구현한다 (ADR-0060). 헤드리스
+세션이 씬마다 SUBJECT 단락·카메라 착지·RED 기하를 영어로 쓰고, 코드가 아래 「프롬프트 골격」에
+얹는다. 씬이 연출 필드를 비웠을 때만 `specs/schema/beat-defaults.json`의 기본값으로 떨어지고,
 **그 씬 수를 요약에 낸다.**
 
 ## 베이스 스타일 (전 씬 공통) — 자유화 대상이 아니다
@@ -46,30 +47,36 @@
 - **글자는 `info.labels`만 그린다.** 그 밖의 글자·숫자·로고·워터마크는 배제 절에 있다
   (`vocab.json`의 `style.negatives`). 한국어·일본어는 절대 화면에 그리지 않는다 (ADR-0002)
 
-## 프롬프트 골격 (ADR-0056)
+## 프롬프트 골격 (ADR-0056 — ADR-0060 개정)
 
-`[5]`가 씬 계약을 채워 넣는 순서다. 절 이름은 대문자 표제로 프롬프트에 그대로 박힌다 —
-원카 레퍼런스 프롬프트의 골격이고, 프로브 9+6클립이 이 골격으로 찍혔다.
+원카 레퍼런스 프롬프트의 골격이다. 골격 문구는 어휘, **SUBJECT·착지·RED는 `[5]` 세션의 단락**이다.
 
 ```
 FORMAT    A vertical 9:16 shot, {N} seconds long, {style.base_style}.     ← N은 [7]이 채운다
 STAGING   {staging 문구}                                                  ← vocab staging.{value}.phrase
-SUBJECT   {subject}, {subject_anchor…}, {refs.description}, {cast appearance…}
-CAMERA    {camera 문구}                                                   ← vocab camera.{value}.video_phrase
-RED       {annotation 문구} measuring {info.target}, with a small red label box
-          reading exactly "{info.labels[0]}" … — the only saturated red and the only
-          text in the frame.                                             ← info가 있는 씬만
+SUBJECT   {subject_prompt}                                                ← 세션: 설명의 무대, 영어 단락
+CAMERA    {camera 문구}, {camera_target}.                                 ← vocab camera.{value}.video_phrase + 세션의 착지
+RED       {red_prompt} + {annotation._closing}                            ← 세션: 보조선 기하 + 라벨 따옴표째. info 씬만
 NEGATIVE  {style.negatives} + (info 없는 씬) "No text, no letters, no numbers, no labels."
           + "No background music."
 ```
 
-- **문구는 전부 `vocab.json`에서 온다.** `staging.*.phrase`·`camera.*.video_phrase`·
-  `annotation.*.phrase`·`style.base_style`·`style.negatives`. 코드는 순서와 치환만 안다
-- `SUBJECT`의 한국어는 번역하지 않는다 (ADR-0001·0014·0027 실측 — 모델은 한국어 서술을 받는다).
-  고유명사는 1차 자료 언어다 (아래 「앵커의 언어」)
-- **`RED`는 `info`가 있는 씬에만 있고, 라벨 문자열은 계약 그대로 따옴표 안에 넣는다.** 여러
-  라벨이면 각각 "reading exactly"로 잇는다. 빨강은 계측 표시에만 쓰고 다른 빨간 물체를
-  프롬프트에 넣지 않는다 — 검수가 "유일한 채도 높은 빨강"을 본다
+- **골격 문구는 전부 `vocab.json`에서 온다.** `staging.*.phrase`·`camera.*.video_phrase`·
+  `style.base_style`·`style.negatives`·`annotation._closing`. 코드는 순서와 치환만 안다
+- **세션 단락의 계약은 `specs/schema/promptplan.schema.json`이다** (ADR-0060 결정 3): 영어·ASCII만
+  (한국어 한 글자도 없다 — 모델이 글자로 그린다), 길이는 스키마의 `minLength`/`maxLength`,
+  `red_prompt`는 `info.labels`의 각 문자열을 **큰따옴표째** 포함, `camera_target`에 워크 단어
+  (`vocab.json` `camera._target_forbidden_words`) 금지, 씬 id는 계약과 일치. 위반은 보고·중단이다
+- **SUBJECT는 설명의 무대다.** `visual_goal`이 말하는 것을 *보이게* 하는 배치 — 비교면 나란히 놓고
+  무엇이 같고 다른지, 단면이면 절단면에 무엇이 보이는지, 흐름이면 어디서 어디로. 고유명사는
+  로마자 이름 + 형태·재질·배치로 푼다 (모델은 이름을 모른다). 반복 피사체는 매 씬 같은 서술을
+  다시 싣는다 — 클립은 독립 생성이다. 세션 입력은 대본 전문·씬 계약(값 + 어휘 문구)·`factcheck.md`·
+  `refs.json` 서술·`characters`다 (스펙 05 `[5]`). 원카랩 참조 프롬프트가 밀도의 기준이다
+  (`prompts/05-prompt.md`)
+- **연출은 씬 계약의 것이다** (ADR-0033 §3). 세션은 `framing`의 구도 문구가 말하는 구도로 서술하고
+  `camera`의 워크를 바꾸지 못한다 — 착지(무엇에 닿는가)만 적는다
+- **`RED`는 `info`가 있는 씬에만 있고, 라벨 문자열은 계약 그대로 따옴표 안에 넣는다.** 빨강은
+  계측 표시에만 쓰고 다른 빨간 물체를 프롬프트에 넣지 않는다 — 검수가 "유일한 채도 높은 빨강"을 본다
 - **길이·컷 시각은 `[5]`가 쓰지 않는다.** `{seconds}`·`{cut}` 자리를 `[7]`이 실측에서 채운다
   (ADR-0056 결정 1·2, ADR-0058 결정 3)
 - **2샷 씬(`shot2`, ADR-0058)은 변종 `prompt_shot2`를 하나 더 낸다.** FORMAT 끝에 어휘의
@@ -82,10 +89,14 @@ NEGATIVE  {style.negatives} + (info 없는 씬) "No text, no letters, no numbers
   `[3s]`가 `shot2`를 떼고, 이 변종은 나오지 않는다
 - 자막 자리·피사체 배치·"no people" 같은 즉흥 제약을 코드가 더하지 않는다 — 필요하면 어휘에
 
-## 앵커의 언어 (ADR-0042)
+## 앵커의 언어 (ADR-0042 — ADR-0060 개정)
 
 `subject_anchor`의 **고유명사는 소재의 1차 자료 언어로 적는다.** 재질·정체 같은 일반
-명사와 나머지 프롬프트 항목(`visual_goal`·`description`)은 한국어 그대로다.
+명사와 나머지 씬 계약 항목(`visual_goal`·`subject`·`description`)은 한국어 그대로다.
+**단, 프롬프트에는 실리지 않는다** (ADR-0060 결정 5) — 앵커는 검수기가 대조에 쓰고, `[5]` 세션이
+그것을 로마자 이름 + 형태 서술로 풀어 SUBJECT에 쓴다. 아래 실측(한국어 앵커가 모델을 갈랐다)은
+그 시절의 근거이고, 석빙고 1차(2026-08-23)에서는 한국어 앵커 「경주 석빙고」가 현판 글자로
+렌더됐다.
 
 - **한국어로 나라 이름을 적는 것으로는 안 된다.** 같은 프롬프트에서 고유명사 항목만
   바꾼 실측(2026-08-19, `runs/20260819-lang-probe/`)이 `일본 전통 목조 골조, 목재 기둥`
@@ -190,8 +201,9 @@ OCR이 신뢰되고 한글은 그렇지 않았다(그래서 옛 `[6i]`는 비전
 - **`annotation`** — 어휘에서 고른다: `dimension`(치수선 + 양끝 화살촉), `arrow`(방향 화살표),
   `leader`(지시선 + 라벨 박스). 문구는 `vocab.json` `annotation.*.phrase`
 - **빨강은 계측 표시에만.** 프롬프트가 "the only saturated red"를 요구하고 검수가 본다
-- 라벨 숫자를 나레이션이 되풀이하는 비율은 `label_number_echo_limit` 이하 (ADR-0047) —
-  말이 가리키고 화면이 진다
+- **라벨의 숫자는 그 줄이 말하는 숫자다** (`label_numbers_from_line`, ADR-0060 결정 4 — ADR-0047의
+  에코 상한을 뒤집었다). 듣는 숫자와 보는 숫자가 다르면 그림이 설명을 방해한다. 표기 차이는
+  허용("12센티" ↔ `12 cm`), 숫자 없는 라벨은 자유
 - **검수 실패 사다리**는 `재생성 → RED 절을 뺀 재생성(demoted_from: info) → 인접 씬 재사용`
   이다 (스펙 05 `[7]`). 틀린 숫자가 나가는 것보다 없는 쪽이 낫다
 

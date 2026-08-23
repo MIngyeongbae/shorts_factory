@@ -87,3 +87,46 @@ def install_script(paths: Paths, slug: str) -> Path:
     dest = run_dir / "scenes.json"
     write_text(dest, dump_json(document))
     return dest
+
+
+# --- [5] 세션 산출 페이크 (ADR-0060) --------------------------------------------
+
+_FILLER = (
+    "a technical model on a flat neutral ground, every part modeled with real detail, "
+    "the same object described in full so the clip stands alone, "
+)
+
+
+def fake_plan(contract: dict, *, subject: str | None = None) -> dict:
+    """씬 계약에서 계약을 지키는 promptplan 페이로드를 만든다 — 영어·ASCII·길이·라벨 따옴표째.
+
+    세션이 할 일을 테스트가 대신하는 자리다. 내용은 무의미하지만 `promptplan.validate_promptplan`을
+    통과해야 하므로 길이와 라벨 포함은 진짜다.
+    """
+    scenes = []
+    for scene in contract["scenes"]:
+        sid = scene["scene_id"]
+        body = subject or f"scene {sid}: the main subject staged as described in the scene contract, "
+        while len(body) < 320:
+            body += _FILLER
+        entry = {
+            "scene_id": sid,
+            "subject_prompt": body[:900].rstrip(", "),
+            "camera_target": f"arriving on the key part of scene {sid}",
+        }
+        info = scene.get("info") or None
+        if info:
+            boxes = " ".join(
+                f'a small red label box beside it with white text that reads exactly "{label}",'
+                for label in info["labels"]
+            )
+            entry["red_prompt"] = (
+                f"one pure red glowing annotation measuring {info['target']}, drafting style, "
+                f"thin extension lines fixed to both ends and a sharp arrowhead at each end, {boxes} "
+                "holding for the whole shot"
+            )
+        if scene.get("shot2"):
+            entry["subject_prompt_shot2"] = ("the same subject seen in the second framing, " + _FILLER * 3)[:600]
+        scenes.append(entry)
+    return {"scenes": scenes}
+

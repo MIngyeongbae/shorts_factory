@@ -39,11 +39,10 @@ from shorts_factory.schemas.visual_rules import (
     SECTIONS,
     STAGINGS,
     build_video_prompt,
+    camera_line,
     negative_items,
-    red_line,
     resolve_framing,
     resolve_staging,
-    split_label_clause,
 )
 
 
@@ -53,11 +52,14 @@ def scene(**overrides):
     return base
 
 
+SUBJECT = "a concrete dam seen whole in its canyon, every spillway modeled"
+RED = 'one pure red dimension line spanning the full height of the dam with a small red label box beside it with white text that reads exactly "221 m"'
+
+
 def prompt_of(**overrides) -> str:
-    args = dict(
-        subject="피사체", shot=FRAMINGS["drone_wide"].shot,
-        staging="studio", camera="static",
-    )
+    args = dict(subject_prompt=SUBJECT, staging="studio", camera="static")
+    if overrides.pop("info", None):
+        args["red_prompt"] = RED
     args.update(overrides)
     return build_video_prompt(**args)[0]
 
@@ -111,13 +113,10 @@ def test_every_staging_has_a_phrase(token):
 
 
 @pytest.mark.parametrize("token", sorted(ANNOTATIONS))
-def test_every_annotation_phrase_has_its_slots_and_a_label_clause(token):
-    """`{target}`·`{label}` 자리와 ' and … {label}' 라벨 절 — 여러 라벨을 잇는 근거다."""
+def test_every_annotation_phrase_has_its_slots(token):
+    """`{target}`·`{label}` 자리 — 세션 프롬프트가 기본 꼴로 보여 주는 문구다 (ADR-0060)."""
     phrase = ANNOTATIONS[token]
     assert "{target}" in phrase and "{label}" in phrase
-    head, clause = split_label_clause(phrase)
-    assert "{target}" in head and "{label}" in clause
-    assert clause.startswith(" and ")
 
 
 def test_unit_symbols_are_ascii():
@@ -256,53 +255,23 @@ def test_camera_line_is_the_vocab_video_prompt(camera):
     assert vocab.video_prompt(camera) in line
 
 
-def test_subject_line_order_is_subject_anchor_description_appearance_then_shot():
-    line = next(
-        l for l in prompt_of(
-            subject="댐", anchors=["Hoover Dam", "콘크리트"], description="실사 서술",
-            appearances=["잿빛 승복의 승려"],
-        ).splitlines()
-        if l.startswith("SUBJECT:")
-    )
-    assert line.startswith("SUBJECT: 댐, Hoover Dam, 콘크리트, 실사 서술, 잿빛 승복의 승려.")
-    assert line.endswith(FRAMINGS["drone_wide"].shot + ".")
+def test_subject_line_is_the_session_paragraph_verbatim():
+    """SUBJECT 절은 세션 단락 그대로다 (ADR-0060 결정 2) — 코드가 문장을 더하지 않는다."""
+    line = next(l for l in prompt_of().splitlines() if l.startswith("SUBJECT:"))
+    assert line == f"SUBJECT: {SUBJECT}."
 
 
-def test_subject_is_not_translated_and_not_nailed_with_extra_prose():
-    """한국어 그대로다 (ADR-0001·0014). 즉흥 제약을 코드가 더하지 않는다 (스펙 03)."""
-    prompt = prompt_of(subject="홈이 파인 블록 접합면 클로즈업")
-    assert "홈이 파인 블록 접합면 클로즈업" in prompt
-    assert "do not write" not in prompt.lower()
+def test_camera_line_is_vocab_work_plus_session_target():
+    assert camera_line("static").rstrip(".") == vocab.video_prompt("static").rstrip(".")
+    joined = camera_line("slow_zoom_in", "Arriving on the doorway")
+    assert joined.startswith(vocab.video_prompt("slow_zoom_in").rstrip("."))
+    assert joined.endswith(", arriving on the doorway.")
 
 
-@pytest.mark.parametrize("token", sorted(ANNOTATIONS))
-def test_red_line_is_the_vocab_phrase_with_slots_filled(token):
-    line = red_line(annotation=token, target="the diameter of the hole", labels=["4 mm"])
-    expected = (
-        vocab.phrase("annotation", token)
-        .replace("{target}", "the diameter of the hole")
-        .replace("{label}", "4 mm")
-    )
-    assert line == f"{expected} {ANNOTATION_CLOSING}"
+def test_red_line_is_session_geometry_plus_vocab_closing():
+    line = next(l for l in prompt_of(info=True).splitlines() if l.startswith("RED:"))
+    assert line == f"RED: {RED}. {ANNOTATION_CLOSING}"
     assert ANNOTATION_CLOSING == vocab.annotation_closing()
-
-
-def test_multiple_labels_each_get_their_own_reads_exactly():
-    """스펙 03 — 여러 라벨이면 각각 "reads exactly"로 잇는다. 라벨 문자열은 계약 그대로다."""
-    line = red_line(annotation="dimension", target="the span", labels=["221 m", "3x"])
-    assert line.count("reads exactly") == 2
-    assert '"221 m"' in line and '"3x"' in line
-    assert line.endswith(ANNOTATION_CLOSING)
-    # 두 번째 라벨 절은 어휘 문구의 라벨 절 그대로다 — 코드가 지어낸 문장이 아니다.
-    _head, clause = split_label_clause(vocab.phrase("annotation", "dimension"))
-    assert clause.replace("{label}", "3x") in line
-
-
-def test_red_line_rejects_unknown_annotation_and_empty_labels():
-    with pytest.raises(ValueError):
-        red_line(annotation="circle", target="t", labels=["1 m"])
-    with pytest.raises(ValueError):
-        red_line(annotation="arrow", target="t", labels=[])
 
 
 def test_negative_line_is_built_from_vocab_negatives():
@@ -329,17 +298,17 @@ def test_no_text_is_forbidden_only_when_there_is_no_info():
 
 
 def test_negative_prompt_field_is_the_item_list():
-    _prompt, negative = build_video_prompt(
-        subject="피사체", shot="shot", staging="studio", camera="static",
-    )
+    _prompt, negative = build_video_prompt(subject_prompt=SUBJECT, staging="studio", camera="static")
     assert negative == ", ".join(negative_items(has_info=False))
 
 
 def test_builder_rejects_values_outside_the_vocabulary():
     with pytest.raises(ValueError):
-        build_video_prompt(subject="s", shot="shot", staging="underwater", camera="static")
+        build_video_prompt(subject_prompt=SUBJECT, staging="underwater", camera="static")
     with pytest.raises(ValueError):
-        build_video_prompt(subject="s", shot="shot", staging="studio", camera="dolly_zoom")
+        build_video_prompt(subject_prompt=SUBJECT, staging="studio", camera="dolly_zoom")
+    with pytest.raises(ValueError):
+        build_video_prompt(subject_prompt="   ", staging="studio", camera="static")
 
 
 def _string_literals(path) -> list[str]:

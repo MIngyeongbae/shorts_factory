@@ -163,7 +163,44 @@
       }
     },
     "camera": {
-      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다. `video_prompt`는 [5]가 프롬프트 CAMERA 절에 그대로 넣는 영어 구절이다 (ADR-0039·0056) — 한 씬에 카메라는 하나이고 클립이 3~10초라 속도 수치 없이 정성 문구다. 느린 줌·틸트·팬·정지뿐이다 — 원카 프롬프트의 급속 푸시인은 그 채널의 연출이라 넣지 않는다 (ADR-0050).",
+      "_role": "복합 카메라 워크는 만들지 않는다 — AI 영상 왜곡 방지가 근거라 연출 자유화와 축이 다르다 (ADR-0006, ADR-0033 §3). 이 enum은 풀지 않는다. `video_prompt`는 [5]가 프롬프트 CAMERA 절에 그대로 넣는 영어 구절이다 (ADR-0039·0056) — 한 씬에 카메라는 하나이고 클립이 3~10초라 속도 수치 없이 정성 문구다. 느린 줌·틸트·팬·정지뿐이다 — 원카 프롬프트의 급속 푸시인은 그 채널의 연출이라 넣지 않는다 (ADR-0050). 카메라가 **어디에 닿는지**는 [5] 세션의 `camera_target` 구절이 이 문구 뒤에 붙는다 (ADR-0060 결정 2) — 워크 자체는 여기서만 온다.",
+      "_target_forbidden_words": [
+        "pan",
+        "pans",
+        "panning",
+        "tilt",
+        "tilts",
+        "tilting",
+        "zoom",
+        "zooms",
+        "zooming",
+        "dolly",
+        "orbit",
+        "orbits",
+        "orbiting",
+        "track",
+        "tracks",
+        "tracking",
+        "crane",
+        "rush",
+        "rushes",
+        "push",
+        "pushes",
+        "pull",
+        "pulls",
+        "handheld",
+        "whip",
+        "rotate",
+        "rotates",
+        "rotating",
+        "fly",
+        "flies",
+        "flying",
+        "sweep",
+        "sweeps",
+        "spin",
+        "spins"
+      ],
       "slow_zoom_in": {
         "gloss": "느린 줌 인",
         "video_prompt": "slow push in toward the subject"
@@ -383,7 +420,19 @@
       }
     },
     "annotation": {
-      "_role": "계측 표시 방식 (ADR-0056 결정 3). info가 있는 씬의 RED 절에 들어간다. phrase 안의 {target}은 [5]가 info.target으로, {label}은 info.labels로 치환한다. 빨강은 계측 표시에만 쓴다 — 검수가 '유일한 채도 높은 빨강'을 본다.",
+      "_role": "계측 표시 방식 (ADR-0056 결정 3). info가 있는 씬의 RED 절에 들어간다. phrase 안의 {target}은 [5]가 info.target으로, {label}은 info.labels로 치환한다. 빨강은 계측 표시에만 쓴다 — 검수가 '유일한 채도 높은 빨강'을 본다. 빨강·화살표·라벨·치수선 언급은 RED 절(세션의 red_prompt)에만 있다 — `_only_in_red_words`가 subject_prompt·camera_target에 들어오면 기계 검사가 반려한다 (ADR-0060). RED를 뗀 강등 재생성에서 빨강이 남지 않게 하는 장치다.",
+      "_only_in_red_words": [
+        "red",
+        "arrow",
+        "arrows",
+        "arrowhead",
+        "label",
+        "labels",
+        "dimension line",
+        "leader line",
+        "annotation",
+        "annotations"
+      ],
       "dimension": {
         "gloss": "치수선 + 양끝 화살촉 — 길이·폭·두께·처짐",
         "phrase": "RED: one pure red glowing technical dimension annotation, drafting style, a thin dimension line with a small sharp arrowhead at each end exactly spanning {target}, and a small red label box beside it with white text that reads exactly \"{label}\"."

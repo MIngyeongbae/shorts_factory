@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "promptplan.schema.json",
+  "title": "[5. prompt] 세션 산출 — 씬별 샷 서술 (ADR-0060)",
+  "description": "세션이 쓰는 것은 프롬프트 전체가 아니라 SUBJECT 단락·카메라 착지·RED 기하다. 골격(FORMAT·STAGING·CAMERA 문구·NEGATIVE)은 코드가 vocab.json에서 조립한다 (ADR-0034). 전부 영어·ASCII(패턴) — 한국어가 영상 모델에 가면 글자로 그려진다 (석빙고 1차, ADR-0060 맥락 1). 길이(minLength/maxLength, 문자 수)는 원카랩 참조 프롬프트의 SUBJECT(≈560자)·RED(≈420자) 안팎에서 잡은 초기값이다 — 되돌릴 조건 1. 라벨 문자열이 red_prompt에 따옴표째 정확히 들어 있는지, info·shot2 유무와 필드 유무가 맞는지는 코드가 씬 계약과 대조한다.",
+  "type": "object",
+  "required": [
+    "scenes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/scene"
+      }
+    }
+  },
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "required": [
+        "scene_id",
+        "subject_prompt",
+        "camera_target"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scene_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "subject_prompt": {
+          "type": "string",
+          "minLength": 300,
+          "maxLength": 1200,
+          "pattern": "^[ -~]+$",
+          "description": "SUBJECT 절 전체. 설명의 무대 — 무엇이 어떻게 놓였고 무엇이 같고 다른지, 단면이면 절단면에 무엇이 보이는지, 흐름이면 어디서 어디로. 반복 피사체는 매 씬 전체 서술을 다시 싣는다. 고유명사는 로마자 이름 + 형태·재질·배치로 푼다."
+        },
+        "camera_target": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 200,
+          "pattern": "^[ -~]+$",
+          "description": "카메라가 닿는 곳 — 씬 계약의 camera 문구 뒤에 붙는 구절 (\"arriving on the flat cable of the left model\"). 카메라 워크를 새로 지시하지 않는다 — vocab.json meta.camera._target_forbidden_words가 기계 검사의 단어 목록이다."
+        },
+        "red_prompt": {
+          "type": "string",
+          "minLength": 60,
+          "maxLength": 800,
+          "pattern": "^[ -~]+$",
+          "description": "info 씬만. 계측 표시의 기하 — 보조선이 어디서 어디로, 화살촉, 라벨 박스가 어디 붙는지. info.labels의 각 문자열을 큰따옴표째 정확히 포함한다 (\"4 mm\"). 마무리 문장(유일한 빨강·유일한 텍스트)은 코드가 어휘에서 붙이므로 쓰지 않는다."
+        },
+        "subject_prompt_shot2": {
+          "type": "string",
+          "minLength": 120,
+          "maxLength": 1200,
+          "pattern": "^[ -~]+$",
+          "description": "shot2가 있는 씬만 (ADR-0058). 같은 피사체·같은 무대의 두 번째 샷에서 보이는 것. 코드가 2샷 변종에 얹는다 — 2샷 코드가 들어올 때까지는 기록만 된다."
+        }
+      }
+    }
+  }
+}

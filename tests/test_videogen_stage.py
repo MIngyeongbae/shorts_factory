@@ -20,6 +20,7 @@ from shorts_factory.config import write_text
 from shorts_factory.jsonio import dump_json
 from shorts_factory.llm.fake import FakeLLMClient
 from shorts_factory.stages.prompt import build_prompts
+from conftest import fake_plan
 from shorts_factory.stages.videogen import (
     RECORD_FILE,
     REVIEW_DIR,
@@ -56,7 +57,7 @@ def install(paths, *, langs=None, info_scenes=(), slug=PISA):
         if scene["scene_id"] in info_scenes:
             scene["info"] = dict(INFO)
     write_text(run_dir / "scenes.json", dump_json(contract))
-    prompts, _ = build_prompts(contract, source_script="runs/x/scenes.json")
+    prompts = build_prompts(contract, fake_plan(contract), source_script="runs/x/scenes.json")
     write_text(run_dir / "prompts.json", dump_json(prompts))
     return run_id, document
 

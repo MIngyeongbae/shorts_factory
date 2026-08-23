@@ -11,23 +11,25 @@
 **기본값**으로 떨어진다 (`resolve_framing`·`resolve_staging`). 그 표는 지시가 아니라
 폴백이며 ADR-0033을 되돌릴 자리다.
 
-## 골격 (ADR-0056 — 원카 레퍼런스 프롬프트의 구조, 프로브 15클립이 이 골격으로 찍혔다)
+## 골격 (ADR-0056 — 원카 레퍼런스 프롬프트의 구조. ADR-0060 — SUBJECT·RED·착지는 세션이 쓴다)
 
     FORMAT    A {composition} shot, {seconds} seconds long, {style.base_style}.   ← 초 수는 [7]이 채운다
     STAGING   {staging.*.phrase}
-    SUBJECT   {subject}, {subject_anchor…}, {refs.description}, {cast appearance…}. {framing.shot}.
-    CAMERA    {camera.*.video_prompt}.
-    RED       {annotation.*.phrase}(target·label 치환) + {annotation._closing}   ← info 씬만
+    SUBJECT   {세션의 subject_prompt — 영어 단락, 설명의 무대}
+    CAMERA    {camera.*.video_prompt}, {세션의 camera_target}.
+    RED       {세션의 red_prompt — 기하 + 라벨 따옴표째} + {annotation._closing}   ← info 씬만
     NEGATIVE  No {negatives.always…}. (info 없는 씬) No {negatives.no_text…}. {negatives.audio}
 
-절 이름은 대문자 표제로 프롬프트에 그대로 박힌다. 방언은 없다 — 프로바이더가 하나다
-(ADR-0027의 분기는 ADR-0056이 접었다).
+절 이름은 대문자 표제로 프롬프트에 그대로 박힌다. 세션 단락의 계약(영어·ASCII·길이·라벨 포함·
+착지에 워크 단어 금지)은 `promptplan.py`가 잰다. 방언은 없다 — 라인이 달라도 프롬프트는 같다
+(ADR-0059).
 
 ## 이 모듈이 다루지 않는 것
 
 - 전환·자막 스타일: `[9. assemble]` 소관이다
 - 클립 길이: `[7]`이 실측에서 정하고 FORMAT의 `{seconds}`를 그때 채운다
-- 한국어 번역: 하지 않는다 (ADR-0001·0014). `subject`·앵커·서술은 원어 그대로다
+- 단락의 내용: 세션(`prompts/05-prompt.md`)이 대본·씬 계약·팩트체크에서 쓴다. 여기서는
+  문장을 짓지 않는다 — 어휘 문구와 세션 단락을 절 순서대로 놓을 뿐이다
 """
 
 from __future__ import annotations
@@ -126,15 +128,6 @@ def resolve_staging(scene: dict[str, Any]) -> tuple[str, str]:
 # --- 프롬프트 조립 -----------------------------------------------------------
 
 
-def clean_anchors(anchors: Sequence[str]) -> list[str]:
-    """`subject_anchor`를 프롬프트에 실을 수 있는 형태로 다듬는다 (ADR-0028).
-
-    **거르지 않는다.** 씬마다 어느 명사가 더 센지는 이 모듈이 알 수단이 없다 —
-    고르는 것은 `[3s]`다 (G2). 여기서 하는 일은 공백 제거와 빈 항목 탈락뿐이다.
-    """
-    return [item.strip() for item in anchors if item.strip()]
-
-
 def _sentence(text: str) -> str:
     """끝에 마침표가 없으면 붙인다. 어휘 문구는 마침표로 끝나고 씬 값은 그렇지 않다."""
     text = text.strip()
@@ -162,80 +155,9 @@ def format_line(*, seconds: str = SECONDS_PLACEHOLDER) -> str:
     return f"A {COMPOSITION} shot, {seconds} seconds long, {BASE_STYLE}."
 
 
-def subject_line(
-    subject: str,
-    *,
-    shot: str,
-    anchors: Sequence[str] = (),
-    description: str = "",
-    appearances: Sequence[str] = (),
-) -> str:
-    """SUBJECT 절 — `subject`, 앵커…, 참조 서술, 인물 외형… 순서 (스펙 03).
-
-    앵커는 **`subject` 바로 뒤**다 (ADR-0028 G1). 서술(ADR-0030)은 앵커 뒤 — 앵커가
-    대상이 무엇인가를 고정하고 서술이 어떻게 생겼는가를 더한다. 인물 외형(ADR-0051
-    서술 경로)은 그 뒤다. 전부 원어 그대로이고 번역하지 않는다 (ADR-0042).
-    구도 문구(`framing.shot`)는 그 뒤에 문장으로 붙는다 (vocab `framing._role`).
-    """
-    parts = [subject.strip(), *clean_anchors(anchors)]
-    if description.strip():
-        parts.append(description.strip())
-    parts.extend(clean_anchors(appearances))
-    return f"{_sentence(', '.join(parts))} {_sentence(shot)}"
-
-
 #: 어휘 문구 안의 치환 자리 (vocab `annotation._role`).
 TARGET_SLOT = "{target}"
 LABEL_SLOT = "{label}"
-
-
-def split_label_clause(phrase: str) -> tuple[str, str]:
-    """계측 문구를 `(머리, 라벨 박스 절)`로 가른다.
-
-    라벨 박스 절은 **`{label}` 앞의 마지막 " and "부터 끝까지**다 — 세 어휘 문구가 전부
-    "…{target} and/, and a small red label box … reads exactly "{label}"." 꼴이고, 이
-    모양이 여러 라벨을 "각각 reads exactly로 잇는" 근거다 (스펙 03). 문구가 그 꼴이 아니면
-    실패한다 — 어휘를 고친 사람이 알아야 한다.
-    """
-    label_at = phrase.find(LABEL_SLOT)
-    if label_at < 0 or TARGET_SLOT not in phrase:
-        raise ValueError(
-            f"annotation 문구에 {TARGET_SLOT}·{LABEL_SLOT} 자리가 없다: {phrase!r}"
-        )
-    cut = phrase.rfind(" and ", 0, label_at)
-    if cut < 0:
-        raise ValueError(
-            f"annotation 문구의 라벨 절을 찾을 수 없다 (' and … {LABEL_SLOT}' 꼴이어야 한다): "
-            f"{phrase!r}"
-        )
-    return phrase[:cut].rstrip(","), phrase[cut:].rstrip(".")
-
-
-def red_line(*, annotation: str, target: str, labels: Sequence[str]) -> str:
-    """RED 절 — `info`가 있는 씬만. 라벨 문자열은 계약 그대로 따옴표 안에 들어간다.
-
-    어휘 문구의 `{target}`·`{label}`을 치환한다. 라벨이 하나면 문구 그대로이고, **여럿이면
-    라벨 박스 절을 라벨마다 하나씩 이어 각각 "reads exactly"가 된다** (스펙 03). 마무리
-    문장(`_closing`)이 "유일한 텍스트·유일한 빨강"을 못 박는다. 영어 문장은 전부 어휘의
-    것이다 — 여기서는 자르고 치환하고 잇기만 한다.
-    """
-    if annotation not in ANNOTATIONS:
-        raise ValueError(
-            f"annotation 어휘에 '{annotation}'이 없다 (허용: {', '.join(ANNOTATION_TOKENS)})"
-        )
-    labels = [str(label) for label in labels if str(label).strip()]
-    if not labels:
-        raise ValueError("info.labels가 비어 있다 — 계약이 막았어야 한다")
-    phrase = ANNOTATIONS[annotation]
-    target = target.strip()
-    if len(labels) == 1:
-        text = phrase.replace(TARGET_SLOT, target).replace(LABEL_SLOT, labels[0])
-    else:
-        head, clause = split_label_clause(phrase)
-        text = head.replace(TARGET_SLOT, target) + ",".join(
-            clause.replace(TARGET_SLOT, target).replace(LABEL_SLOT, label) for label in labels
-        )
-    return f"{_sentence(text)} {ANNOTATION_CLOSING}"
 
 
 def negative_items(*, has_info: bool) -> tuple[str, ...]:
@@ -255,57 +177,54 @@ def negative_line(*, has_info: bool) -> str:
     return " ".join(s for s in sentences if s)
 
 
+def camera_line(camera: str, target: str = "") -> str:
+    """CAMERA 절 — 어휘의 워크 문구 + 세션의 착지 구절 (ADR-0060 결정 2).
+
+    "slow push in toward the subject, arriving on the granite doorway." 워크는 어휘에서만
+    오고, 착지는 무엇에 닿는가만 말한다 (`promptplan.cross_errors`가 워크 단어를 막는다).
+    """
+    if camera not in CAMERA_PROMPTS:
+        raise ValueError(
+            f"camera 어휘에 '{camera}'이 없다 (허용: {', '.join(CAMERA_PROMPTS)})"
+        )
+    phrase = CAMERA_PROMPTS[camera].strip().rstrip(".")
+    target = target.strip().rstrip(".")
+    if not target:
+        return _sentence(phrase)
+    return f"{phrase}, {target[0].lower() + target[1:]}."
+
+
 def build_video_prompt(
     *,
-    subject: str,
-    shot: str,
+    subject_prompt: str,
     staging: str,
     camera: str,
-    anchors: Sequence[str] = (),
-    description: str = "",
-    appearances: Sequence[str] = (),
-    info: dict[str, Any] | None = None,
+    camera_target: str = "",
+    red_prompt: str | None = None,
 ) -> tuple[str, str]:
-    """`(prompt, negative_prompt)` — 씬 계약을 골격에 채운 결과. `[5]`가 부르는 유일한 입구다.
+    """`(prompt, negative_prompt)` — 어휘 골격 + 세션 단락. `[5]`가 부르는 유일한 입구다.
 
-    판단이 없다. 씬이 준 값을 절 순서대로 놓고 어휘 문구로 치환할 뿐이다. `info`가
-    없으면 RED 절이 없고 NEGATIVE에 글자 금지가 든다; 있으면 RED 절이 있고 글자 금지는
-    RED의 마무리 문장이 대신한다 (vocab `negatives._role`).
+    판단이 없다. 절 순서대로 놓을 뿐이다. `red_prompt`가 없으면 RED 절이 없고 NEGATIVE에
+    글자 금지가 든다; 있으면 RED 절이 있고 글자 금지는 RED의 마무리 문장(어휘 `_closing`)이
+    대신한다 (vocab `negatives._role`). 단락의 계약은 `promptplan.py`가 먼저 쟀다.
     """
     if staging not in STAGINGS:
         raise ValueError(
             f"staging 어휘에 '{staging}'이 없다 (허용: {', '.join(STAGING_TOKENS)})"
         )
-    if camera not in CAMERA_PROMPTS:
-        raise ValueError(
-            f"camera 어휘에 '{camera}'이 없다 (허용: {', '.join(CAMERA_PROMPTS)})"
-        )
-    has_info = bool(info)
+    if not subject_prompt.strip():
+        raise ValueError("subject_prompt가 비어 있다 — promptplan 검증이 막았어야 한다")
+    has_info = bool(red_prompt and red_prompt.strip())
     lines = [
         _section("FORMAT", format_line()),
         _section("STAGING", STAGINGS[staging]),
-        _section(
-            "SUBJECT",
-            subject_line(
-                subject, shot=shot, anchors=anchors,
-                description=description, appearances=appearances,
-            ),
-        ),
-        _section("CAMERA", _sentence(CAMERA_PROMPTS[camera])),
+        _section("SUBJECT", _sentence(subject_prompt)),
+        _section("CAMERA", camera_line(camera, camera_target)),
     ]
     if has_info:
-        lines.append(
-            _section(
-                "RED",
-                red_line(
-                    annotation=str(info["annotation"]),
-                    target=str(info["target"]),
-                    labels=list(info["labels"]),
-                ),
-            )
-        )
+        lines.append(_section("RED", f"{_sentence(red_prompt or '')} {ANNOTATION_CLOSING}"))
     lines.append(_section("NEGATIVE", negative_line(has_info=has_info)))
-    return "\n".join(lines), ", ".join(negative_items(has_info=has_info))
+    return chr(10).join(lines), ", ".join(negative_items(has_info=has_info))
 
 
 def fill_seconds(prompt: str, seconds: int) -> str:

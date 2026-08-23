@@ -34,7 +34,7 @@ SCRIPT_MD = """# 테스트 소재
 ## 대본
 
 첫 줄입니다.
-둘째 줄에는 이만 명 넘는 희생이 나옵니다.
+둘째 줄에는 2만 2천 명 넘는 희생이 나옵니다.
 셋째 줄이 마무리합니다.
 """
 
@@ -71,7 +71,7 @@ def timed_document() -> dict:
         "total_duration": 11.4,
         "scenes": [
             {"scene_id": 1, "text": "첫 줄입니다.", "start": 0.0, "end": 3.8},
-            {"scene_id": 2, "text": "둘째 줄에는 이만 명 넘는 희생이 나옵니다.",
+            {"scene_id": 2, "text": "둘째 줄에는 2만 2천 명 넘는 희생이 나옵니다.",
              "start": 3.8, "end": 7.6},
             {"scene_id": 3, "text": "셋째 줄이 마무리합니다.", "start": 7.6, "end": 11.4},
         ],
@@ -132,7 +132,7 @@ def test_text_and_time_come_from_the_measured_file(installed):
     result = run_scenetable_stage(SLUG, llm=FakeLLM(table_payload()), paths=installed)
 
     scene = result.scenes["scenes"][1]
-    assert scene["text"] == "둘째 줄에는 이만 명 넘는 희생이 나옵니다."
+    assert scene["text"] == "둘째 줄에는 2만 2천 명 넘는 희생이 나옵니다."
     assert scene["est_start"] == 3.8 and scene["est_end"] == 7.6
 
 
@@ -264,16 +264,16 @@ def test_vocabulary_violation_reports_and_stops(installed):
     assert not (installed.run_dir(RUN_ID) / "scenes.json").exists()
 
 
-def test_label_echo_violation_is_caught(installed):
-    """라벨 숫자를 나레이션이 되풀이하면 반려된다 (ADR-0047) — 조절하는 쪽은 라벨이다."""
+def test_label_number_the_line_does_not_say_is_caught(installed):
+    """화면 라벨의 숫자는 그 줄이 말하는 숫자다 (ADR-0060 결정 4) — 조절하는 쪽은 라벨이다."""
     timed = timed_document()
-    timed["scenes"][1]["text"] = "둘째 줄이 22,000명이라고 말합니다."
+    timed["scenes"][1]["text"] = "둘째 줄은 숫자를 말하지 않습니다."
     write_text(installed.run_dir(RUN_ID) / "scenes.timed.ko.json", dump_json(timed))
 
     result = run_scenetable_stage(SLUG, llm=FakeLLM(table_payload()), paths=installed)
 
     assert not result.passed
-    assert any("ADR-0047" in e for e in result.errors)
+    assert any("ADR-0060" in e for e in result.errors)
 
 
 def test_visual_goal_that_restates_the_line_is_caught(installed):

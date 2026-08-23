@@ -33,12 +33,46 @@ from .scriptmd import (
     parse_script_md,
     strip_code_fence,
 )
+from .seedfetch import SEED_BODY_FILE  # 파일명 계약이다 — 단계를 부르지 않는다 (D-1)
 
 log = logging.getLogger(__name__)
 
 STAGE = "1-draft"
 SCRIPT_FILE = "script.md"
 PROMPT_FILE = "01-draft.md"
+
+#: 프롬프트에 싣는 시드 본문의 상한. `[0f]`는 본문 추출을 안 하므로 내비게이션이
+#: 섞여 들어온다 — 석빙고 문서가 46,874자였다 (ADR-0061). 세션 입력이 무한히
+#: 커지지 않게만 자른다.
+SEED_BODY_MAX_CHARS = 120_000
+
+#: `seed-body.md`가 있을 때. 사다리의 첫 칸이다 (specs/05 `[1]` 규칙, ADR-0061).
+SEED_BODY_PRESENT = """아래 「시드 기사 본문」이 그 기사를 헤드리스 브라우저로 렌더한 텍스트다 —
+WebFetch로는 본문이 오지 않는 문서가 있어 `[0f]`가 미리 긁어 두었다. **이것을 먼저 읽어라.**
+본문 추출을 하지 않았으므로 목차·분류·다른 문서 목록·푸터가 섞여 있다. 그 소재를 서술하는
+문단만 읽고 나머지는 무시하라. 여기에 본문이 없거나 너무 얇으면 그때 WebFetch·WebSearch로
+같은 소재의 위키백과·나무위키 문서를 찾아 본문을 확보하라.
+
+=== 시드 기사 본문 시작 ===
+{body}
+=== 시드 기사 본문 끝 ==="""
+
+#: `seed-body.md`가 없을 때 — 부재는 경고가 아니다 (D-3). 사다리의 나머지 칸.
+SEED_BODY_ABSENT = """WebFetch로 시드 기사를 읽어라. 열리지 않으면 WebSearch로 같은 소재의
+위키백과·나무위키 문서를 찾아 본문을 확보하라."""
+
+
+def load_seed_body(topic_dir: Path) -> str:
+    """`[0f]`가 남긴 시드 본문을 프롬프트에 실을 꼴로. 없으면 도구 사다리 안내다."""
+    path = topic_dir / SEED_BODY_FILE
+    if not path.exists():
+        return SEED_BODY_ABSENT
+    body = path.read_text(encoding="utf-8").strip()
+    if not body:
+        return SEED_BODY_ABSENT
+    if len(body) > SEED_BODY_MAX_CHARS:
+        body = body[:SEED_BODY_MAX_CHARS] + "\n…(잘림)"
+    return SEED_BODY_PRESENT.format(body=body)
 
 #: 기사 열람 + 집필을 한 세션에 하므로 생성 전용 단계보다 길게 잡는다.
 TIMEOUT = 1500
@@ -120,6 +154,7 @@ def run_draft_stage(
         prompt = load_prompt(PROMPT_FILE).substitute(
             topic=topic,
             seed_url=seed_url,
+            seed_body=load_seed_body(topic_dir),
             limits=format_limits(
                 "total_chars", "line_count", "line_chars_target",
                 "line_chars_max", "total_seconds",

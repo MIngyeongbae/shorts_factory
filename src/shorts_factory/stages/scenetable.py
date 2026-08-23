@@ -296,7 +296,6 @@ def build_prompt(
         scenes=format_timed_scenes(timed),
         vocab=format_vocab(),
         overlap_limit=f"{checks['visual_goal_overlap_limit']:.0%}",
-        echo_limit=f"{checks['label_number_echo_limit']:.0%}",
     )
 
 

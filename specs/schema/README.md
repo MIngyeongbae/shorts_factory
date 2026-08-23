@@ -15,6 +15,7 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 | `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·구도 토큰·전환·무대(staging)·계측 표시(annotation)·단위(unit) + 스타일 문자열과 **프롬프트 영어 문구** (ADR-0056) | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[3s]` 세션 프롬프트, `[5]` 프롬프트 골격 |
 | `scene.schema.json` | 씬 계약(`scenes.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
 | `sceneplan.schema.json` | `[3s]` 세션 산출(씬 연출표) — 실측 줄 위의 연출·무대·계측 표시·인물 선택 (ADR-0049 §5) . 필드 정의는 `scene.schema.json`을 `$ref`한다 | `schemas/sceneplan.py` |
+| `promptplan.schema.json` | `[5]` 세션 산출(씬별 샷 서술) — SUBJECT 단락·카메라 착지·RED 기하, 영어·ASCII·길이 (ADR-0060). 골격 조립은 코드가 `vocab.json`에서 | `schemas/promptplan.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프·검사 값) + 언어별 로케일 블록 자리 (ADR-0056) | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
