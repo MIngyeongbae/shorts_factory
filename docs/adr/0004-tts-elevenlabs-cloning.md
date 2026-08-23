@@ -1,6 +1,11 @@
 # ADR-0004: TTS는 ElevenLabs 본인 목소리 클로닝을 사용한다 (IVC 개발 → PVC 운영)
 
-- 상태: 승인
+- 상태: 승인 → **개정 (2026-08-21, 사람 결정): 당분간 보이스 라이브러리 목소리를 쓴다.**
+  플랜이 payg로 내려가 IVC 클로닝 목소리를 쓸 수 없게 됐고(`ivc_not_permitted` 401 실측),
+  사람이 라이브러리에서 `m3gJBS8OofDJfycyA2Ip`("Taehyung — Natural, Friendly and Clear",
+  ko-KR 남성, professional)를 골랐다 — with-timestamps 프로브 통과. 엔진·with-timestamps·
+  atempo 등 나머지 결정은 그대로다. **플랜을 올리면 클로닝 목소리로 복귀를 재검토한다**
+  (옛 IVC id는 `.env` 주석에 있다)
 - 날짜: 2026-08-07
 - 관련 스펙: specs/04-audio-rules.md, specs/05-pipeline.md
 
