@@ -512,7 +512,7 @@ def _assemble_language(
         raise fail(str(exc)) from exc
 
     font_name = font_name_for(lang)
-    ass_document, ass_warnings = build_ass(scenes, font_name=font_name)
+    ass_document, ass_warnings = build_ass(scenes, font_name=font_name, lang=lang)
     warnings.extend(ass_warnings)
     write_text(subtitles_path, ass_document)
 

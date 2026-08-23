@@ -11,9 +11,12 @@
 import pytest
 from timed_fixtures import HOOVER, PISA, timed_document
 
+from shorts_factory.schemas import script_rules
 from shorts_factory.video.subtitles import (
     ALIGNMENT,
     FONT_SIZE,
+    glyph_width_ratio_for,
+    max_line_chars_for,
     LINE_BREAK,
     MAX_LINE_CHARS,
     MAX_LINES,
@@ -93,7 +96,7 @@ def test_line_over_the_limit_fails_instead_of_shrinking():
 
 
 def test_the_three_subtitle_values_fit_together():
-    """40px·22자·2줄은 한 벌이다. 22자가 안전폭 안에 들어가야 이 조합이 성립한다."""
+    """폰트·자수·줄 수는 한 벌이다. 전각 자수가 안전폭 안에 들어가야 이 조합이 성립한다."""
     assert FONT_SIZE * MAX_LINE_CHARS <= TEXT_WIDTH
 
 
@@ -102,7 +105,52 @@ def test_the_longest_cue_spec_01_allows_still_fits_two_lines():
 
     이게 성립하는 동안에는 폰트 축소 경로가 필요 없다. 깨지면 두 스펙이 다시 충돌한다.
     """
-    assert 43 <= MAX_LINE_CHARS * MAX_LINES
+    assert script_rules.LINE_CHARS_MAX <= MAX_LINE_CHARS * MAX_LINES
+
+
+# --- 로케일 상한 (ADR-0062) ----------------------------------------------------
+
+
+@pytest.mark.parametrize("lang", ("ko", "ja", "en"))
+def test_every_locale_limit_fits_the_safe_width(lang):
+    """글자 수는 픽셀 폭의 대리값이다 — 로케일 상한 × 그 언어 글자 폭이 안전폭 안이어야 한다."""
+    width = max_line_chars_for(lang) * FONT_SIZE * glyph_width_ratio_for(lang)
+    assert width <= TEXT_WIDTH, (lang, width)
+
+
+def test_latin_gets_a_wider_character_budget_than_cjk():
+    """라틴은 반각이라 같은 폭에 더 많은 글자가 들어간다 — 전각 상한을 그대로 쓰면 [9]가 죽는다."""
+    assert max_line_chars_for("en") > max_line_chars_for("ko")
+    assert glyph_width_ratio_for("en") < glyph_width_ratio_for("ko")
+
+
+def test_locale_without_a_block_inherits_the_full_width_values():
+    """ja는 가나가 전각이라 블록이 없다 — 같은 값을 두 곳에 적지 않는다 (ADR-0034)."""
+    assert max_line_chars_for("ja") == MAX_LINE_CHARS
+    assert glyph_width_ratio_for("ja") == 1.0
+    assert max_line_chars_for("없는말") == MAX_LINE_CHARS
+
+
+def test_english_cue_that_overflowed_before_now_fits():
+    """석빙고 en 씬 1 (73자) — 전각 상한 22자×2줄로는 죽었고 로케일 상한 42자×2줄로는 산다."""
+    line = "Would you believe Joseon Korea ate ice in midsummer, with no electricity?"
+    assert len(line) == 73
+    with pytest.raises(SubtitleError):
+        check_overflow(1, wrap_text(line, limit=MAX_LINE_CHARS), limit=MAX_LINE_CHARS, lang="en")
+    limit = max_line_chars_for("en")
+    lines = wrap_text(line, limit=limit)
+    assert len(lines) == MAX_LINES
+    check_overflow(1, lines, limit=limit, lang="en")
+
+
+def test_build_ass_uses_the_locale_limit():
+    scenes = [{"scene_id": 1, "text": "Would you believe Joseon Korea ate ice in midsummer, with no electricity?",
+               "start": 0.0, "end": 4.0}]
+    # 같은 큐를 ko 상한으로 재면 죽는다 — 상한이 언어를 따라간다는 증거다
+    with pytest.raises(SubtitleError, match="ko 대본"):
+        build_ass(scenes, lang="ko")
+    document, warnings = build_ass(scenes, lang="en")
+    assert document and warnings == []
 
 
 def test_every_real_cue_fits_the_frame_width():

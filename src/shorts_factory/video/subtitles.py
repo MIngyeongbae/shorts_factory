@@ -12,14 +12,25 @@
 
 ## 세 값은 함께 정해졌다
 
-`40px` · `1줄 22자` · `2줄`은 서로 맞물린 한 벌이다. 40px에서 22자는 880px이라 가로
-안전폭 960px 안에 들어가고, specs/01이 허용하는 **가장 긴 큐(`line_chars_max`)도
+`44px` · `1줄 22자(전각)` · `2줄`은 서로 맞물린 한 벌이다. 44px에서 전각 22자는 968px이라
+가로 안전폭 990px 안에 들어가고, specs/01이 허용하는 **가장 긴 큐(`line_chars_max`)도
 두 줄에 들어간다.** 그래서 정상 범위의 큐는 폰트를 줄일 일이 없다 — 큐별 폰트 축소
 경로를 두지 않는다.
 
-22자 × 2줄에 안 들어가는 큐는 specs/01의 `line_chars_max`를 넘겼다는 뜻이므로 **실패로 올린다**
+## 줄당 상한은 로케일의 것이다 (ADR-0062)
+
+**글자 수는 픽셀 폭의 대리값이고, 그 환산은 전각 기준이다.** 한글·가나는 글자 폭이
+폰트 크기와 같지만 라틴은 대략 절반이라, 같은 자수가 언어마다 다른 폭이 된다. 그래서
+상한은 `subtitle-style.json`의 `locales`에서 온다 (`max_line_chars_for`). 값이 없는
+언어는 최상위 값(전각 기준)을 쓴다 — ja는 ko와 같아서 블록이 없다.
+
+로케일 상한 × 2줄에 안 들어가는 큐는 그 언어 대본이 상한을 넘겼다는 뜻이므로 **실패로 올린다**
 (`check_overflow`). 자막 단계가 글자를 작게 만들어 삼키면 상류 위반이 화면에서만
 티가 나고 기록에는 남지 않는다.
+
+**이 검사가 상류에 없다.** 스펙 01의 `line_chars_max`는 `core_chars`(공백·부호 제외)로 재고
+여기는 원문 글자로 재서 단위가 다르다 — 같은 것을 가리키지 않는다 (ADR-0062 되돌릴 조건 5).
+그래서 너무 긴 줄은 TTS·영상 비용을 다 쓴 뒤 `[9]`에서 처음 걸린다.
 """
 
 from __future__ import annotations
@@ -91,6 +102,28 @@ def font_name_for(lang: str, *, environ: Mapping[str, str] | None = None) -> str
     return override or FONT_NAME
 
 
+#: 언어별 자막 값 (`subtitle-style.json`의 `locales`). 값이 없는 언어는 최상위 값을 쓴다.
+_LOCALES: dict[str, Any] = {
+    lang: block
+    for lang, block in (_STYLE.get("locales") or {}).items()
+    if not lang.startswith("_") and isinstance(block, dict)
+}
+
+
+def max_line_chars_for(lang: str) -> int:
+    """그 언어의 줄당 글자 상한 (ADR-0062).
+
+    **글자 수는 픽셀 폭의 대리값이고 최상위 값은 전각 기준이다** — 라틴은 반각이라
+    같은 자수가 절반 폭이다. 값이 없는 언어는 최상위 값을 그대로 쓴다 (ja).
+    """
+    return int(_LOCALES.get(lang, {}).get("max_line_chars", MAX_LINE_CHARS))
+
+
+def glyph_width_ratio_for(lang: str) -> float:
+    """그 언어 한 글자의 가로 advance ÷ 폰트 크기. 전각이 1.0이고 라틴은 그보다 좁다."""
+    return float(_LOCALES.get(lang, {}).get("glyph_width_ratio", GLYPH_WIDTH_RATIO))
+
+
 class SubtitleError(Exception):
     """자막 문서를 만들 수 없음."""
 
@@ -138,20 +171,29 @@ def wrap_text(
     return [head] + wrap_text(tail, limit=limit, max_lines=max_lines - 1)
 
 
-def check_overflow(scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS) -> None:
+def check_overflow(
+    scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS, lang: str = "",
+) -> None:
     """`limit`자를 넘긴 줄이 있으면 실패시킨다.
 
-    **폰트를 줄여 삼키지 않는다.** 22자 × 2줄에 안 들어가는 큐는 스펙 01의
-    `line_chars_max`를 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가
-    글자를 작게 만들어 넘기면 상류 위반이 화면에서만 티가 나고 기록에는 안 남는다.
+    **폰트를 줄여 삼키지 않는다.** 상한 × 2줄에 안 들어가는 큐는 그 언어 대본이 줄당
+    상한을 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가 글자를 작게 만들어
+    넘기면 상류 위반이 화면에서만 티가 나고 기록에는 안 남는다.
+
+    상한은 로케일의 것이다 (ADR-0062) — `lang`은 어느 언어의 대본을 가리킬지 정한다.
+
+    **스펙 01의 `line_chars_max`를 인용하지 않는다.** 그 값은 `core_chars`(공백·부호 제외)로
+    재고 여기는 화면에 그려지는 원문 글자로 재서 단위가 다르다 (ko 0.72 · ja 1.00 · en 0.79,
+    석빙고 실측). 단위를 섞으면 어느 쪽을 고쳐야 할지 흐려진다 — ADR-0062 되돌릴 조건 5.
     """
     longest = max(len(line) for line in lines)
     if longest <= limit:
         return
+    where = f"{lang} 대본" if lang else "대본"
     raise SubtitleError(
         f"scenes/{scene_id}: 자막을 {len(lines)}줄로 나눠도 가장 긴 줄이 {longest}자다 "
-        f"(스펙 03 상한 {limit}자 × {MAX_LINES}줄). 스펙 01의 '줄당 최대 "
-        f"{script_rules.LINE_CHARS_MAX}자'를 넘긴 대본이라는 뜻이다 — 1부에서 고쳐야 한다"
+        f"({lang or 'ko'} 자막 폭은 줄당 {limit}자 × {MAX_LINES}줄). 그 줄이 {where}에서 "
+        f"너무 길다는 뜻이다 — 1부에서 고쳐야 한다"
     )
 
 
@@ -249,13 +291,15 @@ EVENTS_HEADER = "\n".join(
 
 
 def build_ass(
-    scenes: Sequence[dict[str, Any]], *, font_name: str = FONT_NAME
+    scenes: Sequence[dict[str, Any]], *, font_name: str = FONT_NAME, lang: str = "",
 ) -> tuple[str, list[str]]:
     """`scenes.timed.{lang}.json`의 씬 배열 → (ASS 문서, 경고).
 
     씬의 `text`·`start`·`end`를 그대로 옮긴다. 대본을 고치지 않는다 (ADR-0017).
-    `font_name`은 그 언어의 폰트다 (`font_name_for`) — 크기·줄 수 산수는 ko 기준 그대로다.
+    `font_name`은 그 언어의 폰트이고(`font_name_for`), `lang`은 **줄당 상한**을 고른다
+    (`max_line_chars_for`, ADR-0062) — 폰트 크기·줄 수는 세 언어가 같다.
     """
+    limit = max_line_chars_for(lang) if lang else MAX_LINE_CHARS
     if not scenes:
         raise SubtitleError("씬이 없다")
 
@@ -275,8 +319,8 @@ def build_ass(
             )
         previous_end = end
 
-        lines = wrap_text(scene["text"])
-        check_overflow(scene_id, lines)
+        lines = wrap_text(scene["text"], limit=limit)
+        check_overflow(scene_id, lines, limit=limit, lang=lang)
 
         text = LINE_BREAK.join(escape_text(line) for line in lines)
         events.append(
