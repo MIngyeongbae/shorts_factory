@@ -164,6 +164,40 @@ def test_정렬은_normalized가_아니라_alignment다():
     assert narration.alignment.text == TEXT
 
 
+def test_엔진이_읽은_텍스트는_기록으로_남는다():
+    """`normalized_alignment`는 정렬에 쓰지 않되 **버리지도 않는다** (ADR-0063 결정 5).
+
+    우리가 편 발화형 위에 엔진이 무엇을 더 했는지 볼 수 있는 유일한 창이다. 이것이
+    없으면 "숫자를 이상하게 읽었다"를 오디오로만 확인해야 한다 (ADR-0063 맥락 2).
+    """
+    narration = parse_response(
+        response_payload(),
+        sample_rate=SAMPLE_RATE,
+        voice_id="voice-test",
+        model_id=MODEL_ID,
+        output_format=DEFAULT_OUTPUT_FORMAT,
+    )
+
+    assert narration.raw["normalized_text"] == TEXT + "요"
+    assert narration.alignment.text == TEXT  # 정렬은 여전히 보낸 텍스트의 것이다
+
+
+def test_normalized_alignment이_없어도_돈다():
+    """엔진이 안 줄 수도 있는 필드다. 기록이 없다고 호출이 실패하면 안 된다."""
+    payload = response_payload()
+    payload.pop("normalized_alignment")
+
+    narration = parse_response(
+        payload,
+        sample_rate=SAMPLE_RATE,
+        voice_id="voice-test",
+        model_id=MODEL_ID,
+        output_format=DEFAULT_OUTPUT_FORMAT,
+    )
+
+    assert "normalized_text" not in narration.raw
+
+
 @pytest.mark.parametrize(
     "payload",
     [

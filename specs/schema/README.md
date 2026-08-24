@@ -18,6 +18,7 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 | `promptplan.schema.json` | `[5]` 세션 산출(씬별 샷 서술) — SUBJECT 단락·카메라 착지·RED 기하, 영어·ASCII·길이 (ADR-0060). 골격 조립은 코드가 `vocab.json`에서 | `schemas/promptplan.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프·검사 값) + 언어별 로케일 블록 자리 (ADR-0056) | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
+| `speech-rules.json` | 발화형 — TTS에 보낼 때 숫자·단위를 그 언어가 읽는 대로 펴는 로케일별 수사표·단위 사전 (ADR-0063). 자막은 원문을 쓴다 | `schemas/speech_rules.py` → `tts/speech.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
 | `refs.schema.json` | `[4]` 산출(`refs.json`) — 씬별 실사 참조(서술)와 게시 가능 라이선스 (ADR-0030·0055) | `schemas/refs.py`, `[8]` |
 | `ending.schema.json` | `[8]` 산출(`ending.json`) — 엔딩 실사 컷 계약 (ADR-0055) | `schemas/ending.py` |

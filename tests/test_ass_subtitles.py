@@ -33,6 +33,9 @@ from shorts_factory.video.subtitles import (
     parse_timestamp,
     style_line,
     subtitle_band,
+    TITLE_STYLE_NAME,
+    title_band,
+    title_style_line,
     wrap_text,
 )
 
@@ -309,3 +312,91 @@ def test_scene_starting_before_the_previous_end_is_refused():
 def test_empty_scene_list_is_refused():
     with pytest.raises(SubtitleError, match="씬이 없다"):
         build_ass([])
+
+
+# --- 제목 훅 (ADR-0065) -------------------------------------------------------
+#
+# 제목은 첫 씬 구간 동안 상단에 뜬다. 자막과 **같은 값을 쓰고 자리만 다르며**,
+# 안 들어가면 실패가 아니라 강등이다 (마감이지 본편이 아니다).
+
+TITLE = "석빙고 — 전기 없던 조선이 한여름에 얼음을 먹은 방법"
+
+#: `Style:` 줄을 쉼표로 자른 자리 (ASS V4+ 규격 순서)
+STYLE_NAME_FIELD, STYLE_ALIGNMENT_FIELD, STYLE_MARGIN_V_FIELD = 0, 18, 21
+
+
+def title_scenes():
+    return timed_document(PISA)["scenes"]
+
+
+def test_no_title_keeps_the_document_unchanged():
+    """제목이 없으면 지금까지와 완전히 같은 문서다 (D-3)."""
+    plain, _ = build_ass(title_scenes())
+    assert plain == build_ass(title_scenes(), title="")[0]
+    assert TITLE_STYLE_NAME not in plain
+
+
+def test_title_rides_the_first_scene():
+    """구간은 0 ~ 첫 씬의 end다."""
+    scenes = title_scenes()
+    document, warnings = build_ass(scenes, title=TITLE)
+
+    assert not warnings
+    assert f"Style: {TITLE_STYLE_NAME}," in document
+    events = [line for line in document.splitlines() if line.startswith("Dialogue:")]
+    assert len(events) == len(scenes) + 1
+
+    fields = events[0].split(",", 9)
+    assert fields[1] == ass_timestamp(0.0)
+    assert fields[2] == ass_timestamp(float(scenes[0]["end"]))
+    assert fields[3] == TITLE_STYLE_NAME
+    assert TITLE.split(" ")[0] in fields[9]
+
+
+def test_sync_verification_never_sees_the_title():
+    """`parse_ass`는 자막 큐만 돌려준다 — 제목이 씬으로 세지면 싱크 검증이 깨진다."""
+    scenes = title_scenes()
+    cues = parse_ass(build_ass(scenes, title=TITLE)[0])
+
+    assert len(cues) == len(scenes)
+    assert cues[0].text == scenes[0]["text"]
+
+
+def test_title_style_differs_from_subtitle_only_in_position():
+    """폰트·크기·색·외곽선은 자막의 것이다 — 갈리면 룩이 두 벌이 된다."""
+    subtitle = style_line("X").split(",")
+    title = title_style_line("X").split(",")
+
+    differing = [i for i, (a, b) in enumerate(zip(subtitle, title)) if a != b]
+    assert differing == [STYLE_NAME_FIELD, STYLE_ALIGNMENT_FIELD, STYLE_MARGIN_V_FIELD]
+    assert title[STYLE_NAME_FIELD] == f"Style: {TITLE_STYLE_NAME}"
+    assert int(title[STYLE_ALIGNMENT_FIELD]) == 8  # 상단 중앙
+    assert int(subtitle[STYLE_ALIGNMENT_FIELD]) == ALIGNMENT
+
+
+def test_title_band_never_touches_the_subtitle_band():
+    """둘이 같은 프레임에 떠도 공간은 안 겹친다 (제목 위 · 자막 아래)."""
+    assert title_band(MAX_LINES)[1] < subtitle_band(MAX_LINES)[0]
+    assert title_band(1)[0] == title_band(MAX_LINES)[0]  # 위끝이 고정이다
+
+
+def test_overlong_title_degrades_instead_of_failing():
+    """제목은 마감이지 본편이 아니다 — 안 들어가면 제목만 빠지고 영상은 나온다."""
+    scenes = title_scenes()
+    document, warnings = build_ass(scenes, title="가" * (MAX_LINE_CHARS * MAX_LINES + 10))
+
+    assert any("ADR-0065" in w for w in warnings)
+    assert TITLE_STYLE_NAME not in document
+    assert len(parse_ass(document)) == len(scenes)
+
+
+def test_title_uses_the_locale_line_limit():
+    """줄당 상한은 로케일의 것이다 (ADR-0062) — 제목도 같은 값을 쓴다."""
+    scenes = title_scenes()
+    english = "Would you believe Joseon Korea ate ice in midsummer with no electricity at all"
+    document, warnings = build_ass(scenes, lang="en", title=english)
+
+    assert not warnings
+    event = next(line for line in document.splitlines() if TITLE_STYLE_NAME in line)
+    for part in event.split(",", 9)[9].split(LINE_BREAK):
+        assert len(part) <= max_line_chars_for("en")

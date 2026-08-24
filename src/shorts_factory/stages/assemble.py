@@ -71,6 +71,7 @@ from ..video.ffmpeg import (
 from ..video.subtitles import (
     FONT_SUFFIXES,
     FONTS_DIR,
+    TITLE_STYLE_NAME,
     build_ass,
     font_name_for,
     parse_ass,
@@ -120,6 +121,8 @@ class LanguageAssembly:
     ending_cuts: int = 0
     padded_scene_ids: tuple[int, ...] = ()
     font_name: str = ""
+    #: 실제로 굽힌 제목 (ADR-0065). 강등되면 빈 문자열이다 — 경고 문구가 아니라 이 값이 판정이다.
+    title: str = ""
     narration_muxed: bool = False
     subtitles_path: Path | None = None
     timeline_path: Path | None = None
@@ -434,6 +437,7 @@ def run_assemble_stage(
                 ending_cuts=lang_state.get("ending_cuts", 0),
                 padded_scene_ids=tuple(lang_state.get("padded_scene_ids", ())),
                 font_name=lang_state.get("font_name", ""),
+                title=lang_state.get("title", ""),
                 narration_muxed=bool(lang_state.get("narration_muxed")),
                 subtitles_path=subtitles_path, timeline_path=timeline_path,
                 warnings=lang_state.get("warnings", []), skipped=True,
@@ -512,8 +516,14 @@ def _assemble_language(
         raise fail(str(exc)) from exc
 
     font_name = font_name_for(lang)
-    ass_document, ass_warnings = build_ass(scenes, font_name=font_name, lang=lang)
+    # 제목은 선택 필드다 — 없으면 제목 훅 없이 지금까지와 같이 굽는다 (ADR-0065, D-3).
+    title = str(document.get("title") or "")
+    ass_document, ass_warnings = build_ass(
+        scenes, font_name=font_name, lang=lang, title=title
+    )
     warnings.extend(ass_warnings)
+    # 강등됐는지는 경고 문구가 아니라 **문서에 스타일이 실렸는지**로 본다 (ADR-0065).
+    burned_title = title if f"Style: {TITLE_STYLE_NAME}," in ass_document else ""
     write_text(subtitles_path, ass_document)
 
     # 만든 자막을 되읽어 검증한다. 만들 때 쓴 숫자가 아니라 파일에 남은 숫자를 본다.
@@ -594,6 +604,7 @@ def _assemble_language(
         "cut_scene_ids": list(timeline.cut_scene_ids),
         "max_drift": report.max_drift,
         "ending_cuts": len(ending_lengths),
+        "title": burned_title,
         "padded_scene_ids": list(padded_ids),
         "font_name": font_name,
         "narration_muxed": narration_muxed,
@@ -611,7 +622,7 @@ def _assemble_language(
         dissolves=timeline.counts[DISSOLVE], cuts=timeline.counts[HARD_CUT],
         cut_scene_ids=timeline.cut_scene_ids, max_drift=report.max_drift,
         ending_cuts=len(ending_lengths), padded_scene_ids=padded_ids,
-        font_name=font_name, narration_muxed=narration_muxed,
+        font_name=font_name, title=burned_title, narration_muxed=narration_muxed,
         subtitles_path=subtitles_path, timeline_path=timeline_path,
         warnings=warnings,
     )

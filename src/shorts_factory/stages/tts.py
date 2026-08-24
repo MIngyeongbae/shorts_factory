@@ -33,6 +33,16 @@ ko와 같은지, (2) 있는 언어마다 voice_id가 채워져 있는지를 본�
 않는다** — ko를 줄이면 번안도 다시 되고 그 TTS도 다시 사야 한다. ja·en이 넘치면 그 언어만
 멈추고 나머지는 돈다 — 언어끼리는 독립이다.
 
+## 읽는 텍스트는 보는 텍스트가 아니다 (ADR-0063)
+
+TTS로 나가는 것은 대본 줄이 아니라 **발화형**이다 — 숫자·단위를 그 언어가 읽는 대로 편
+텍스트다 (`12cm` → `십이 센티미터`). 자막이 쓰는 `scenes.timed.{lang}.json`의 `text`는
+**원문 그대로**이고, 대본 파일도 건드리지 않는다. 두 텍스트가 갈리는 자리는 여기뿐이다.
+
+정렬 대조도 발화형 위에서 돈다 — 보낸 텍스트와 `alignment`가 글자까지 같아야 하기
+때문이다 (`sync.character_spans`). 무엇을 어떻게 폈는지는 `timing.{lang}.json`의
+`spoken`에 남는다. 사전에 없는 단위는 그대로 나가고 경고만 남는다 (`tts/speech.py`).
+
 ## 이 단계가 하지 않는 것
 
 - **게이트 판정.** `judgment/human.json`의 `decision: go` 확인은 2부 진입점의 몫이다
@@ -62,7 +72,8 @@ from ..schemas.timed_scenes import (
 )
 from .scriptmd import parse_script_md
 from ..tts.audio import DEFAULT_FFMPEG, DEFAULT_TEMPO, AudioError, write_narration
-from ..tts.base import TTSClient
+from ..tts.base import Narration, TTSClient
+from ..tts.speech import SpokenScript, spoken_lines
 from ..tts.sync import (
     LINE_JOINER,
     SyncError,
@@ -233,6 +244,7 @@ def build_timing(
     raw_duration: float,
     audio_duration: float,
     warnings: list[str],
+    spoken: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """timing.{lang}.json 문서 — **이 단계의 실행 기록이다** (ADR-0020).
 
@@ -240,8 +252,12 @@ def build_timing(
     `scenes.timed.{lang}.json` 하나뿐이고, 여기 남는 것은 (1) 엔진 메타, (2) 배속과 원속
     길이 — 계산을 재현할 근거, (3) 경고, (4) 총 길이 — **길이 초과로 멈춰 실측 파일을 쓰지
     않는 경우에도** 무엇이 얼마나 넘쳤는지 남기기 위한 것이다. 호출은 언어당 과금이다.
+
+    (5) `spoken` — 발화형으로 편 줄과, 엔진이 그 위에 무엇을 더 읽었는지
+    (`normalized_alignment`). ADR-0063 되돌릴 조건 1의 관측 수단이다: 오디오를 다시 듣지
+    않고 무엇을 어떻게 읽혔는지 여기서 본다. 편 줄이 없으면 키를 넣지 않는다.
     """
-    return {
+    document: dict[str, Any] = {
         "run_id": source["run_id"],
         "topic": source["topic"],
         "lang": lang,
@@ -255,6 +271,9 @@ def build_timing(
         },
         "warnings": warnings,
     }
+    if spoken:
+        document["spoken"] = spoken
+    return document
 
 
 def _tempo_for(tempo: float | Mapping[str, float], lang: str) -> float:
@@ -269,12 +288,17 @@ def _client_for(tts: TTSClient | TTSFactory, lang: str) -> TTSClient:
     return tts(lang)
 
 
-def _read_lines(path: Path, lang: str) -> list[str]:
+def _read_script(path: Path, lang: str) -> tuple[str, list[str]]:
+    """그 언어 대본 → `(제목, 대본 줄)`.
+
+    제목은 `# ` 머리글이고 **선택이다** — 없으면 빈 문자열이고 그 언어 영상에 제목
+    훅이 안 붙는다 (ADR-0065, D-3). 대본 줄이 없는 것은 여전히 실패다.
+    """
     doc = parse_script_md(path.read_text(encoding="utf-8"))
     lines = list(doc.lines)
     if not lines:
         raise TTSStageError(f"{path}에 대본 줄이 없다 (스펙 01 포맷 확인)")
-    return lines
+    return doc.title, lines
 
 
 def _language_state(state: RunState, lang: str) -> dict[str, Any]:
@@ -308,8 +332,11 @@ def run_tts_stage(
         wanted.insert(0, PRIMARY_LANGUAGE)
     present = [l for l in LANGUAGES if l in wanted and script_path(paths, slug, l).exists()]
 
+    scripts_by_lang: dict[str, tuple[str, list[str]]] = {
+        lang: _read_script(script_path(paths, slug, lang), lang) for lang in present
+    }
     texts_by_lang: dict[str, list[str]] = {
-        lang: _read_lines(script_path(paths, slug, lang), lang) for lang in present
+        lang: lines for lang, (_title, lines) in scripts_by_lang.items()
     }
     ko_count = len(texts_by_lang[PRIMARY_LANGUAGE])
     for lang in present:
@@ -371,6 +398,7 @@ def run_tts_stage(
             continue
         result.languages[lang] = _run_language(
             lang=lang, texts=texts_by_lang[lang], client=clients[lang], state=state,
+            title=scripts_by_lang[lang][0],
             run_id=run_id, topic=topic, run_dir=run_dir, paths=paths,
             tempo=_tempo_for(tempo, lang), ffmpeg=ffmpeg, runner=runner,
         )
@@ -398,9 +426,25 @@ def run_tts_stage(
     return result
 
 
+def _spoken_record(speech: SpokenScript, narration: Narration) -> dict[str, Any] | None:
+    """`timing.{lang}.json`의 `spoken` 블록 (ADR-0063 결정 5).
+
+    편 줄이 없고 엔진 정규화도 못 받았으면 키 자체를 넣지 않는다 — 빈 블록은 "폈는데
+    아무것도 안 바뀌었다"와 "볼 것이 없다"를 구별해 주지 못한다.
+    """
+    record: dict[str, Any] = {}
+    if speech.changes:
+        record["lines"] = [dict(change) for change in speech.changes]
+    engine = narration.raw.get("normalized_text")
+    if engine:
+        # 엔진이 우리 발화형 위에 무엇을 더 읽었는지 보는 유일한 창이다 (ADR-0063 맥락 2).
+        record["engine_normalized"] = engine
+    return record or None
+
+
 def _run_language(
     *, lang: str, texts: list[str], client: TTSClient, state: RunState,
-    run_id: str, topic: str, run_dir: Path, paths: Paths,
+    run_id: str, topic: str, run_dir: Path, paths: Paths, title: str = "",
     tempo: float, ffmpeg: str, runner,
 ) -> LanguageResult:
     """언어 하나 — 단일 호출 → 경계 → atempo → 세 파일. 실패는 `TTSStageError`로 올린다."""
@@ -415,8 +459,14 @@ def _run_language(
     # 파일이 있다는 이유로 그대로 진행해 버린다.
     scenes_path.unlink(missing_ok=True)
 
-    text = narration_text(texts, joiner=LINE_JOINER)
-    log.info("[%s] %s 단일 호출 %d자 / %d씬 (ADR-0004)", STAGE, lang, len(text), len(texts))
+    # 보내는 것은 대본 줄이 아니라 발화형이다 (ADR-0063). 원문은 scenes.timed로 간다.
+    speech = spoken_lines(texts, lang)
+    text = narration_text(speech.lines, joiner=LINE_JOINER)
+    log.info(
+        "[%s] %s 단일 호출 %d자(원문 %d자) / %d씬 — 발화형 %d줄 (ADR-0004·0063)",
+        STAGE, lang, len(text), len(narration_text(texts, joiner=LINE_JOINER)),
+        len(texts), speech.changed_count,
+    )
 
     narration = client.synthesize(text, timeout=TIMEOUT, label=f"{STAGE}:{lang}")
 
@@ -427,11 +477,13 @@ def _run_language(
         return TTSStageError(f"[{lang}] {message}")
 
     try:
-        raw_boundaries, warnings = scene_boundaries(
-            narration.alignment, texts, joiner=LINE_JOINER
+        # 정렬은 **보낸 텍스트**의 것이다 — 경계도 같은 텍스트 위에서 뽑는다 (ADR-0063 결정 2).
+        raw_boundaries, sync_warnings = scene_boundaries(
+            narration.alignment, speech.lines, joiner=LINE_JOINER
         )
     except SyncError as exc:
         raise fail(str(exc)) from exc
+    warnings = [*speech.warnings, *sync_warnings]
 
     # specs/05 — atempo 적용 후 타임스탬프도 1/tempo 스케일 보정
     boundaries = scale(raw_boundaries, 1.0 / tempo)
@@ -451,7 +503,7 @@ def _run_language(
             f"{total_duration:.2f}초의 차이가 {AUDIO_TOLERANCE}초를 넘는다"
         )
 
-    timed = build_line_timed_scenes(run_id, topic, texts, boundaries)
+    timed = build_line_timed_scenes(run_id, topic, texts, boundaries, title=title)
     errors, timed_warnings = validate_line_timed_scenes(timed)
     warnings.extend(timed_warnings)
 
@@ -461,7 +513,7 @@ def _run_language(
         source={"run_id": run_id, "topic": topic}, lang=lang,
         boundaries=boundaries, narration_meta=narration.meta,
         tempo=tempo, raw_duration=raw_duration, audio_duration=audio_duration,
-        warnings=warnings,
+        warnings=warnings, spoken=_spoken_record(speech, narration),
     )
     write_text(timing_path, dump_json(timing))
 

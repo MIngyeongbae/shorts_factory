@@ -74,9 +74,24 @@ GLYPH_WIDTH_RATIO = 1.0
 #: 자막 블록이 놓이는 세로 밴드 (화면 비율)
 BAND = tuple(_STYLE["band"])
 
+#: ASS 스타일 이름. **`parse_ass`가 이 이름만 되읽는다** — 제목 이벤트가 싱크 검증의
+#: 큐 목록에 섞이면 씬 수가 하나 늘어 검증이 통째로 깨진다 (ADR-0065 결정 5).
+SUBTITLE_STYLE_NAME = "Default"
+
+#: 제목 훅 (ADR-0065). 폰트·크기·색·외곽선·줄당 상한은 자막의 것을 그대로 쓰고
+#: **다른 것은 자리뿐이다** — 계약도 그 둘만 든다.
+_TITLE = _STYLE["title"]
+TITLE_STYLE_NAME = _TITLE["style_name"]
+TITLE_ALIGNMENT = _TITLE["alignment"]
+TITLE_BAND = tuple(_TITLE["band"])
+
 #: 자막 블록의 **아래끝**을 밴드의 아래끝에 맞추는 하단 여백(px). 위끝은 줄 수에 따라
 #: 움직이며(1줄 78.7% / 2줄 75.4%) 둘 다 밴드 안이다 — `subtitle_band()`가 계산한다.
 MARGIN_V = round(PLAY_RES_Y * (1 - BAND[1]))
+
+#: 제목 블록의 **위끝**을 밴드 위끝에 맞추는 상단 여백(px). ASS의 MarginV는 Alignment가
+#: 7·8·9일 때 위에서 잰다 — 자막(2 = 아래에서)과 기준선이 반대다.
+TITLE_MARGIN_V = round(PLAY_RES_Y * TITLE_BAND[0])
 
 #: libass가 한 줄에 쓰는 세로 크기 ÷ 폰트 크기의 근사치. 밴드 계산에만 쓴다.
 LINE_HEIGHT_RATIO = 1.2
@@ -204,6 +219,16 @@ def subtitle_band(line_count: int) -> tuple[float, float]:
     return top / PLAY_RES_Y, bottom / PLAY_RES_Y
 
 
+def title_band(line_count: int) -> tuple[float, float]:
+    """제목 블록이 차지하는 세로 구간 비율 `(위, 아래)` (ADR-0065).
+
+    자막과 **기준선이 반대다** — 위끝이 고정이고 아래끝이 줄 수에 따라 내려간다.
+    """
+    top = TITLE_MARGIN_V
+    bottom = top + line_count * FONT_SIZE * LINE_HEIGHT_RATIO
+    return top / PLAY_RES_Y, bottom / PLAY_RES_Y
+
+
 # --- ASS 문서 ---------------------------------------------------------------
 
 
@@ -249,16 +274,34 @@ class Cue:
         return " ".join(self.lines)
 
 
-def style_line(font_name: str = FONT_NAME) -> str:
-    """specs/03 자막 스타일 한 줄. 필드 순서는 ASS V4+ 규격 그대로다. 폰트만 언어별이다 (스펙 04)."""
+def _style_line(name: str, font_name: str, *, alignment: int, margin_v: int) -> str:
+    """ASS V4+ 스타일 한 줄. 필드 순서는 규격 그대로다.
+
+    자막과 제목이 **같은 값을 공유하고 자리만 다르다** (ADR-0065) — 두 줄을 따로 적으면
+    색이나 외곽선이 한쪽만 바뀌는 사고가 난다.
+    """
     return (
-        "Style: Default,"
+        f"Style: {name},"
         f"{font_name},{FONT_SIZE},"
         f"{PRIMARY_COLOUR},&H000000FF,{OUTLINE_COLOUR},&H00000000,"
         "-1,0,0,0,"  # Bold(-1=true), Italic, Underline, StrikeOut
         "100,100,0,0,"  # ScaleX, ScaleY, Spacing, Angle
         f"1,{OUTLINE},{SHADOW},"  # BorderStyle(1=외곽선+그림자)
-        f"{ALIGNMENT},{MARGIN_LR},{MARGIN_LR},{MARGIN_V},1"
+        f"{alignment},{MARGIN_LR},{MARGIN_LR},{margin_v},1"
+    )
+
+
+def style_line(font_name: str = FONT_NAME) -> str:
+    """specs/03 자막 스타일 한 줄. 폰트만 언어별이다 (스펙 04)."""
+    return _style_line(
+        SUBTITLE_STYLE_NAME, font_name, alignment=ALIGNMENT, margin_v=MARGIN_V
+    )
+
+
+def title_style_line(font_name: str = FONT_NAME) -> str:
+    """제목 훅 스타일 한 줄 (ADR-0065). 자막과 다른 것은 Alignment와 세로 여백뿐이다."""
+    return _style_line(
+        TITLE_STYLE_NAME, font_name, alignment=TITLE_ALIGNMENT, margin_v=TITLE_MARGIN_V
     )
 
 
@@ -290,14 +333,41 @@ EVENTS_HEADER = "\n".join(
 )
 
 
+def title_event(title: str, end: float, *, limit: int) -> tuple[str, str]:
+    """제목 훅 이벤트 한 줄 → `(Dialogue 줄, 경고)` (ADR-0065).
+
+    구간은 `0` ~ 첫 씬의 `end`다 — 첫 씬이 끝나면 제목도 사라진다.
+
+    **강등 사다리는 `굽기 → 없음`이다.** 줄 수 안에 안 들어가면 빈 줄과 경고를 돌려주고
+    제목만 빠진다. 자막은 같은 상황에서 실패로 올리지만(`check_overflow`) **제목은
+    마감이지 본편이 아니다** — 제목 하나 때문에 완성 영상을 잃지 않는다 (specs/05 D-5).
+    """
+    lines = wrap_text(title, limit=limit, max_lines=MAX_LINES)
+    longest = max(len(line) for line in lines)
+    if longest > limit:
+        return "", (
+            f"제목이 줄당 {limit}자 × {MAX_LINES}줄에 안 들어가(가장 긴 줄 {longest}자) "
+            f"제목 훅 없이 굽는다 (ADR-0065 강등 사다리). 제목: {title!r}"
+        )
+    text = LINE_BREAK.join(escape_text(line) for line in lines)
+    return (
+        f"Dialogue: 0,{ass_timestamp(0.0)},{ass_timestamp(end)},"
+        f"{TITLE_STYLE_NAME},,0,0,0,,{text}"
+    ), ""
+
+
 def build_ass(
     scenes: Sequence[dict[str, Any]], *, font_name: str = FONT_NAME, lang: str = "",
+    title: str = "",
 ) -> tuple[str, list[str]]:
     """`scenes.timed.{lang}.json`의 씬 배열 → (ASS 문서, 경고).
 
     씬의 `text`·`start`·`end`를 그대로 옮긴다. 대본을 고치지 않는다 (ADR-0017).
     `font_name`은 그 언어의 폰트이고(`font_name_for`), `lang`은 **줄당 상한**을 고른다
     (`max_line_chars_for`, ADR-0062) — 폰트 크기·줄 수는 세 언어가 같다.
+
+    `title`이 있으면 **첫 씬 구간 동안 상단에 뜨는 제목 훅**을 얹는다 (ADR-0065).
+    빈 문자열이면 지금까지와 완전히 같은 문서가 나온다 (D-3).
     """
     limit = max_line_chars_for(lang) if lang else MAX_LINE_CHARS
     if not scenes:
@@ -328,7 +398,21 @@ def build_ass(
             f"Default,,0,0,0,,{text}"
         )
 
-    document = "\n".join((HEADER, style_line(font_name), "", EVENTS_HEADER, *events)) + "\n"
+    styles = [style_line(font_name)]
+    title_events: list[str] = []
+    if title.strip():
+        event, warning = title_event(
+            title.strip(), float(scenes[0]["end"]), limit=limit
+        )
+        if warning:
+            warnings.append(warning)
+        else:
+            styles.append(title_style_line(font_name))
+            title_events.append(event)
+
+    document = "\n".join(
+        (HEADER, *styles, "", EVENTS_HEADER, *title_events, *events)
+    ) + "\n"
     return document, warnings
 
 
@@ -338,7 +422,11 @@ _OVERRIDE_RE = re.compile(r"^\{(\\[^}]*)\}")
 
 
 def parse_ass(document: str) -> list[Cue]:
-    """ASS 문서에서 큐를 되읽는다. 만든 자막을 검증할 때만 쓴다 (verify.py)."""
+    """ASS 문서에서 **자막 큐만** 되읽는다. 만든 자막을 검증할 때만 쓴다 (verify.py).
+
+    `Default`가 아닌 스타일의 이벤트는 건너뛴다 — 제목 훅(`Title`, ADR-0065)이 큐 목록에
+    섞이면 씬 수가 하나 늘어 `[9]`의 싱크 검증(±200ms)이 통째로 어긋난다.
+    """
     cues: list[Cue] = []
     for line in document.splitlines():
         if not line.startswith("Dialogue:"):
@@ -346,6 +434,8 @@ def parse_ass(document: str) -> list[Cue]:
         fields = line[len("Dialogue:") :].split(",", 9)
         if len(fields) < 10:
             raise SubtitleError(f"필드가 모자란 Dialogue 줄이다: {line!r}")
+        if fields[3].strip() != SUBTITLE_STYLE_NAME:
+            continue
 
         #: 큐별 오버라이드는 더 이상 만들지 않지만(폰트 축소 경로 없음), 손으로 고친
         #: 자막을 되읽어도 태그가 본문으로 새지 않도록 걷어내고 읽는다.

@@ -36,8 +36,11 @@ def timed_document(slug: str = PISA, *, scale: float = 1.0) -> dict[str, Any]:
 
 
 def line_timed_document(document: dict[str, Any]) -> dict[str, Any]:
-    """병합본 → `[3]`이 실제로 쓰는 줄 경계 문서 (text+시각만, specs/05 계약 표)."""
-    return {
+    """병합본 → `[3]`이 실제로 쓰는 줄 경계 문서 (text+시각만, specs/05 계약 표).
+
+    `title`은 있으면 나른다 — 언어별 제목 훅이 이 파일로 흐른다 (ADR-0065).
+    """
+    line = {
         "run_id": document["run_id"],
         "topic": document["topic"],
         "total_duration": document["total_duration"],
@@ -46,6 +49,9 @@ def line_timed_document(document: dict[str, Any]) -> dict[str, Any]:
             for s in document["scenes"]
         ],
     }
+    if document.get("title"):
+        line["title"] = document["title"]
+    return line
 
 
 def install_run(

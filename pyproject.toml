@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = ["jsonschema>=4.20", "referencing>=0.30"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "fonttools>=4.50"]  # fonttools: tools/normalize_font_metrics.py (ADR-0064)
 
 [build-system]
 requires = ["setuptools>=68"]

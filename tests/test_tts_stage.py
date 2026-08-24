@@ -31,6 +31,7 @@ from shorts_factory.tts.fake import (
     fake_alignment,
     fake_narration,
 )
+from shorts_factory.tts.speech import spoken_lines
 from shorts_factory.tts.sync import narration_text
 
 RUN_ID = "20260821-tts-fixture"
@@ -123,8 +124,28 @@ def test_script_is_a_single_call_with_every_line_joined(pisa):
     run(pisa, tts=tts)
 
     assert len(tts.calls) == 1
-    assert tts.calls[0]["text"] == narration_text(script_lines())
+    assert tts.calls[0]["text"] == narration_text(spoken_lines(script_lines(), "ko").lines)
     assert tts.calls[0]["label"] == f"{STAGE}:ko"
+
+
+def test_the_call_carries_the_spoken_form_not_the_script(pisa):
+    """ADR-0063 — 읽는 텍스트와 보는 텍스트는 다르다.
+
+    보내는 것은 발화형이고(`12 mm` → `십이 밀리미터`), 자막이 읽는 실측 파일의 `text`는
+    **원문 그대로**다. 이 둘이 같아지면 자막에 풀어 쓴 숫자가 나가거나(ADR-0060 결정 4의
+    라벨 에코가 깨진다) TTS가 약어를 읽게 된다.
+    """
+    tts = FakeTTSClient()
+    result = run(pisa, tts=tts)
+    sent = tts.calls[0]["text"]
+    script = narration_text(script_lines())
+
+    assert sent != script  # 픽스처에 숫자가 있다 (1989년·8,000 m³·12 mm)
+    assert "mm" not in sent and "밀리미터" in sent
+    assert "8,000" not in sent and "팔천 세제곱미터" in sent
+
+    timed = json.loads(result.scenes_path.read_text(encoding="utf-8"))
+    assert [scene["text"] for scene in timed["scenes"]] == script_lines()
 
 
 def test_timed_scenes_carry_text_and_measured_time_only(pisa):
@@ -177,9 +198,22 @@ def test_timing_json_is_a_record_not_a_scene_contract(pisa):
     assert "cues" not in timing
     assert set(timing) == {
         "run_id", "topic", "lang", "engine", "tempo",
-        "raw_duration", "total_duration", "audio", "warnings",
+        "raw_duration", "total_duration", "audio", "warnings", "spoken",
     }
     assert timing["lang"] == "ko"
+
+
+def test_timing_records_what_was_spoken(pisa):
+    """ADR-0063 결정 5 — 무엇을 어떻게 읽혔는지가 남아야 오디오를 다시 듣지 않는다."""
+    result = run(pisa)
+    timing = json.loads(result.timing_path.read_text(encoding="utf-8"))
+
+    lines = timing["spoken"]["lines"]
+    assert lines, "픽스처에 숫자가 있는데 편 줄이 기록되지 않았다"
+    for change in lines:
+        assert set(change) == {"scene_id", "text", "spoken"}
+        assert change["text"] != change["spoken"]
+        assert script_lines()[change["scene_id"] - 1] == change["text"]
 
 
 def test_state_records_the_outputs(pisa):
@@ -325,9 +359,13 @@ def test_missing_run_points_at_seed(paths):
 
 
 def test_alignment_that_does_not_match_the_script_fails_loudly(pisa):
-    """정렬이 밀리면 영상 전체의 싱크가 깨진다. 관용적으로 맞추지 않는다."""
+    """정렬이 밀리면 영상 전체의 싱크가 깨진다. 관용적으로 맞추지 않는다.
+
+    엔진이 `normalized_alignment`(읽은 대로 편 배열)를 돌려준 경우를 흉내 낸다 —
+    우리가 보낸 발화형과 글자가 다르므로 즉시 실패해야 한다 (ADR-0063 결정 2).
+    """
     def wrong(text: str) -> Narration:
-        return fake_narration(text.replace("1989", "천구백팔십구"))
+        return fake_narration(text.replace("천구백팔십구", "1989"))
 
     with pytest.raises(TTSStageError, match="정렬이 보낸 대본과 다르다") as exc:
         run(pisa, tts=FakeTTSClient([wrong]))
@@ -543,3 +581,49 @@ def test_cli_lang_option_is_parsed():
 
     assert parse_args(["tts", "--slug", "x", "--lang", "ko,ja"]).lang == "ko,ja"
     assert parse_args(["tts", "--slug", "x"]).lang is None
+
+# --- 제목 훅 (ADR-0065) -------------------------------------------------------
+
+
+def test_title_travels_to_the_timed_contract(pisa):
+    """`script.md`의 `# 제목`이 `scenes.timed.{lang}.json`으로 간다."""
+    run(pisa)
+
+    data = json.loads(
+        (pisa.run_dir(RUN_ID) / "scenes.timed.ko.json").read_text(encoding="utf-8")
+    )
+    assert data["title"] == "픽스처 대본"
+    assert validate_line_timed_scenes(data)[0] == []
+
+
+def test_missing_title_leaves_the_field_out(paths):
+    """제목이 없으면 필드를 안 쓴다 — 빈 문자열은 계약 위반이고 부재는 아니다 (D-3)."""
+    install_md(paths)
+    md = paths.topic_dir(PISA) / "script.md"
+    md.write_text(
+        md.read_text(encoding="utf-8").replace("# 픽스처 대본\n", ""), encoding="utf-8"
+    )
+
+    run(paths)
+
+    data = json.loads(
+        (paths.run_dir(RUN_ID) / "scenes.timed.ko.json").read_text(encoding="utf-8")
+    )
+    assert "title" not in data
+    assert validate_line_timed_scenes(data)[0] == []
+
+
+def test_each_language_carries_its_own_title(paths):
+    """제목도 번안본의 것이다 — 파일이 언어별이라 저절로 그렇게 된다."""
+    install_md(paths)
+    ja = paths.topic_dir(PISA) / "script.ja.md"
+    body = (paths.topic_dir(PISA) / "script.md").read_text(encoding="utf-8")
+    ja.write_text(body.replace("# 픽스처 대본", "# フィクスチャ台本"), encoding="utf-8")
+
+    run(paths)
+
+    run_dir = paths.run_dir(RUN_ID)
+    ko = json.loads((run_dir / "scenes.timed.ko.json").read_text(encoding="utf-8"))
+    jp = json.loads((run_dir / "scenes.timed.ja.json").read_text(encoding="utf-8"))
+    assert ko["title"] == "픽스처 대본"
+    assert jp["title"] == "フィクスチャ台本"

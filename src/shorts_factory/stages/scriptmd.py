@@ -195,10 +195,20 @@ def check_script_md(text: str) -> tuple[list[str], list[str]]:
             warnings.append(f"{idx}줄 {chars}자 — 줄당 최대 {max_chars}자 초과")
 
     # 수미상관 — 마지막 줄들이 첫 줄들의 명사를 재사용하는가 (스펙 01)
+    #
+    # 엔딩에서는 형태소를 다시 추정하지 않고 **훅에서 뽑은 명사가 글자로 다시 나오는지**만
+    # 본다. `noun_stems`는 조사를 떼어 명사를 *찾는* 도구라 후보를 뽑는 쪽에는 맞지만,
+    # "그 말이 또 나왔는가"를 재는 데 쓰면 그 휴리스틱의 한계가 그대로 오탐이 된다 —
+    # 조사 없이 끝나는 명사(바다·언어)를 용언으로 보고 버리기 때문이다. 야프섬 편이
+    # 실측이다 (2026-08-24): 훅 "돈을 **바다에** 빠뜨렸는데" / 엔딩 "**바다** 밑 그 돌은
+    # … 주소만 **바다**였죠"인데 교집합이 0이었다. 조사가 붙은 쪽만 잡혔던 것이다.
+    #
+    # 이 판정은 옛 규칙보다 **느슨하기만 하다** — tail 명사 집합의 원소는 언제나 tail
+    # 텍스트의 부분 문자열이므로, 전에 통과하던 대본은 그대로 통과한다.
     size = max(1, round(n * EDGE_RATIO))
     head = noun_stems(" ".join(doc.lines[:size]))
-    tail = noun_stems(" ".join(doc.lines[-size:]))
-    if not head & tail:
+    tail_text = " ".join(doc.lines[-size:])
+    if not any(stem in tail_text for stem in head):
         errors.append("엔딩이 훅의 명사를 하나도 재사용하지 않는다 (수미상관 실패)")
 
     if not doc.claims:

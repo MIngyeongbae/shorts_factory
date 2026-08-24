@@ -53,6 +53,18 @@ def present_languages(run_dir: Path) -> list[str]:
 #: 추정 → 실측 필드명 대응 (specs/02)
 RENAMED = {"est_start": "start", "est_end": "end"}
 
+#: 그 언어 영상의 제목 훅 (ADR-0065). **선택 필드다** — 없으면 제목 없이 돈다 (D-3).
+#: `[3]`이 쓰는 줄 경계 스키마와 `[7]`·`[9]`가 읽는 병합본 스키마 **둘 다** 이 값을 쓴다.
+#: 한 곳에만 적는다 — 갈리면 `[3]`이 쓴 문서를 `[9]`가 못 읽는다 (ADR-0034 §3).
+TITLE_PROPERTY: dict[str, Any] = {
+    "type": "string",
+    "minLength": 1,
+    "description": (
+        "선택. 그 언어 script.{lang}.md의 `# 제목`. [9]가 첫 씬 구간 동안 화면 "
+        "상단에 굽는다 (ADR-0065)."
+    ),
+}
+
 #: 이 파일에 싣지 않는 대본 필드. **이미지 지시는 여기 올 이유가 없다** (ADR-0020·0022).
 #: 실측 파일을 읽는 곳은 `[7]`(클립 길이)과 `[9]`(전환·자막)뿐이고 둘 다 그림이 무엇을
 #: 설명하는지도, 어떤 구도로 잡는지도 알 필요가 없다. 그림 쪽 소비자는 `prompts.json`을
@@ -84,6 +96,10 @@ TIMED_SCENES_SCHEMA["$id"] = "scenes.timed.schema.json"
 TIMED_SCENES_SCHEMA["title"] = "scenes.timed.{lang}.json (실측 씬 계약)"
 TIMED_SCENES_SCHEMA.pop("$defs", None)
 TIMED_SCENES_SCHEMA["properties"]["scenes"]["items"] = TIMED_SCENE_SCHEMA
+#: `title`은 언어별 제목 훅이라 **파생 쌀마에만** 넣는다 (ADR-0065). 원본 `scenes.json`은
+#: 언어 중립이라 그쪽에 제목이 있을 자리가 없다. `merge_scene_direction`은 `dict(timed)`로
+#: 시작하므로 실측 문서의 `title`이 병합본에 그대로 살아남는다.
+TIMED_SCENES_SCHEMA["properties"]["title"] = copy.deepcopy(TITLE_PROPERTY)
 
 _VALIDATOR = Draft202012Validator(TIMED_SCENES_SCHEMA, registry=vocab.REGISTRY)
 
@@ -173,6 +189,7 @@ LINE_TIMED_SCHEMA: dict[str, Any] = {
         "run_id": {"type": "string", "minLength": 1},
         "topic": {"type": "string", "minLength": 1},
         "total_duration": {"type": "number", "exclusiveMinimum": 0},
+        "title": copy.deepcopy(TITLE_PROPERTY),
         "scenes": {
             "type": "array",
             "minItems": 1,
@@ -199,20 +216,30 @@ def build_line_timed_scenes(
     topic: str,
     lines: Sequence[str],
     boundaries: Sequence[tuple[float, float]],
+    *,
+    title: str = "",
 ) -> dict[str, Any]:
-    """대본 줄 + 실측 경계 → 그 언어의 scenes.timed.{lang}.json 문서 (한 줄 = 한 씬, ADR-0013)."""
+    """대본 줄 + 실측 경계 → 그 언어의 scenes.timed.{lang}.json 문서 (한 줄 = 한 씬, ADR-0013).
+
+    `title`은 그 언어 대본의 `# 제목`이고 **선택이다** — 빈 문자열이면 필드 자체를 쓰지
+    않는다. 스키마가 `minLength: 1`이라 빈 값을 실으면 계약 위반이고, 없는 것은 위반이
+    아니다 (ADR-0065, D-3).
+    """
     if len(lines) != len(boundaries):
         raise ValueError(f"줄 {len(lines)}개에 경계 {len(boundaries)}개가 왔다")
     scenes = [
         {"scene_id": index, "text": text, "start": start, "end": end}
         for index, (text, (start, end)) in enumerate(zip(lines, boundaries), start=1)
     ]
-    return {
+    document: dict[str, Any] = {
         "run_id": run_id,
         "topic": topic,
         "total_duration": scenes[-1]["end"] if scenes else 0.0,
         "scenes": scenes,
     }
+    if title.strip():
+        document["title"] = title.strip()
+    return document
 
 
 def validate_line_timed_scenes(data: Any) -> tuple[list[str], list[str]]:

@@ -72,6 +72,8 @@ REACH = {
     "factcheck.md": ("specs/05-pipeline.md", "specs/06-topic-research.md"),
     "seed.md": ("specs/06-topic-research.md",),
     "subtitle-style.json": ("specs/03-visual-rules.md",),
+    "speech-rules.json": ("specs/04-audio-rules.md", "specs/05-pipeline.md",
+                          "schemas/speech_rules.py"),
     "refs.json": ("specs/05-pipeline.md",),
     "refs.schema.json": ("specs/05-pipeline.md", "schemas/refs.py"),
     # 2부 (ADR-0056). 이미지 단계 계약(image_source 등)은 단계와 함께 지웠다.
@@ -87,7 +89,8 @@ REACH = {
 #: ADR-0033이 폐기한 전제. 스펙 재작성이 끝났으므로 0이어야 한다.
 #: 이력은 ADR에 있다 — 스펙은 지금 상태만 적는다.
 RETIRED = {
-    "고정 단 구성 (ADR-0033)": r"7단",
+    # 앞에 숫자가 붙으면 다른 말이다 — 첨성대의 `27단`(돌 켜)이 옛 `7단 구성`으로 잡혔다.
+    "고정 단 구성 (ADR-0033)": r"(?<!\d)7단",
     "옛 도메인 제한 (ADR-0033)": r"건축·토목|문화기술사",
     "소재 조건 게이트 (ADR-0033)": r"4조건",
     "비트 룰 테이블 강제 (ADR-0001 폐기)": r"룰 테이블",

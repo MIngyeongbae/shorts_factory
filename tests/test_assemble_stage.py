@@ -25,7 +25,13 @@ from shorts_factory.stages.assemble import (
     run_assemble_stage,
 )
 from shorts_factory.video.fake import FakeFFmpeg
-from shorts_factory.video.subtitles import parse_ass
+from shorts_factory.video.subtitles import (
+    FONT_NAME,
+    MAX_LINE_CHARS,
+    MAX_LINES,
+    TITLE_STYLE_NAME,
+    parse_ass,
+)
 
 
 def run(paths, run_id, *, ffmpeg=None, **kwargs):
@@ -343,7 +349,7 @@ def test_repository_font_is_handed_to_libass(pisa):
     paths, run_id, _document = pisa
     fonts = paths.root / "assets" / "fonts"
     fonts.mkdir(parents=True)
-    (fonts / "Pretendard-Bold.otf").write_bytes(b"fake-font")
+    (fonts / "DoHyeon-Regular.ttf").write_bytes(b"fake-font")
 
     ffmpeg = FakeFFmpeg()
     result = run(paths, run_id, ffmpeg=ffmpeg)
@@ -679,7 +685,7 @@ def test_font_override_per_language(paths, monkeypatch):
 
     ko = result.languages["ko"].subtitles_path.read_text(encoding="utf-8")
     ja = result.languages["ja"].subtitles_path.read_text(encoding="utf-8")
-    assert "Style: Default,Pretendard," in ko
+    assert f"Style: Default,{FONT_NAME}," in ko  # 덮어쓰기 없는 언어는 계약값(ADR-0034)
     assert "Style: Default,Noto Sans JP," in ja
     assert result.languages["ja"].font_name == "Noto Sans JP"
 
@@ -720,3 +726,47 @@ def test_a_failing_language_marks_the_stage_failed(paths):
 def test_cli_lang_option_is_parsed():
     assert parse_args(["assemble", "--run-id", "x", "--lang", "ko,ja"]).lang == "ko,ja"
     assert parse_args(["assemble", "--run-id", "x"]).lang is None
+
+# --- 제목 훅 (ADR-0065) -------------------------------------------------------
+
+
+def test_title_is_burned_and_recorded(paths):
+    """`scenes.timed`의 `title`이 자막 문서와 상태에 남는다."""
+    document = timed_document(PISA)
+    document["title"] = "픽스처 제목 — 훅으로 쓴다"
+    run_id, _ = install_run(paths, PISA, document=document)
+
+    result = run(paths, run_id)
+
+    ass = result.subtitles_path.read_text(encoding="utf-8")
+    assert f"Style: {TITLE_STYLE_NAME}," in ass
+    assert result.languages["ko"].title == document["title"]
+    # 싱크 검증은 씬만 본다 — 제목이 큐로 세지면 여기서 먼저 죽는다.
+    assert len(parse_ass(ass)) == len(document["scenes"])
+
+
+def test_no_title_assembles_exactly_as_before(paths):
+    """제목 필드가 없으면 지금까지와 같이 돈다 (D-3)."""
+    run_id, document = install_run(paths, PISA)
+
+    result = run(paths, run_id)
+
+    ass = result.subtitles_path.read_text(encoding="utf-8")
+    assert TITLE_STYLE_NAME not in ass
+    assert result.languages["ko"].title == ""
+    assert not any("ADR-0065" in w for w in result.warnings)
+
+
+def test_overlong_title_degrades_without_losing_the_video(paths):
+    """제목 하나 때문에 완성 영상을 잃지 않는다 (D-5)."""
+    document = timed_document(PISA)
+    document["title"] = "가" * (MAX_LINE_CHARS * MAX_LINES + 10)
+    run_id, _ = install_run(paths, PISA, document=document)
+
+    result = run(paths, run_id)
+
+    assert result.languages["ko"].passed
+    assert result.timeline_path.exists()
+    assert TITLE_STYLE_NAME not in result.subtitles_path.read_text(encoding="utf-8")
+    assert any("ADR-0065" in w for w in result.warnings)
+    assert result.languages["ko"].title == ""

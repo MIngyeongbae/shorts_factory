@@ -47,6 +47,7 @@ from typing import Any, Callable
 from ..config import MissingCredential, require_env
 from ..transport import TransportError, TransportTimeout, urllib_request
 from .base import (
+    API_CHARACTERS,
     PCM_S16LE,
     Alignment,
     Narration,
@@ -178,6 +179,11 @@ def parse_response(
             "with-timestamps 엔드포인트를 부른 것이 맞는지 확인하라"
         )
 
+    raw: dict[str, Any] = {"output_format": output_format}
+    normalized = normalized_text(payload)
+    if normalized:
+        raw["normalized_text"] = normalized
+
     return Narration(
         audio=audio,
         # normalized_alignment이 아니다 — 모듈 독스트링 참고.
@@ -188,8 +194,24 @@ def parse_response(
         request_id=request_id,
         voice_id=voice_id,
         model_id=model_id,
-        raw={"output_format": output_format},
+        raw=raw,
     )
+
+
+def normalized_text(payload: dict[str, Any]) -> str | None:
+    """`normalized_alignment`이 덮는 텍스트 — **엔진이 실제로 읽은 것**이다.
+
+    정렬 계산에는 여전히 쓰지 않는다 (모듈 독스트링). 기록으로만 꺼낸다 — 우리가 편
+    발화형 위에 엔진이 무엇을 더 했는지 볼 수 있는 유일한 창이고, 그것이 없으면
+    "숫자를 이상하게 읽었다"를 오디오로만 확인해야 한다 (ADR-0063 결정 5).
+    """
+    block = payload.get("normalized_alignment")
+    if not isinstance(block, dict):
+        return None
+    characters = block.get(API_CHARACTERS)
+    if not isinstance(characters, list):
+        return None
+    return "".join(str(char) for char in characters)
 
 
 def _fail(status: int, body: bytes) -> TTSError:
