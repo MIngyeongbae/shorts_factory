@@ -194,7 +194,8 @@ def check_limit_copies(docs: dict[str, str]) -> list[str]:
 META_ALIAS = {"overlay": "overlay_type"}
 
 #: enum이 아닌 meta 절 — 값 목록이 아니라 설정 묶음이다.
-META_CONFIG = {"style"}
+#: enum 축이 아니라 설정 블록. `$defs`에 대응하는 값 집합이 없는 것이 정상이다.
+META_CONFIG = {"style", "mj_dialect"}
 
 
 def check_meta_alignment() -> list[str]:

@@ -62,13 +62,29 @@ korean-id 9/16(info 6/16)·edo 9/17(info 7/17)과 갈린다. **info 비율이 �
 샘플 25장 전부 있고, 삭제된 영상 어댑터도 `2f1b6bf^`에 온전하다. **CLAUDE.md의 "MJ 구독 해지"는
 사실과 다르다** (Pro 활성) — (45)가 고치라고 남겼는데 아직 안 고쳤다.
 
+### 구현했다 (ADR-0069·0070 승인 뒤)
+
+사람이 승인해서 **계약 → 코드 → 계약 테스트** 순서로 넣었다 (CLAUDE.md 5).
+
+- `vocab.json` — `meta.mj_dialect` 신설(어순·단어 예산·`::` 금지), `video_line.art`를 채웠다
+  (`provider: mj-endimage` · `fallback_provider` · `style_in_frames` · **라인 고유 `base_style`**).
+  **그림체는 사람이 P(셀셰이딩 2.5D)로 정했고** 그 문자열이 여기 들어갔다 — 전역 `style.base_style`
+  (세미 스타일라이즈드 3D)은 그대로라 `local`·`api`는 안 바뀐다
+- `specs/03` — 「스타일을 무엇이 지는가」·「MJ 방언」 두 절 신설. `specs/05` — 라인이 프레임을
+  입력으로 받을 수 있다는 계약
+- `schemas/vocab.py` — `mj_dialect()`·`line_style()`·`style_in_frames()`
+- `schemas/visual_rules.py` — `build_mj_prompt()`·`check_mj_prompt()` 신설. **제출 전에 막는다**
+- `videogen/midjourney.py` **부활** (ADR-0056이 지운 것) + `endImage`·`motion`·모드 선택.
+  CLI에 `mj-endimage` 등록
+- `tests/test_art_line.py` **15개 신설**, 전체 스위트 통과, `spec_audit` 0건
+
+**남은 구현 (다음 세션)**: **CLEAN·INFO 두 장을 만드는 단계가 없다.** ADR-0070이 계약만
+정했고 단계는 안 지었다 — 새 단계라 스펙 05 수정 + ADR이 먼저다 (단계 독립 6원칙).
+특히 **계측 표시를 이미지에 자동으로 앉히는 방법이 미설계다** (오늘 프로브는 좌표를 손으로 박았다).
+`comfy-h3-fl2v`(대체 엔진)도 미구현이다 — 템플릿에 `first_frame`/`last_frame` 배선이 필요하다.
+
 ### 사람이 고를 것 (오늘 답 안 난 것)
 
-- **그림체.** 사람이 옛 수채·펜선을 되살리라 했고 복원에 성공했다(ADR-0023 문자열 전문 + 네거티브
-  15항목 + 배경 있는 소재, 셋 중 하나만 빠져도 백지 스케치가 된다). 그런데 **"H3가 3D로 못 읽어
-  안 움직인다"**는 지적이 나와 2.5D 후보를 뽑았고, `P-cel`(셀셰이딩 3D)이 움직임에 가장 강했다
-  (i2v에서 스타일 유지 + 진짜 시차). **최종 선택은 사람 몫.** 후보 문자열은 ADR-0070 논의에 없고
-  스크래치패드에만 있다 — 고르면 `vocab.json`에 박는다
 - **`staging: studio` 도해 충돌** — `base_style`의 "배경을 끝까지"가 스튜디오 공백과 싸워 도해가
   건축물이 된다. 별건 ADR
 - **22씬 재생성** (korean-id 9 + edo 9 + rai 4) — 조건은 충족됐는데 `art` 라인이 확정되면
@@ -76,8 +92,8 @@ korean-id 9/16(info 6/16)·edo 9/17(info 7/17)과 갈린다. **info 비율이 �
 
 ### 다음 세션이 알 것
 
-- **ADR-0069·0070은 상태가 `제안`이다.** 승인 전에는 구현하지 않는다 (adr 커맨드 절차 6).
-  0070은 R2가 서면서 **엔진 기본값을 MJ `endImage`로** 정했다 (로컬 H3는 대체 엔진으로 유지)
+- **ADR-0069·0070은 승인됐고 계약·코드가 들어갔다.** 0070의 엔진 기본값은 MJ `endImage`다
+  (로컬 H3는 대체 엔진으로 유지)
 - **프록시 설정이 두 자리 바뀌어 있다** (리포가 아니라 프록시 쪽): 계정 `timeoutMinutes` 3→10,
   전역 `imageStorageType` LOCAL→R2 + `cloudflareR2` 값. 되돌릴 때 볼 자리다
 - ComfyUI가 한 번 죽었다. 재기동은 venv 파이썬 직접 실행이고 **공백 있는 경로를 인용해야 한다**

@@ -496,7 +496,7 @@
       }
     },
     "video_line": {
-      "_role": "2부 영상 생산 라인 (ADR-0059). 라인 = [7]의 어댑터 + 그 라인의 값 몇 개이고, 씬 계약·클립 계약·검수·3개 국어 공유는 라인과 무관하다. 사람이 판정 게이트(judgment/human.json `video_line`)에서 고른다 — 소재 유형 규칙으로 자동 선택하지 않는다 (ADR-0059 결정 2). `provider`는 CLI `--provider` 이름이고 null이면 미구현이라 [7]이 멈춘다. `shot2`가 false면 [3s]가 그 라인에서 2샷(ADR-0058)을 만들지 않는다.",
+      "_role": "2부 영상 생산 라인 (ADR-0059). 라인 = [7]의 어댑터 + 그 라인의 값 몇 개이고, 씬 계약·클립 계약·검수·3개 국어 공유는 라인과 무관하다. 사람이 판정 게이트(judgment/human.json `video_line`)에서 고른다 — 소재 유형 규칙으로 자동 선택하지 않는다 (ADR-0059 결정 2). `provider`는 CLI `--provider` 이름이고 null이면 미구현이라 [7]이 멈춘다. `shot2`가 false면 [3s]가 그 라인에서 2샷(ADR-0058)을 만들지 않는다. `art`는 라인 고유 값이 더 있다 (ADR-0070): `base_style`(라인이 자기 룩을 진다), `fallback_provider`(잔량 소진·장애 때), `style_in_frames`(true면 [5]가 영상 프롬프트에 STYLE 절을 싣지 않는다 — 스타일은 first/last 프레임이 진다).",
       "_default": "local",
       "local": {
         "gloss": "로컬 GPU — ComfyUI + MiniMax H3. 변동비 0. 초기 기본 (테스트·초기 쇼츠)",
@@ -509,10 +509,24 @@
         "shot2": true
       },
       "art": {
-        "gloss": "그림 우선 — MJ (설화·괴담·인물). ADR-0060 전까지 미구현",
-        "provider": null,
-        "shot2": false
+        "gloss": "그림 우선 — MJ가 CLEAN을 그리고 우리가 계측 표시를 얹어 first/last로 잇는다 (ADR-0070)",
+        "provider": "mj-endimage",
+        "fallback_provider": "comfy-h3-fl2v",
+        "shot2": false,
+        "style_in_frames": true,
+        "base_style": "stylized 3D render, cel shaded with clean fine ink outlines, hand-painted watercolour textures on accurate 3D geometry, global illumination and ambient occlusion, real cast shadows and depth, volumetric haze, realism dominant over painterly looseness, the full environment and sky rendered edge to edge with no blank margins",
+        "_base_style": "이 라인만의 룩 (사람 선택 2026-08-25). 전역 `style.base_style`(세미 스타일라이즈드 3D)을 대체하지 않는다 — `local`·`api`는 그대로다. **3D 렌더 어휘가 핵심이다**: 회화 매체 어휘로 쓰면 깊이 단서가 없어 영상 모델이 카메라를 못 민다 (실측). 셀셰이딩의 잉크 외곽선이 선 느낌을 진다. 글자 하나를 바꾸면 재검증이 필요하다"
       }
+    },
+    "mj_dialect": {
+      "_role": "MJ에 보내는 한 줄의 형식과 예산 (ADR-0027이 형식을, ADR-0069가 예산을 정했다). `{소재 나열}, {스타일 나열} --ar {ar} --no {항목 나열}` 순서다. **코드는 이 값을 로드한다** (ADR-0034). 어기면 제출 전에 멈춘다 — MJ가 조용히 프롬프트를 다시 쓰고 3분 뒤에 실패한다.",
+      "order": "subject_first",
+      "_order": "소재가 먼저다. 뒤집으면 소재가 죽는다 (실측: 스타일 먼저 두면 건축 볼트가 나왔다)",
+      "words_min": 75,
+      "words_max": 85,
+      "_words": "플래그(`--`) 앞 본문의 단어 수. 실측 2026-08-25 (v8.2): ~200단어는 MJ가 재작성해 프록시가 결과를 못 묶고, ~120단어는 스타일 절이 꼬리에서 무시되고, 27단어는 소재를 잃는다. 79단어가 소재·스타일을 둘 다 살렸다",
+      "multi_prompt": false,
+      "_multi_prompt": "`::` 멀티프롬프트는 v8.2가 거절한다 — `Multiple text prompts aren't supported`"
     }
   }
 }

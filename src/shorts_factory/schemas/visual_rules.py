@@ -194,6 +194,81 @@ def camera_line(camera: str, target: str = "") -> str:
     return f"{phrase}, {target[0].lower() + target[1:]}."
 
 
+# --- MJ 방언 (ADR-0027 형식 + ADR-0069 예산) ---------------------------------
+
+#: 어휘에서 로드한다. 코드가 상수를 들지 않는다 (ADR-0034).
+MJ_ORDER: str = str(vocab.mj_dialect("order"))
+MJ_WORDS_MIN: int = int(vocab.mj_dialect("words_min"))
+MJ_WORDS_MAX: int = int(vocab.mj_dialect("words_max"))
+MJ_MULTI_PROMPT: bool = bool(vocab.mj_dialect("multi_prompt"))
+
+#: 플래그가 시작되는 표식. 예산은 **이 앞의 본문**만 센다.
+MJ_FLAG = "--"
+
+
+class MJPromptError(ValueError):
+    """MJ 한 줄이 계약을 어겼다. **제출 전에** 올린다 (ADR-0069).
+
+    나중에 실패하면 사유가 "3분 타임아웃"으로 오고, MJ가 프롬프트를 조용히 다시 쓴 것이
+    원인이라는 사실이 안 보인다.
+    """
+
+
+def mj_body_words(line: str) -> int:
+    """MJ 한 줄에서 **플래그 앞 본문**의 단어 수. 예산이 재는 대상이다."""
+    return len(line.split(MJ_FLAG, 1)[0].split())
+
+
+def check_mj_prompt(line: str) -> None:
+    """제출 전 검사. 어기면 `MJPromptError`."""
+    if not MJ_MULTI_PROMPT and "::" in line.split(MJ_FLAG, 1)[0]:
+        raise MJPromptError(
+            "`::` 멀티프롬프트는 쓸 수 없다 — MJ v8.2가 거절한다 "
+            "(`Multiple text prompts aren't supported`, ADR-0069)"
+        )
+    words = mj_body_words(line)
+    if words < MJ_WORDS_MIN or words > MJ_WORDS_MAX:
+        raise MJPromptError(
+            f"MJ 본문이 {words}단어인데 계약은 {MJ_WORDS_MIN}~{MJ_WORDS_MAX}다 (ADR-0069). "
+            "짧으면 소재를 잃고, 길면 스타일 절이 꼬리에서 무시되거나 MJ가 다시 써서 "
+            "프록시가 결과를 못 묶는다"
+        )
+
+
+def build_mj_prompt(
+    *,
+    subject: str,
+    base_style: str,
+    negatives: Sequence[str],
+    aspect_ratio: str = ASPECT_RATIO,
+) -> str:
+    """MJ에 보낼 한 줄 (ADR-0027 형식, ADR-0069 어순·예산).
+
+    `{소재 나열}, {스타일 나열} --ar {ar} --no {항목 나열}`.
+
+    **소재가 먼저다** — 뒤집으면 소재가 죽는다 (실측: 스타일을 앞에 두면 계약이 요구한
+    도해 대신 건축 볼트가 나왔다). 서술 문장이 아니라 명사구 나열이고, 콜론·세미콜론·
+    줄바꿈은 콤마로 눕힌다 (ADR-0027의 표).
+    """
+    if MJ_ORDER != "subject_first":
+        raise MJPromptError(f"mj_dialect.order가 {MJ_ORDER!r}인데 구현은 subject_first뿐이다")
+    body = ", ".join(part for part in (_flatten(subject), _flatten(base_style)) if part)
+    line = f"{body} --ar {aspect_ratio}"
+    items = ", ".join(str(item).strip() for item in negatives if str(item).strip())
+    if items:
+        line = f"{line} --no {items}"
+    check_mj_prompt(line)
+    return line
+
+
+def _flatten(text: str) -> str:
+    """`:`·`;`·줄바꿈을 콤마로 눕힌다 — MJ는 그것을 구분자로 읽지 않는다 (ADR-0027)."""
+    out = str(text or "")
+    for token in (":", ";", "\n"):
+        out = out.replace(token, ",")
+    return ", ".join(p.strip() for p in out.split(",") if p.strip())
+
+
 def build_video_prompt(
     *,
     subject_prompt: str,

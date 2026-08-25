@@ -106,6 +106,35 @@ def style(key: str) -> Any:
     return VOCAB["meta"]["style"][key]
 
 
+def mj_dialect(key: str) -> Any:
+    """`vocab.json`의 `meta.mj_dialect` 한 항목 — MJ 한 줄의 형식·예산 (ADR-0069).
+
+    코드가 단어 상한이나 어순을 상수로 들지 않는다 (ADR-0034). 값을 고치는 자리는
+    어휘 하나뿐이고, 고치면 `build_mj_prompt()`의 검사가 바로 따라간다.
+    """
+    return VOCAB["meta"]["mj_dialect"][key]
+
+
+def line_style(line: str) -> str:
+    """라인 고유 `base_style`. 없으면 전역 `meta.style.base_style`로 떨어진다.
+
+    라인이 자기 룩을 질 수 있다 (ADR-0070). 어느 라인이 그러는지는 어휘가 정하고
+    코드는 묻지 않는다 — 여기서 라인 이름을 분기하면 출처가 둘이 된다 (ADR-0034).
+    """
+    require("video_line", line)
+    return str(VOCAB["meta"]["video_line"][line].get("base_style") or style("base_style"))
+
+
+def style_in_frames(line: str) -> bool:
+    """이 라인은 스타일을 **프레임이 지는가** (ADR-0070 규칙 1).
+
+    참이면 `[5]`가 영상 프롬프트에 STYLE 절을 싣지 않는다 — 실으면 영상 모델이 자기
+    프라이어로 그것을 해석해 first/last 프레임과 싸우고 중간 프레임이 무너진다 (실측).
+    """
+    require("video_line", line)
+    return bool(VOCAB["meta"]["video_line"][line].get("style_in_frames", False))
+
+
 def negatives(key: str) -> Any:
     """`meta.style.negatives`의 한 묶음 — `always`·`no_text`(목록) 또는 `audio`(문장).
 

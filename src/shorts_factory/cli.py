@@ -87,6 +87,7 @@ from .tts.fake import FakeTTSClient
 from .videogen.base import VideoClient
 from .videogen.fake import FakeVideoClient
 from .videogen.comfy_h3 import ComfyH3Client
+from .videogen.midjourney import MidjourneyEndImageClient
 from .videogen.omni import OmniClient
 from .judgment import JudgmentError, read_video_line, slug_from_run_id
 
@@ -388,6 +389,8 @@ def _cmd_prompt(args, paths: Paths) -> int:
 VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
     "omni": OmniClient,
     "comfy-h3": ComfyH3Client,
+    # `art` 라인의 영상 엔진 (ADR-0070). CLEAN → INFO를 잇는다.
+    "mj-endimage": MidjourneyEndImageClient,
     "fake": lambda: FakeVideoClient(synth=True),
 }
 

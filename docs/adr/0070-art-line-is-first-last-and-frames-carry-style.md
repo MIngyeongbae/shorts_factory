@@ -1,6 +1,6 @@
 # ADR-0070: `art` 라인은 first/last 구조이고, 스타일은 프롬프트가 아니라 프레임이 진다
 
-- 상태: 제안
+- 상태: 승인
 - 날짜: 2026-08-25
 - 관련 스펙: specs/03-visual-rules.md, specs/05-pipeline.md, specs/schema/vocab.json
 
