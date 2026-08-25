@@ -31,6 +31,14 @@
 **이 검사가 상류에 없다.** 스펙 01의 `line_chars_max`는 `core_chars`(공백·부호 제외)로 재고
 여기는 원문 글자로 재서 단위가 다르다 — 같은 것을 가리키지 않는다 (ADR-0062 되돌릴 조건 5).
 그래서 너무 긴 줄은 TTS·영상 비용을 다 쓴 뒤 `[9]`에서 처음 걸린다.
+
+## 제목은 자막의 2배다 (ADR-0074)
+
+제목 훅(ADR-0065)은 폰트·색을 자막에서 물려받지만 **크기·줄 수·줄바꿈·외곽선은 제 것을
+쓴다.** 크기는 배율(`title.font_scale`)이고 줄당 상한은 자막 상한을 그 배율로 나눈 값이라,
+로케일의 여유(ADR-0062)가 나눗셈에 딸려온다. 줄바꿈은 균형 2분할이 아니라 **채워쓰기**다
+(`fill_text`) — 공백에서만 자르는 `wrap_text`로는 공백 없는 ja가 60px, en이 57px에서 막혔다
+(실측 2026-08-26, 제목 19편). 넘치면 자막처럼 실패하지 않고 **제목만 빠진다.**
 """
 
 from __future__ import annotations
@@ -78,12 +86,23 @@ BAND = tuple(_STYLE["band"])
 #: 큐 목록에 섞이면 씬 수가 하나 늘어 검증이 통째로 깨진다 (ADR-0065 결정 5).
 SUBTITLE_STYLE_NAME = "Default"
 
-#: 제목 훅 (ADR-0065). 폰트·크기·색·외곽선·줄당 상한은 자막의 것을 그대로 쓰고
-#: **다른 것은 자리뿐이다** — 계약도 그 둘만 든다.
+#: 제목 훅 (ADR-0065). 폰트·색·정렬 기준은 자막의 것이고 **크기·줄 수·줄바꿈·외곽선은
+#: 제목의 것이다** (ADR-0074가 ADR-0065 결정 3의 그 부분을 뒤집었다).
 _TITLE = _STYLE["title"]
 TITLE_STYLE_NAME = _TITLE["style_name"]
 TITLE_ALIGNMENT = _TITLE["alignment"]
 TITLE_BAND = tuple(_TITLE["band"])
+
+#: 자막 크기의 배수 (ADR-0074). **88을 적지 않는다** — 자막이 44에서 움직이면 제목도
+#: 따라 움직여야 하고, 줄당 상한도 이 배율이 나눈다 (`title_max_line_chars_for`).
+TITLE_FONT_SCALE = int(_TITLE["font_scale"])
+TITLE_FONT_SIZE = FONT_SIZE * TITLE_FONT_SCALE
+TITLE_MAX_LINES = int(_TITLE["max_lines"])
+TITLE_OUTLINE = _TITLE["outline"]
+TITLE_SHADOW = _TITLE["shadow"]
+
+#: 일본어 행두 금칙 — 이 글자로 줄을 시작하지 않는다 (ADR-0074 결정 5).
+TITLE_KINSOKU = _TITLE["kinsoku"]
 
 #: 자막 블록의 **아래끝**을 밴드의 아래끝에 맞추는 하단 여백(px). 위끝은 줄 수에 따라
 #: 움직이며(1줄 78.7% / 2줄 75.4%) 둘 다 밴드 안이다 — `subtitle_band()`가 계산한다.
@@ -132,6 +151,16 @@ def max_line_chars_for(lang: str) -> int:
     같은 자수가 절반 폭이다. 값이 없는 언어는 최상위 값을 그대로 쓴다 (ja).
     """
     return int(_LOCALES.get(lang, {}).get("max_line_chars", MAX_LINE_CHARS))
+
+
+def title_max_line_chars_for(lang: str) -> int:
+    """제목의 줄당 글자 상한 = 그 언어 자막 상한 ÷ 배율 (ADR-0074).
+
+    **로케일이 남겨 둔 여유가 나눗셈에 딸려온다** — en이 45자 대신 42자를 쓰는 그 여유
+    (ADR-0062)가 없으면 실측에서 en 최장 제목이 996px로 안전폭을 6px 넘었다. 안전폭에서
+    직접 나누지 않고 자막 상한을 나누는 이유가 그것이다.
+    """
+    return max(1, max_line_chars_for(lang) // TITLE_FONT_SCALE)
 
 
 def glyph_width_ratio_for(lang: str) -> float:
@@ -212,6 +241,59 @@ def check_overflow(
     )
 
 
+def _kinsoku_cut(chunk: str, room: int, kinsoku: str) -> int:
+    """`chunk`를 `room`자에서 자를 때 **다음 줄이 금칙 문자로 시작하지 않는** 자리.
+
+    한 글자 앞으로 당긴다(追い出し) — 뒤로 미루면 줄이 길어져 폭 예산을 넘는다.
+    한 칸만 본다: 금칙 문자가 연달아 오는 제목은 실측 19편에 없었다.
+    """
+    if kinsoku and room > 1 and len(chunk) > room and chunk[room] in kinsoku:
+        return room - 1
+    return room
+
+
+def fill_text(text: str, *, limit: int, kinsoku: str = "") -> list[str]:
+    """한 덩어리를 앞줄부터 채워 나눈다 (ADR-0074). **줄 수는 결과가 정한다.**
+
+    - 공백에서 자른다. 한 덩어리가 `limit`을 넘으면 **그 글자 사이에서** 자른다
+      (공백이 없는 CJK). 그 자리에만 금칙이 걸린다 — 공백은 원문이 띄어 쓴 자리다
+    - 상한을 넘는 줄은 나오지 않는다. 몇 줄이 됐는지는 부르는 쪽이 판정한다
+
+    **`wrap_text`(자막)와 다른 함수인 이유는 판정이 다르기 때문이다.** 자막은 큐마다
+    균형이 보기 좋고 상한 초과가 **실패**지만, 제목은 한 덩어리이고 초과가 **강등**이며
+    위에서부터 꽉 차야 크게 읽힌다 (실측: 균형 2분할로는 ja 60px · en 57px이 상한이다).
+    """
+    if limit < 1:
+        raise SubtitleError(f"줄당 상한은 1 이상이어야 한다: {limit}")
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        raise SubtitleError("빈 제목이다")
+
+    lines: list[str] = []
+    current = ""
+    for word in collapsed.split(" "):
+        while len(word) > limit:  # 공백 없는 덩어리 — 글자 사이에서 자른다
+            room = limit - (len(current) + 1 if current else 0)
+            if room < 1:
+                lines.append(current)
+                current = ""
+                continue
+            cut = max(1, _kinsoku_cut(word, room, kinsoku))
+            head = word[:cut]
+            lines.append(f"{current} {head}" if current else head)
+            current = ""
+            word = word[cut:]
+        candidate = f"{current} {word}" if current else word
+        if current and len(candidate) > limit:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
 def subtitle_band(line_count: int) -> tuple[float, float]:
     """자막 블록이 차지하는 세로 구간 비율 `(위, 아래)`. specs/03 "72~82%" 검증용."""
     bottom = PLAY_RES_Y - MARGIN_V
@@ -225,7 +307,7 @@ def title_band(line_count: int) -> tuple[float, float]:
     자막과 **기준선이 반대다** — 위끝이 고정이고 아래끝이 줄 수에 따라 내려간다.
     """
     top = TITLE_MARGIN_V
-    bottom = top + line_count * FONT_SIZE * LINE_HEIGHT_RATIO
+    bottom = top + line_count * TITLE_FONT_SIZE * LINE_HEIGHT_RATIO
     return top / PLAY_RES_Y, bottom / PLAY_RES_Y
 
 
@@ -274,19 +356,22 @@ class Cue:
         return " ".join(self.lines)
 
 
-def _style_line(name: str, font_name: str, *, alignment: int, margin_v: int) -> str:
+def _style_line(
+    name: str, font_name: str, *, alignment: int, margin_v: int,
+    font_size: int = FONT_SIZE, outline: Any = OUTLINE, shadow: Any = SHADOW,
+) -> str:
     """ASS V4+ 스타일 한 줄. 필드 순서는 규격 그대로다.
 
-    자막과 제목이 **같은 값을 공유하고 자리만 다르다** (ADR-0065) — 두 줄을 따로 적으면
-    색이나 외곽선이 한쪽만 바뀌는 사고가 난다.
+    **폰트·색은 한 곳에서 나온다** — 따로 적으면 색이나 폰트가 한쪽만 바뀌는 사고가 난다.
+    자막과 제목이 갈리는 것은 크기·외곽선·자리뿐이고, 그 셋만 인자로 받는다 (ADR-0074).
     """
     return (
         f"Style: {name},"
-        f"{font_name},{FONT_SIZE},"
+        f"{font_name},{font_size},"
         f"{PRIMARY_COLOUR},&H000000FF,{OUTLINE_COLOUR},&H00000000,"
         "-1,0,0,0,"  # Bold(-1=true), Italic, Underline, StrikeOut
         "100,100,0,0,"  # ScaleX, ScaleY, Spacing, Angle
-        f"1,{OUTLINE},{SHADOW},"  # BorderStyle(1=외곽선+그림자)
+        f"1,{outline},{shadow},"  # BorderStyle(1=외곽선+그림자)
         f"{alignment},{MARGIN_LR},{MARGIN_LR},{margin_v},1"
     )
 
@@ -299,9 +384,14 @@ def style_line(font_name: str = FONT_NAME) -> str:
 
 
 def title_style_line(font_name: str = FONT_NAME) -> str:
-    """제목 훅 스타일 한 줄 (ADR-0065). 자막과 다른 것은 Alignment와 세로 여백뿐이다."""
+    """제목 훅 스타일 한 줄 (ADR-0065·0074).
+
+    자막과 다른 것은 **크기(2배)·외곽선(2배)·Alignment·세로 여백**이다. 외곽선이 같이
+    커지는 이유는 대비다 — 글자만 키우면 굵기가 상대적으로 얇아져 배경에서 안 뜬다.
+    """
     return _style_line(
-        TITLE_STYLE_NAME, font_name, alignment=TITLE_ALIGNMENT, margin_v=TITLE_MARGIN_V
+        TITLE_STYLE_NAME, font_name, alignment=TITLE_ALIGNMENT, margin_v=TITLE_MARGIN_V,
+        font_size=TITLE_FONT_SIZE, outline=TITLE_OUTLINE, shadow=TITLE_SHADOW,
     )
 
 
@@ -342,11 +432,10 @@ def title_event(title: str, end: float, *, limit: int) -> tuple[str, str]:
     제목만 빠진다. 자막은 같은 상황에서 실패로 올리지만(`check_overflow`) **제목은
     마감이지 본편이 아니다** — 제목 하나 때문에 완성 영상을 잃지 않는다 (specs/05 D-5).
     """
-    lines = wrap_text(title, limit=limit, max_lines=MAX_LINES)
-    longest = max(len(line) for line in lines)
-    if longest > limit:
+    lines = fill_text(title, limit=limit, kinsoku=TITLE_KINSOKU)
+    if len(lines) > TITLE_MAX_LINES:
         return "", (
-            f"제목이 줄당 {limit}자 × {MAX_LINES}줄에 안 들어가(가장 긴 줄 {longest}자) "
+            f"제목이 줄당 {limit}자 × {TITLE_MAX_LINES}줄에 안 들어가({len(lines)}줄) "
             f"제목 훅 없이 굽는다 (ADR-0065 강등 사다리). 제목: {title!r}"
         )
     text = LINE_BREAK.join(escape_text(line) for line in lines)
@@ -367,7 +456,8 @@ def build_ass(
     (`max_line_chars_for`, ADR-0062) — 폰트 크기·줄 수는 세 언어가 같다.
 
     `title`이 있으면 **첫 씬 구간 동안 상단에 뜨는 제목 훅**을 얹는다 (ADR-0065).
-    빈 문자열이면 지금까지와 완전히 같은 문서가 나온다 (D-3).
+    빈 문자열이면 지금까지와 완전히 같은 문서가 나온다 (D-3). 제목은 자막의 2배 크기라
+    **줄당 상한도 줄 수도 자막과 다른 값을 쓴다** (ADR-0074).
     """
     limit = max_line_chars_for(lang) if lang else MAX_LINE_CHARS
     if not scenes:
@@ -402,7 +492,9 @@ def build_ass(
     title_events: list[str] = []
     if title.strip():
         event, warning = title_event(
-            title.strip(), float(scenes[0]["end"]), limit=limit
+            title.strip(), float(scenes[0]["end"]),
+            limit=title_max_line_chars_for(lang) if lang
+            else max(1, MAX_LINE_CHARS // TITLE_FONT_SCALE),
         )
         if warning:
             warnings.append(warning)

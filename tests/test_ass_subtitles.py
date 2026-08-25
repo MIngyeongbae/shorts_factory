@@ -8,6 +8,8 @@
 - 스타일이 스펙 03의 숫자(위치 72~82%, 외곽선 3px, 1줄 18자, 2줄 상한)와 맞는가
 """
 
+from pathlib import Path
+
 import pytest
 from timed_fixtures import HOOVER, PISA, timed_document
 
@@ -15,6 +17,7 @@ from shorts_factory.schemas import script_rules
 from shorts_factory.video.subtitles import (
     ALIGNMENT,
     FONT_SIZE,
+    FONTS_DIR,
     glyph_width_ratio_for,
     max_line_chars_for,
     LINE_BREAK,
@@ -33,8 +36,17 @@ from shorts_factory.video.subtitles import (
     parse_timestamp,
     style_line,
     subtitle_band,
+    TITLE_FONT_SCALE,
+    TITLE_FONT_SIZE,
+    TITLE_KINSOKU,
+    TITLE_MAX_LINES,
+    TITLE_OUTLINE,
+    TITLE_SHADOW,
+    TITLE_BAND,
     TITLE_STYLE_NAME,
+    fill_text,
     title_band,
+    title_max_line_chars_for,
     title_style_line,
     wrap_text,
 )
@@ -323,6 +335,7 @@ TITLE = "석빙고 — 전기 없던 조선이 한여름에 얼음을 먹은 방
 
 #: `Style:` 줄을 쉼표로 자른 자리 (ASS V4+ 규격 순서)
 STYLE_NAME_FIELD, STYLE_ALIGNMENT_FIELD, STYLE_MARGIN_V_FIELD = 0, 18, 21
+STYLE_FONT_SIZE_FIELD, STYLE_OUTLINE_FIELD, STYLE_SHADOW_FIELD = 2, 16, 17
 
 
 def title_scenes():
@@ -362,22 +375,42 @@ def test_sync_verification_never_sees_the_title():
     assert cues[0].text == scenes[0]["text"]
 
 
-def test_title_style_differs_from_subtitle_only_in_position():
-    """폰트·크기·색·외곽선은 자막의 것이다 — 갈리면 룩이 두 벌이 된다."""
+def test_title_style_differs_from_subtitle_only_where_the_contract_says():
+    """폰트·색은 자막의 것이다 — 갈리는 것은 크기·외곽선·자리뿐이다 (ADR-0074)."""
     subtitle = style_line("X").split(",")
     title = title_style_line("X").split(",")
 
     differing = [i for i, (a, b) in enumerate(zip(subtitle, title)) if a != b]
-    assert differing == [STYLE_NAME_FIELD, STYLE_ALIGNMENT_FIELD, STYLE_MARGIN_V_FIELD]
+    assert differing == [
+        STYLE_NAME_FIELD, STYLE_FONT_SIZE_FIELD, STYLE_OUTLINE_FIELD,
+        STYLE_SHADOW_FIELD, STYLE_ALIGNMENT_FIELD, STYLE_MARGIN_V_FIELD,
+    ]
     assert title[STYLE_NAME_FIELD] == f"Style: {TITLE_STYLE_NAME}"
     assert int(title[STYLE_ALIGNMENT_FIELD]) == 8  # 상단 중앙
     assert int(subtitle[STYLE_ALIGNMENT_FIELD]) == ALIGNMENT
+    assert subtitle[STYLE_FONT_SIZE_FIELD] == str(FONT_SIZE)  # 자막은 안 바뀐다
+    assert title[STYLE_FONT_SIZE_FIELD] == str(TITLE_FONT_SIZE)
+    assert title[STYLE_OUTLINE_FIELD] == str(TITLE_OUTLINE)
+    assert title[STYLE_SHADOW_FIELD] == str(TITLE_SHADOW)
+
+
+def test_title_is_at_least_twice_the_subtitle():
+    """사람 지시가 "적어도 지금의 2배"다 (ADR-0074) — 배율이 크기와 상한을 같이 정한다."""
+    assert TITLE_FONT_SCALE >= 2
+    assert TITLE_FONT_SIZE == FONT_SIZE * TITLE_FONT_SCALE
+    assert title_max_line_chars_for("ko") == MAX_LINE_CHARS // TITLE_FONT_SCALE
+    assert title_max_line_chars_for("en") == max_line_chars_for("en") // TITLE_FONT_SCALE
+    # 로케일 여유가 나눗셈에 딸려온다 — 안전폭에서 직접 나누면 en이 6px 넘친다
+    assert title_max_line_chars_for("en") < TEXT_WIDTH / (
+        TITLE_FONT_SIZE * glyph_width_ratio_for("en")
+    )
 
 
 def test_title_band_never_touches_the_subtitle_band():
     """둘이 같은 프레임에 떠도 공간은 안 겹친다 (제목 위 · 자막 아래)."""
-    assert title_band(MAX_LINES)[1] < subtitle_band(MAX_LINES)[0]
-    assert title_band(1)[0] == title_band(MAX_LINES)[0]  # 위끝이 고정이다
+    assert title_band(TITLE_MAX_LINES)[1] < subtitle_band(MAX_LINES)[0]
+    assert title_band(1)[0] == title_band(TITLE_MAX_LINES)[0]  # 위끝이 고정이다
+    assert title_band(TITLE_MAX_LINES)[1] <= TITLE_BAND[1]  # 밴드 안에서 끝난다
 
 
 def test_overlong_title_degrades_instead_of_failing():
@@ -397,6 +430,79 @@ def test_title_uses_the_locale_line_limit():
     document, warnings = build_ass(scenes, lang="en", title=english)
 
     assert not warnings
-    event = next(line for line in document.splitlines() if TITLE_STYLE_NAME in line)
-    for part in event.split(",", 9)[9].split(LINE_BREAK):
-        assert len(part) <= max_line_chars_for("en")
+    event = next(
+        line for line in document.splitlines()
+        if line.startswith("Dialogue:") and TITLE_STYLE_NAME in line
+    )
+    parts = event.split(",", 9)[9].split(LINE_BREAK)
+    assert len(parts) <= TITLE_MAX_LINES
+    for part in parts:
+        assert len(part) <= title_max_line_chars_for("en")
+
+
+# --- 채워쓰기 줄바꿈 (ADR-0074) ----------------------------------------------
+
+
+def test_fill_text_fills_each_line_before_moving_on():
+    """제목은 위에서부터 꽉 차야 크게 읽힌다 — 균형 2분할이 아니다."""
+    assert fill_text("가나다 라마바 사아자 차카타", limit=7) == [
+        "가나다 라마바", "사아자 차카타",
+    ]
+
+
+def test_fill_text_breaks_inside_a_chunk_that_has_no_spaces():
+    """공백 없는 CJK 한 덩어리를 못 나눈 것이 88px을 막던 벽이었다 (실측 ja 60px)."""
+    lines = fill_text("あ" * 25, limit=11)
+
+    assert [len(line) for line in lines] == [11, 11, 3]
+    assert "".join(lines) == "あ" * 25
+
+
+def test_fill_text_never_starts_a_line_with_a_kinsoku_char():
+    """실측에서 `江戸の糞尿には等級があ / った`가 나왔다 (ADR-0074 결정 5)."""
+    lines = fill_text("江戸の糞尿には等級があった", limit=11, kinsoku=TITLE_KINSOKU)
+
+    assert lines == ["江戸の糞尿には等級が", "あった"]
+    assert not any(line[0] in TITLE_KINSOKU for line in lines)
+
+
+def test_fill_text_never_exceeds_the_limit():
+    """상한을 넘는 줄은 안 나온다 — 몇 줄이 됐는지만 부르는 쪽이 판정한다."""
+    for text in (TITLE, "a" * 40, "ab cd " * 12, "가나다라마바사아자차카타"):
+        assert all(len(line) <= 7 for line in fill_text(text, limit=7))
+
+
+# --- 실측 회귀: 가장 긴 제목이 제목 블록 안에 들어가는가 (ADR-0074) -----------
+
+#: 실측 2026-08-26의 최악 사례 (제목 19편 중). 파일 이름의 정본은 assets/fonts/README.md.
+WORST_TITLES = [
+    ("ko", "DoHyeon-Regular.ttf", "지퍼가 바지에 오기까지 86년 — 처음 목표는 구두끈이었다"),
+    ("ja", "LINESeedJP-Bold.ttf", "ファスナーがズボンに来るまで86年 — 最初の狙いは靴ひもだった"),
+    ("ja", "LINESeedJP-Bold.ttf", "海に沈んだ石が、ずっとお金であり続けた理由"),
+    ("en", "GoogleSans-Bold.ttf",
+     "The 13 digits built to catch spies, and how they armed the forgers"),
+    ("en", "GoogleSans-Bold.ttf",
+     "86 Years to Reach Your Pants — the Zipper Was Aiming at Shoelaces"),
+]
+
+
+@pytest.mark.parametrize("lang,font_file,title", WORST_TITLES)
+def test_longest_titles_fit_in_the_title_block(lang, font_file, title):
+    """글자 수는 대리값이라 **실제 advance로 다시 잰다** — 여기가 계약의 바닥이다."""
+    ttlib = pytest.importorskip("fontTools.ttLib")
+    path = Path(FONTS_DIR) / font_file
+    if not path.exists():
+        pytest.skip(f"폰트가 없다: {path}")
+
+    font = ttlib.TTFont(path, fontNumber=0)
+    upm, cmap, hmtx = font["head"].unitsPerEm, font.getBestCmap(), font["hmtx"]
+
+    def width(text):
+        return sum(
+            hmtx[cmap[ord(c)]][0] / upm if ord(c) in cmap else 1.0 for c in text
+        ) * TITLE_FONT_SIZE
+
+    lines = fill_text(title, limit=title_max_line_chars_for(lang), kinsoku=TITLE_KINSOKU)
+
+    assert len(lines) <= TITLE_MAX_LINES        # 넘으면 제목이 강등된다
+    assert max(width(line) for line in lines) <= TEXT_WIDTH
