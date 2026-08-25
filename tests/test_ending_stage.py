@@ -11,6 +11,7 @@
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from conftest import PISA, install_script
@@ -325,6 +326,47 @@ def test_credits_document_keeps_the_source_url():
 
 
 # --- 단계 통과 경로 -------------------------------------------------------------
+
+
+def test_review_gets_paths_it_can_actually_open(paths, run_id):
+    """세션은 임시 디렉터리에서 돈다 — 상대 경로를 주면 `Read`가 열지 못한다.
+
+    첫 실행(2026-08-24)에서 후보 4장이 전부 "파일이 존재하지 않아 확인할 수 없다"로
+    기각됐다. 프롬프트에는 절대 경로를 적고 run 디렉터리를 `add_dirs`로 열어 준다 —
+    `[7]`의 비전 검수와 같은 메커니즘이다.
+    """
+    install_refs(paths, run_id, [
+        {"scene_id": 3, "query": [], "description": "", "images": [
+            image("refs/3/01.jpg", shows="전경"),
+        ]},
+    ])
+    run_dir = paths.run_dir(run_id)
+    absolute = str((run_dir / "refs/3/01.jpg").resolve())
+
+    llm = FakeLLMClient([verdicts_json(keep(absolute, 1))])
+    result = run_ending_stage(
+        llm=llm, run_id=run_id, paths=paths, runner=FakeFFmpeg(),
+    )
+
+    call = llm.calls[0]
+    assert absolute in call["prompt"], "후보 경로가 절대 경로여야 세션이 연다"
+    assert run_dir in [Path(d) for d in call["add_dirs"]], "run 디렉터리를 열어 줘야 한다"
+    # 세션이 절대 경로로 판정해도 기록은 run 디렉터리 기준 상대 경로다.
+    assert [p["source"] for p in result.photos] == ["refs/3/01.jpg"]
+    assert result.rejected == []
+
+
+def test_review_may_answer_with_the_relative_path(paths, run_id):
+    """절대 경로를 줬는데 상대 경로로 답하는 세션도 받는다 (관용적 파싱)."""
+    install_refs(paths, run_id, [
+        {"scene_id": 3, "query": [], "description": "", "images": [
+            image("refs/3/01.jpg", shows="전경"),
+        ]},
+    ])
+
+    result = run(paths, run_id, [verdicts_json(keep("refs/3/01.jpg", 1))])
+
+    assert [p["source"] for p in result.photos] == ["refs/3/01.jpg"]
 
 
 def test_stage_renders_the_chosen_photos_in_order(paths, run_id):

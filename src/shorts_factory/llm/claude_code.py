@@ -109,11 +109,22 @@ class ClaudeCodeClient(LLMClient):
             cmd += ["--append-system-prompt", system_append]
         return cmd
 
+    #: 라벨에 들어오지만 파일 이름에 못 쓰는 문자. **콜론이 특히 위험하다** — Windows에서
+    #: `a:b`는 오류가 아니라 NTFS 대체 데이터 스트림이라, `7-videogen:2` 같은 라벨의 기록이
+    #: 파일로 보이지 않은 채 조용히 사라졌다. 콜론이 둘이면 그제서야 OSError가 난다.
+    _UNSAFE_IN_FILENAME = ':*?"<>|/\\'
+
+    @classmethod
+    def _safe_name(cls, label: str) -> str:
+        for char in cls._UNSAFE_IN_FILENAME:
+            label = label.replace(char, "-")
+        return label
+
     def _record(self, label: str, attempt: int, payload: dict[str, Any]) -> None:
         if not self.log_dir or not label:
             return
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        path = self.log_dir / f"{label}.attempt{attempt}.json"
+        path = self.log_dir / f"{self._safe_name(label)}.attempt{attempt}.json"
         with path.open("w", encoding="utf-8", newline="\n") as fh:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
             fh.write("\n")

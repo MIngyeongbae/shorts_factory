@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "script-rules.json",
   "title": "대본이 만족해야 하는 결과 — 구조가 아니라 값 (ADR-0033 §2)",
-  "description": "총량(total_seconds·total_chars·line_count)은 사람 목표 60초 안팎 × 줄당 속도 값의 유도값이고(ADR-0057), 줄당 속도·글자 수 값(speed_cps·line_chars_*·line_seconds*)만 레퍼런스 3편 실측에서 나온 엔벨로프다. 쇼츠의 값이지 특정 구조·도메인의 값이 아니므로 ADR-0033의 구조 자유화에도 그대로 산다. 생 실측값 자체는 docs/reference-analysis.md에만 두고 여기·CLAUDE.md에 나란히 적지 않는다 — 두 값이 공존하면 어느 쪽이 계약인지 코드가 모른다 (ADR-0034).",
+  "description": "total_chars·line_count는 사람 목표 60초 안팎 × 줄당 속도 값의 유도값이고(ADR-0057), total_seconds는 유도값이 아니라 [3] tts 실측이 들어야 하는 허용 폭이다(ADR-0066 — 사람이 「50~80초 다 상관없다」로 넓혔다. 목표는 60초 그대로이고 그 목표는 total_chars가 진다), 줄당 속도·글자 수 값(speed_cps·line_chars_*·line_seconds*)만 레퍼런스 3편 실측에서 나온 엔벨로프다. 쇼츠의 값이지 특정 구조·도메인의 값이 아니므로 ADR-0033의 구조 자유화에도 그대로 산다. 생 실측값 자체는 docs/reference-analysis.md에만 두고 여기·CLAUDE.md에 나란히 적지 않는다 — 두 값이 공존하면 어느 쪽이 계약인지 코드가 모른다 (ADR-0034).",
   "limits": {
     "total_chars": [
       310,
@@ -30,28 +30,22 @@
       6.3
     ],
     "total_seconds": [
-      54,
-      66
+      50,
+      80
     ]
   },
   "checks": {
     "_role": "씬 계약 검증([3s] 소관 — ADR-0049)이 보는 값이다. limits는 [1. draft] 직후 오케스트레이터의 기계 검사가 본다. 구조 검증은 없다 — 분량·그라운딩·수미상관뿐이다 (ADR-0033 §5).",
     "min_numbers": 2,
     "visual_goal_overlap_limit": 0.7,
-    "_label_numbers_from_line": "한 씬의 info.labels에 든 숫자는 같은 씬의 나레이션 줄(text)이 말하는 숫자여야 한다 (ADR-0060 결정 4 — ADR-0047의 에코 상한을 뒤집었다: 첫 실편에서 상한이 [3s]를 '대사와 다른 숫자를 화면에 세우게' 몰아 듣는 숫자와 보는 숫자가 어긋났다). 단위 표기 차이는 허용한다 — 12센티↔12 cm, 13만↔130,000, 5도↔5°. 숫자가 없는 라벨(Hot air·Ground level)은 자유다. 대본이 화면을 낭독하지 않게 하는 규칙은 대본 쪽(스펙 01)에 남는다. [3s] 검증이 잰다.",
-    "label_numbers_from_line": true,
-    "_label_ascii": "info.labels는 ASCII 인쇄 문자만이다 (ADR-0056 결정 3). [3s] 검증이 패턴으로 잰다 — 값은 scene.schema.json의 pattern이 정본이고 여기는 규칙의 존재만 적는다."
+    "_label_numbers_from_line": "**꺼져 있다 (2026-08-24 사람 판단).** 한국어 수사를 숫자로 읽으려면 형태소 분석이 필요한데 그걸 하지 않기로 했다 — \"열두 자리\"/\"네 곳\"을 못 읽어 라벨 `12 digits`·`4 sites`가 튕겼고, 소재 6편 중 2편이 [3s]에서 통째로 막혔다. 듣는 숫자와 보는 숫자를 맞추는 일은 사람 판독이 진다. 원문 규칙: 한 씬의 info.labels에 든 숫자는 같은 씬의 나레이션 줄(text)이 말하는 숫자여야 한다 (ADR-0060 결정 4 — ADR-0047의 에코 상한을 뒤집었다: 첫 실편에서 상한이 [3s]를 '대사와 다른 숫자를 화면에 세우게' 몰아 듣는 숫자와 보는 숫자가 어긋났다). 단위 표기 차이는 허용한다 — 12센티↔12 cm, 13만↔130,000, 5도↔5°. 숫자가 없는 라벨(Hot air·Ground level)은 자유다. 대본이 화면을 낭독하지 않게 하는 규칙은 대본 쪽(스펙 01)에 남는다. [3s] 검증이 잰다.",
+    "label_numbers_from_line": false,
+    "_label_ascii": "info.labels는 ASCII 인쇄 문자만이다 (ADR-0056 결정 3). [3s] 검증이 패턴으로 잰다 — 값은 scene.schema.json의 pattern이 정본이고 여기는 규칙의 존재만 적는다.",
+    "_end_frame_ocr": "**꺼져 있다 (2026-08-25 사람 판단, ADR-0068).** tesseract를 처음 설치해 실측했더니 끝 프레임 130장 중 6장(4.6%)만 통과했다 — 켰다면 124장이 헛되이 재생성 사다리를 탔다. 문턱으로 못 살린다: 질감 잡음(`67665`·`WE`·`5300`)이 conf 92~96으로 나오는데 진짜 라벨(`High`·`Mid`·`Capacity`)은 conf 0이라 신뢰도 순서가 역전돼 있고, 길이도 잡음 1~15자와 라벨 3~13자가 포개진다. 진짜 라벨 재현율은 36%인데 게이트는 라벨이 전부 읽혀야 통과다. 원문 규칙: info 씬은 라벨이 전부 읽히고 계약에 없는 숫자가 없어야, info 없는 씬은 글자가 없어야 통과다 (ADR-0056 결정 6 ①). 비전 검수 ②는 그대로 돈다. `art` 라인(MJ 밑그림 + NB2 인포 + H3 fl2v)이 서면 OCR이 보는 대상이 '우리가 만든 인포 이미지'가 되므로 다시 잰다.",
+    "end_frame_ocr": false
   },
   "locales": {
-    "_role": "언어별 엔벨로프 (ADR-0056 결정 5). 키는 ja·en. 블록이 없는 언어는 [2l] 검사가 total_seconds 상한만 본다 — 실측(5편)이 쌓이면 채운다. 2026-08-22 n=1 실측: 같은 내용이 ja는 ko의 ×1.13, en은 ko의 ×0.78. ja 블록은 임시다 (ADR-0057 결정 2) — ko 상한 66 × 1.13 = 75. 하한은 어디서도 검사하지 않는다. en은 짧아지는 쪽이라 블록이 없다.",
-    "_shape": "{\"ja\": {\"limits\": {\"total_chars\": [..], \"line_chars_max\": .., \"speed_cps\": [..], \"total_seconds\": [..]}}} — limits의 키는 위 limits와 같은 집합의 부분집합이다.",
-    "ja": {
-      "limits": {
-        "total_seconds": [
-          54,
-          75
-        ]
-      }
-    }
+    "_role": "언어별 엔벨로프 (ADR-0056 결정 5). 키는 ja·en. 지금은 블록이 하나도 없다 — ja의 임시 블록(ko 66 × 1.13 = 75)은 ADR-0066이 상한을 80으로 넓히며 없앴다. 블록이 없는 언어는 [2l] 검사가 total_seconds 상한만 본다 — 실측(5편)이 쌓이면 채운다. 2026-08-22 n=1 실측: 같은 내용이 ja는 ko의 ×1.13, en은 ko의 ×0.78. 하한은 어디서도 검사하지 않는다. en은 짧아지는 쪽이라 블록이 없다.",
+    "_shape": "{\"ja\": {\"limits\": {\"total_chars\": [..], \"line_chars_max\": .., \"speed_cps\": [..], \"total_seconds\": [..]}}} — limits의 키는 위 limits와 같은 집합의 부분집합이다."
   }
 }

@@ -154,6 +154,20 @@ def test_session_envelope_is_logged_for_traceability(client, monkeypatch, tmp_pa
     assert json.loads(logged.read_text(encoding="utf-8"))["envelope"]["result"] == "본문"
 
 
+def test_label_with_colons_becomes_a_real_file(client, monkeypatch, tmp_path):
+    """콜론은 Windows에서 NTFS 대체 데이터 스트림이라 기록이 파일로 안 남는다.
+
+    `[7]`의 씬별 라벨(`7-videogen:2`)이 그렇게 조용히 사라지고 있었고, 콜론이 둘인
+    고쳐쓰기 라벨(`7-videogen:fix:2`, ADR-0067)에서 OSError로 터졌다.
+    """
+    _stub_runs(monkeypatch, [(_envelope("본문"), 0)])
+    client.run("프롬프트", label="7-videogen:fix:2")
+
+    logged = tmp_path / "logs" / "7-videogen-fix-2.attempt1.json"
+    assert logged.is_file()
+    assert json.loads(logged.read_text(encoding="utf-8"))["envelope"]["result"] == "본문"
+
+
 def test_missing_executable_is_reported_clearly(monkeypatch):
     monkeypatch.setattr(cc.shutil, "which", lambda name: None)
     with pytest.raises(LLMError, match="claude"):

@@ -265,6 +265,7 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "has_info",
         "prompt",
         "negative_prompt",
+        "subject_prompt",
     ],
     "additionalProperties": False,
     "properties": {
@@ -285,6 +286,14 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "has_info": {"type": "boolean"},
         "prompt": {"type": "string", "minLength": 1},
         "negative_prompt": {"type": "string", "minLength": 1},
+        # ADR-0067 — 조립본을 만든 **세션 단락**을 옆에 그대로 싣는다. `[7]`의 고쳐쓰기
+        # 재생성이 부분만 고쳐 같은 골격에 다시 얹으려면 부분이 남아 있어야 한다.
+        # 계약의 정본은 promptplan.schema.json이고 여기는 그것을 나른다.
+        # `red_prompt`는 info 씬에만, `subject_prompt_shot2`는 2샷 씬에만 있다.
+        "subject_prompt": {"type": "string", "minLength": 1},
+        "camera_target": {"type": "string"},
+        "red_prompt": {"type": "string", "minLength": 1},
+        "subject_prompt_shot2": {"type": "string", "minLength": 1},
         # ADR-0051 — 선택. 이 씬에 등장하는 인물 id. 씬 계약의 cast를 그대로 복사해 온
         # 값이다 (고치는 곳은 씬 계약 하나다 — ADR-0020). 외형 서술은 prompt 안에 있다.
         "cast": {

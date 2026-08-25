@@ -314,7 +314,17 @@ def build_prompts(
             "has_info": info is not None,
             "prompt": prompt_text,
             "negative_prompt": negative_text,
+            # 세션 단락을 조립본 옆에 그대로 싣는다 (ADR-0067) — `[7]`의 고쳐쓰기 재생성이
+            # 부분만 고쳐 같은 골격에 다시 얹으려면 부분이 남아 있어야 한다. 판단은 없다.
+            promptplan.SUBJECT_FIELD: str(entry[promptplan.SUBJECT_FIELD]),
+            promptplan.CAMERA_TARGET_FIELD: str(
+                entry.get(promptplan.CAMERA_TARGET_FIELD, "")
+            ),
         }
+        if info:
+            record[promptplan.RED_FIELD] = str(entry[promptplan.RED_FIELD])
+        if entry.get(promptplan.SHOT2_FIELD):
+            record[promptplan.SHOT2_FIELD] = str(entry[promptplan.SHOT2_FIELD])
         if scene.get("cast"):
             record["cast"] = list(scene["cast"])
         out_scenes.append(record)

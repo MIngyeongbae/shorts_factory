@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 from conftest import load_fixture
 from shorts_factory.schemas import vocab
 from shorts_factory.schemas.scenes import (
+    LABEL_NUMBERS_FROM_LINE,
     labels_not_in_line,
     line_numbers,
     visual_goal_overlap,
@@ -157,12 +158,14 @@ def test_라벨_숫자는_그_줄이_말하는_숫자면_통과한다():
 
 
 def test_줄이_말하지_않는_숫자_라벨은_반려된다():
+    """반려 여부는 계약의 스위치가 정한다 (`script-rules.json` `checks.label_numbers_from_line`)."""
     data = load_fixture("scenes_pass.json")
     scene = next(s for s in data["scenes"] if s["beat"] == "hook_twist")
     assert not any(ch.isdigit() for ch in scene["text"])
     scene["info"] = info("110000 workers", "12 years")
     errors, _ = validate_scenes(data)
-    assert any("말하지 않는다" in e and "ADR-0060" in e for e in errors)
+    caught = [e for e in errors if "말하지 않는다" in e and "ADR-0060" in e]
+    assert bool(caught) is LABEL_NUMBERS_FROM_LINE
 
 
 def test_숫자_없는_라벨은_에코를_재지_않는다():
@@ -191,7 +194,7 @@ def test_scene_with_unspoken_label_number_is_rejected():
     scene["text"] = "돌은 아무 말도 하지 않습니다."
     scene["info"] = info("221 m")
     errors, _ = validate_scenes(data)
-    assert any("말하지 않는다" in e for e in errors)
+    assert any("말하지 않는다" in e for e in errors) is LABEL_NUMBERS_FROM_LINE
 
 
 # --- 계측 표시 info (ADR-0056 결정 3) -----------------------------------------

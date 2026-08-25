@@ -35,6 +35,7 @@ from shorts_factory.stages.videogen import (
     render_review_prompt,
     run_videogen_stage,
 )
+from shorts_factory.stages.videogen import END_FRAME_OCR
 from shorts_factory.video.fake import FakeFFmpeg
 from shorts_factory.video.ocr import FakeOCR
 from shorts_factory.videogen.base import (
@@ -248,6 +249,10 @@ def ocr_for(texts: dict[str, str], default: str = "") -> FakeOCR:
     return FakeOCR(texts, default=default)
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_ocr_gate_retries_once_then_reuses_a_neighbour(pisa):
     """일반 씬 3에 글자가 계속 보인다 → 재생성 1회 → 인접(앞) 씬 재사용."""
     paths, run_id, _document = pisa
@@ -268,6 +273,10 @@ def test_ocr_gate_retries_once_then_reuses_a_neighbour(pisa):
     assert any("재사용" in w for w in result.warnings)
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_info_scene_demotes_to_a_prompt_without_red(paths):
     """info 씬 5: 라벨이 두 번 안 읽힌다 → RED 절을 뺀 재생성 → 통과 (demoted_from: info)."""
     run_id, _ = install(paths, info_scenes=(5,))
@@ -301,6 +310,10 @@ def test_info_scene_passes_when_the_label_is_read(paths):
     assert result.demoted("info") == 0
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_info_scene_exhausting_the_ladder_reuses_a_neighbour(paths):
     run_id, _ = install(paths, info_scenes=(5,))
     ocr = ocr_for({"5-1-end": "", "5-2-end": "", "5-3-end": "OOPS", "5-4-end": "OOPS"})
@@ -313,6 +326,10 @@ def test_info_scene_exhausting_the_ladder_reuses_a_neighbour(paths):
     assert sum(1 for c in client.calls if c["scene_id"] == 5) == 4
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_first_scene_reuses_the_next_one_when_nothing_is_earlier(pisa):
     paths, run_id, _document = pisa
     ocr = ocr_for({"1-1-end": "X1", "1-2-end": "X2"})
@@ -346,6 +363,10 @@ def test_generation_error_counts_as_a_failed_attempt(pisa):
     assert "blip" in review4["attempts"][0]["error"]
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_ocr_backend_absence_skips_the_gate_with_a_warning(pisa):
     """tesseract가 없으면 OCR 게이트만 빠지고 경고를 기록한다 — 실패가 아니다."""
     paths, run_id, _document = pisa
@@ -402,10 +423,21 @@ def test_vision_prompt_names_the_target_and_labels_for_info_scenes():
     assert "the diameter of the hole" in prompt and '"4 mm"' in prompt and "dimension" in prompt
 
 
+def fix(subject="A single continuous span, one bridge only, seen from directly above.",
+        target="settling on the middle of that one span"):
+    """고쳐쓰기 세션 응답 (ADR-0067) — 세션이 쓰는 것은 단락뿐이다."""
+    return json.dumps({"subject_prompt": subject, "camera_target": target})
+
+
 def test_vision_fail_triggers_the_ladder(pisa):
     paths, run_id, _document = pisa
-    # 세션은 씬 순서대로(jobs=1) 소비된다 — 씬 7은 두 번 판정받고 두 번 다 fail이다.
-    responses = [verdict()] * 6 + [verdict("fail", ["기준 1: 엉뚱한 건물"]), verdict("fail", ["still wrong"])]
+    # 세션은 씬 순서대로(jobs=1) 소비된다. 씬 7은 두 번 판정받고 두 번 다 fail이며,
+    # **그 사이에 고쳐쓰기 세션이 1회 낀다** (ADR-0067).
+    responses = [verdict()] * 6 + [
+        verdict("fail", ["기준 1: 엉뚱한 건물"]),
+        fix(),
+        verdict("fail", ["still wrong"]),
+    ]
     responses += [verdict()] * 18
     llm = FakeLLMClient(responses)
 
@@ -416,6 +448,68 @@ def test_vision_fail_triggers_the_ladder(pisa):
     review7 = [s for s in review_of(paths, run_id)["scenes"] if s["scene_id"] == 7][0]
     assert review7["attempts"][0]["vision"]["verdict"] == "fail"
     assert "엉뚱한 건물" in review7["reasons"][0]
+
+
+def test_retry_uses_a_prompt_revised_from_the_review(pisa):
+    """같은 프롬프트를 두 번 던지지 않는다 (ADR-0067) — 기각 사유가 다음 시도로 간다."""
+    paths, run_id, _document = pisa
+    llm = FakeLLMClient([
+        verdict("fail", ["기준 2: 두 파형의 파장이 같아 촘촘함 차이가 안 보인다"]),
+        fix(subject="Two sine bands: exactly 12 crests on top and exactly 10 below."),
+        verdict(),
+    ] + [verdict()] * 30)
+    client = FakeVideoClient()
+
+    run(paths, run_id, client=client, review="full", llm=llm, jobs=1)
+
+    first, second = [c for c in client.calls if c["scene_id"] == 1][:2]
+    assert first["prompt"] != second["prompt"], "재시도가 같은 프롬프트였다"
+    assert "exactly 12 crests" in second["prompt"]
+    # 고쳐쓰기 세션은 기각 사유를 받아야 한다.
+    fix_call = [c for c in llm.calls if c["label"].startswith("7-videogen:fix:")][0]
+    assert "파장이 같아" in fix_call["prompt"]
+    # 연출 골격은 여전히 코드·어휘의 것이다 (ADR-0033 §3).
+    assert second["prompt"].startswith("FORMAT:") and "STAGING:" in second["prompt"]
+    review1 = [s for s in review_of(paths, run_id)["scenes"] if s["scene_id"] == 1][0]
+    assert set(review1["attempts"][0]["revision"]["changed"]) == {
+        "subject_prompt", "camera_target",
+    }
+    assert review1["attempts"][0]["revision"]["reasons"]
+
+
+def test_revision_that_breaks_the_contract_is_rolled_back(pisa):
+    """고친 단락이 계약을 어기면 직전 단락으로 돌아간다 — 사다리를 막지 않는다 (D-5)."""
+    paths, run_id, _document = pisa
+    llm = FakeLLMClient([
+        verdict("fail", ["기준 3: 기형"]),
+        # 착지에 카메라 워크 단어를 넣었다 — promptplan이 막는 값이다.
+        fix(target="then the camera pans right across the facade"),
+        verdict(),
+    ] + [verdict()] * 30)
+    client = FakeVideoClient()
+
+    run(paths, run_id, client=client, review="full", llm=llm, jobs=1)
+
+    first, second = [c for c in client.calls if c["scene_id"] == 1][:2]
+    assert first["prompt"] == second["prompt"], "계약을 어긴 단락이 프롬프트에 들어갔다"
+    review1 = [s for s in review_of(paths, run_id)["scenes"] if s["scene_id"] == 1][0]
+    assert review1["attempts"][0]["revision"]["rejected"]
+
+
+def test_revision_is_skipped_when_prompts_json_has_no_parts(pisa):
+    """옛 `prompts.json`(단락 없음)에서도 사다리는 그대로 돈다 — 세션을 부르지 않는다."""
+    paths, run_id, _document = pisa
+    path = paths.run_dir(run_id) / "prompts.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for scene in document["scenes"]:
+        for key in ("subject_prompt", "camera_target", "red_prompt", "subject_prompt_shot2"):
+            scene.pop(key, None)
+    write_text(path, dump_json(document))
+    llm = FakeLLMClient([verdict("fail", ["기준 3: 기형"]), verdict()] + [verdict()] * 30)
+
+    run(paths, run_id, review="full", llm=llm, jobs=1)
+
+    assert not [c for c in llm.calls if ":fix:" in c["label"]]
 
 
 def test_vision_session_failure_passes_with_a_warning(pisa):
@@ -536,6 +630,10 @@ def test_rate_limit_backs_off_and_retries_serially(pisa):
 # --- 결과·CLI -----------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    not END_FRAME_OCR,
+    reason="끝 프레임 OCR 게이트가 계약에서 꺼져 있다 (ADR-0068). `art` 라인에서 되살릴 때 이 테스트를 그대로 쓴다",
+)
 def test_summary_counts_calls_seconds_and_demotions(paths):
     run_id, _ = install(paths, info_scenes=(5,))
     ocr = ocr_for({"5-1-end": "", "5-2-end": "", "3-1-end": "XX", "3-2-end": "XX"})

@@ -47,7 +47,7 @@ from typing import Any
 
 from ..config import Paths, write_text
 from ..jsonio import JSONExtractionError, dump_json, extract_json_object
-from ..llm.base import LLMClient
+from ..llm.base import LLMClient, LLMError
 from ..runstate import RunState
 from ..schemas import ending as ending_schema
 from ..schemas import refs as refs_schema
@@ -71,7 +71,7 @@ from .contract import (
     find_contract_for_run,
     load_scene_contract,
 )
-from .session import ScriptSessionError, ask_json, load_prompt
+from .session import load_prompt
 
 log = logging.getLogger(__name__)
 
@@ -230,16 +230,60 @@ def collect_candidates(refs: dict[str, Any]) -> tuple[list[dict], list[dict]]:
     return candidates, rejected
 
 
-def render_candidates(candidates: list[dict[str, Any]]) -> str:
+def prompt_ids(candidates: list[dict[str, Any]], run_dir: Path) -> dict[str, str]:
+    """`{세션에 보여 줄 절대 경로: refs.json의 상대 경로}`.
+
+    **세션은 임시 디렉터리에서 돈다** (`llm/claude_code.py`의 `cwd=workdir`). `refs.json`이
+    적어 둔 `refs/7/01.jpg`는 거기서 열리지 않으므로 프롬프트에는 절대 경로를 주고
+    `add_dirs`로 run 디렉터리를 열어 준다 — `[7]`의 비전 검수와 같은 메커니즘이다.
+    기록(`ending.json`·`state.json`)은 계속 run 디렉터리 기준 상대 경로로 남는다.
+    """
+    return {str((run_dir / c["source"]).resolve()): c["source"] for c in candidates}
+
+
+def relabel_verdicts(payload: dict[str, Any], alias: dict[str, str]) -> dict[str, Any]:
+    """세션이 돌려준 `id`(절대 경로)를 기록용 상대 경로로 되돌린다.
+
+    상대 경로를 그대로 돌려주는 세션도 있으므로 매핑에 없는 `id`는 손대지 않는다 —
+    `parse_verdicts`가 후보 집합과 대조해 걸러 낸다 (관용적 파싱).
+    """
+    photos = payload.get("photos")
+    if not isinstance(photos, list):
+        return payload
+    relabeled = []
+    for item in photos:
+        if isinstance(item, dict):
+            key = str(item.get("id") or "").strip()
+            source = alias.get(key)
+            if source is None and key:
+                try:
+                    source = alias.get(str(Path(key).resolve()))
+                except OSError:
+                    source = None
+            if source:
+                item = {**item, "id": source}
+        relabeled.append(item)
+    return {**payload, "photos": relabeled}
+
+
+def render_candidates(
+    candidates: list[dict[str, Any]], run_dir: Path | None = None
+) -> str:
     """세션에 보여줄 후보 목록. 씬 번호도 라이선스도 보여 주지 않는다.
 
     **판정은 그림만 보고 한다.** 라이선스는 기계가 이미 걸렀고, 그 값을 세션에 주면
     "출처가 좋으니 통과"처럼 그림 밖의 근거가 판정에 섞인다 (`[6r]`이 대본 문장을 받지
     않는 것과 같은 태도 — ADR-0038).
+
+    `run_dir`을 주면 `Read`가 실제로 열 수 있는 절대 경로를 적는다 (`prompt_ids`).
     """
     blocks: list[str] = []
     for candidate in candidates:
-        lines = [f"- `{candidate['source']}`"]
+        shown = (
+            str((run_dir / candidate["source"]).resolve())
+            if run_dir is not None else candidate["source"]
+        )
+        lines = [f"- `{shown}`"]
         if candidate.get("shows"):
             lines.append(f"  - 무엇이 찍혔다고 기록됐나: {candidate['shows']}")
         blocks.append("\n".join(lines))
@@ -432,17 +476,23 @@ def run_ending_stage(
         STAGE, len(candidates), len(machine_rejected),
     )
 
+    alias = prompt_ids(candidates, run_dir)
     prompt = load_prompt(PROMPT).safe_substitute(
         topic=topic,
-        photos=render_candidates(candidates),
+        photos=render_candidates(candidates, run_dir),
         max_photos=ending_schema.max_photos(),
     )
     try:
-        payload, meta = ask_json(
-            llm, prompt, label=STAGE, tools=TOOLS, timeout=timeout or TIMEOUT
+        # `ask_json`이 아니라 직접 부른다 — 사진이 있는 run 디렉터리를 `add_dirs`로 열어
+        # 줘야 세션이 `Read`로 그림을 본다 (`[7]`의 비전 검수와 같은 메커니즘).
+        session = llm.run(
+            prompt, allowed_tools=TOOLS, timeout=timeout or TIMEOUT,
+            label=STAGE, add_dirs=(run_dir,),
         )
-    except ScriptSessionError as exc:
-        message = f"{exc} 원본은 {run_dir / 'logs'}에 있다."
+        payload = relabel_verdicts(extract_json_object(session.text), alias)
+        meta = dict(session.meta)
+    except (LLMError, JSONExtractionError) as exc:
+        message = f"{STAGE}: 판정 세션이 실패했다 — {exc} 원본은 {run_dir / 'logs'}에 있다."
         state.mark_failed(STAGE, message)
         raise EndingStageError(message) from exc
 

@@ -14,7 +14,7 @@ import pytest
 
 from shorts_factory.config import write_text
 from shorts_factory.jsonio import dump_json
-from shorts_factory.schemas.scenes import validate_scenes
+from shorts_factory.schemas.scenes import LABEL_NUMBERS_FROM_LINE, validate_scenes
 from shorts_factory.stages.scenetable import (
     STAGE,
     ScenetableStageError,
@@ -265,15 +265,19 @@ def test_vocabulary_violation_reports_and_stops(installed):
 
 
 def test_label_number_the_line_does_not_say_is_caught(installed):
-    """화면 라벨의 숫자는 그 줄이 말하는 숫자다 (ADR-0060 결정 4) — 조절하는 쪽은 라벨이다."""
+    """화면 라벨의 숫자는 그 줄이 말하는 숫자다 (ADR-0060 결정 4) — 조절하는 쪽은 라벨이다.
+
+    검사할지는 계약의 스위치가 정한다 (`script-rules.json` `checks.label_numbers_from_line`).
+    꺼져 있으면 같은 입력이 통과해야 한다 — 듣는 숫자와 보는 숫자를 맞추는 일은 사람 판독이 진다.
+    """
     timed = timed_document()
     timed["scenes"][1]["text"] = "둘째 줄은 숫자를 말하지 않습니다."
     write_text(installed.run_dir(RUN_ID) / "scenes.timed.ko.json", dump_json(timed))
 
     result = run_scenetable_stage(SLUG, llm=FakeLLM(table_payload()), paths=installed)
 
-    assert not result.passed
-    assert any("ADR-0060" in e for e in result.errors)
+    assert result.passed is not LABEL_NUMBERS_FROM_LINE
+    assert any("ADR-0060" in e for e in result.errors) is LABEL_NUMBERS_FROM_LINE
 
 
 def test_visual_goal_that_restates_the_line_is_caught(installed):

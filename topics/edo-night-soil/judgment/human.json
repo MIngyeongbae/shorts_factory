@@ -1,0 +1,7 @@
+{
+  "judge": "human",
+  "decision": "go",
+  "video_line": "local",
+  "notes": "사람 일괄 지시(2026-08-24, \"새 토픽 6개를 2부 끝까지 진행해서 쇼츠를 만들어\"). 영상 라인은 local(ComfyUI + MiniMax H3, 변동비 0). 축별 점수는 매기지 않았다 — 일괄 go라 scores·confidence를 비운다. 표현 수위: 사람이 '그대로 간다'로 정했다 (제목·본문의 '똥' 유지, 순화 없음).",
+  "judged_at": "2026-08-24T10:05:00+09:00"
+}

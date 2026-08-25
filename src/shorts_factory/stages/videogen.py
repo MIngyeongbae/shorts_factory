@@ -70,7 +70,8 @@ from ..jsonio import JSONExtractionError, dump_json, extract_json_object
 from ..llm.base import LLMClient, LLMError
 from ..runstate import RunState
 from ..schemas.timed_scenes import PRIMARY_LANGUAGE, present_languages
-from ..schemas.visual_rules import demote_info, fill_seconds
+from ..schemas import promptplan, vocab
+from ..schemas.visual_rules import build_video_prompt, demote_info, fill_seconds
 from ..video.clips import FRAME_POSITIONS, FRAME_SUFFIX, frame_command, frame_times, normalize_command
 from ..video.ffmpeg import DEFAULT_FFMPEG, FFmpegError, relative_path, run_ffmpeg
 from ..video.ocr import OCR, OCRError, detect_ocr, gate as ocr_gate
@@ -96,6 +97,8 @@ log = logging.getLogger(__name__)
 
 STAGE = "7-videogen"
 PROMPT = "16-clipreview.md"
+#: 고쳐쓰기 세션 프롬프트 (ADR-0067) — 기각 사유를 받아 단락을 다시 쓴다.
+FIX_PROMPT = "17-clipfix.md"
 
 #: 이 단계의 **실행 기록** 둘 (specs/05 계약 표).
 RECORD_FILE = "clips.json"
@@ -110,6 +113,9 @@ REVIEW_MODES = (REVIEW_NONE, REVIEW_OCR, REVIEW_FULL)
 TOOLS: tuple[str, ...] = ("Read",)
 #: 비전 세션 상한(초). 프레임 3장을 보는 일이라 짧다.
 SESSION_TIMEOUT = 300
+
+#: 끝 프레임 OCR 게이트를 켤지 (ADR-0068). 손으로 적지 않고 계약에서 로드한다 (ADR-0034).
+END_FRAME_OCR: bool = bool(vocab.checks().get("end_frame_ocr", True))
 
 #: 같은 프롬프트로 시도하는 횟수 — 생성 1 + 재생성 1 (스펙 05 `[7]`).
 ATTEMPTS_PER_PROMPT = 2
@@ -183,6 +189,12 @@ class SceneJob:
     lang_seconds: dict[str, float]
     clamped: str | None
     review_fields: dict[str, Any]
+    #: `[5]`가 실어 둔 세션 단락 (ADR-0067). 고쳐쓰기 재생성이 이 부분만 고쳐 같은 골격에
+    #: 다시 얹는다. 옛 `prompts.json`에는 없으므로 비어 있을 수 있다 (그러면 고쳐쓰지 않는다).
+    parts: dict[str, str] = field(default_factory=dict)
+    #: 골격을 다시 조립할 때 필요한 씬 계약의 연출 — 세션이 바꿀 수 없는 값이다.
+    staging: str = ""
+    camera: str = ""
 
 
 def build_jobs(
@@ -250,6 +262,17 @@ def build_jobs(
                 "visual_goal": str(scene.get("visual_goal") or ""),
                 "info": info,
             },
+            parts={
+                key: str(entry[key])
+                for key in (
+                    promptplan.SUBJECT_FIELD,
+                    promptplan.CAMERA_TARGET_FIELD,
+                    promptplan.RED_FIELD,
+                )
+                if entry.get(key)
+            },
+            staging=str(entry.get("staging") or ""),
+            camera=str(entry.get("camera") or scene.get("camera") or ""),
         ))
     return jobs, warnings
 
@@ -376,6 +399,39 @@ def _load_json(path: Path, what: str) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise VideogenStageError(f"{what}을(를) 읽을 수 없다: {path} — {exc}") from exc
+
+
+def render_fix_prompt(
+    *, topic: str, scene_id: int, fields: dict[str, Any], parts: dict[str, str],
+    reasons: Sequence[str],
+) -> str:
+    """고쳐쓰기 세션 프롬프트 (ADR-0067). 나레이션 `text`는 넣지 않는다 (ADR-0038과 같은 태도).
+
+    입력은 **바꿀 수 없는 것**(씬 계약의 그림 필드)과 **고칠 것**(세션 단락)과 **왜**(기각
+    사유)로 갈라 보여 준다 — 세션이 어느 쪽을 만질 수 있는지 프롬프트에서 읽히게 한다.
+    """
+    info = fields.get("info") or None
+    lines = [
+        f"- **subject (그릴 것)**: {fields.get('subject') or '(없음)'}",
+        f"- **subject_anchor**: {', '.join(fields.get('subject_anchor') or []) or '(없음)'}",
+        f"- **visual_goal (화면이 져야 하는 설명)**: {fields.get('visual_goal') or '(없음)'}",
+    ]
+    if info:
+        labels = ", ".join(f'"{label}"' for label in info.get("labels", []))
+        lines.append(
+            f"- **계측 표시(info)**: `{info.get('annotation', '')}` — "
+            f"**{info.get('target', '')}**를 재고, 라벨은 {labels} 이다"
+        )
+    red = parts.get(promptplan.RED_FIELD) or ""
+    red_block = f"\nRED (계측 표시 기하):\n{red}\n" if red else "\n"
+    return load_prompt(FIX_PROMPT).safe_substitute(
+        topic=topic, scene_id=scene_id,
+        contract="\n".join(lines),
+        subject_prompt=parts.get(promptplan.SUBJECT_FIELD) or "(없음)",
+        camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD) or "(없음)",
+        red_block=red_block,
+        reasons="\n".join(f"- {r}" for r in reasons) or "- (사유 없음)",
+    )
 
 
 def render_review_prompt(
@@ -599,6 +655,79 @@ class _Runner:
         attempt["passed"] = True
         return True
 
+    # --- 고쳐쓰기 (ADR-0067) ------------------------------------------------
+
+    def _revise(
+        self, job: SceneJob, parts: dict[str, str], reasons: Sequence[str],
+    ) -> tuple[dict[str, str] | None, dict[str, Any] | None]:
+        """기각 사유 → `(고친 단락, 기록)`. 못 고치면 단락이 `None`이고 옛 단락으로 간다 (D-5).
+
+        **연출은 입력에만 있고 출력에 없다** — 세션은 `subject_prompt`·`camera_target`·
+        `red_prompt`만 쓴다 (ADR-0033 §3). 고친 단락은 `promptplan`의 씬 단위 규칙으로
+        다시 재고, 어기면 되돌린다.
+        """
+        if self.review != REVIEW_FULL or self.llm is None or not parts or not reasons:
+            return None, None
+        prompt = render_fix_prompt(
+            topic=self.topic, scene_id=job.scene_id, fields=job.review_fields,
+            parts=parts, reasons=reasons,
+        )
+        try:
+            result = self.llm.run(
+                prompt, allowed_tools=(), timeout=self.session_timeout,
+                label=f"{STAGE}:fix:{job.scene_id}",
+            )
+            payload = extract_json_object(result.text)
+        except (LLMError, JSONExtractionError) as exc:
+            return None, {"reasons": list(reasons), "failed": f"고쳐쓰기 세션 실패: {exc}"}
+
+        revised = dict(parts)
+        for key in (promptplan.SUBJECT_FIELD, promptplan.CAMERA_TARGET_FIELD):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                revised[key] = value
+        if promptplan.RED_FIELD in parts:
+            red = str(payload.get(promptplan.RED_FIELD) or "").strip()
+            if red:
+                revised[promptplan.RED_FIELD] = red
+
+        errors = self._revision_errors(job, revised)
+        record: dict[str, Any] = {
+            "reasons": list(reasons),
+            "changed": [k for k in revised if revised[k] != parts.get(k)],
+            "note": str(payload.get("changed") or "").strip() or None,
+        }
+        if errors:
+            record["rejected"] = errors
+            return None, record
+        if not record["changed"]:
+            record["rejected"] = ["세션이 단락을 하나도 바꾸지 않았다"]
+            return None, record
+        return revised, record
+
+    def _revision_errors(self, job: SceneJob, revised: dict[str, str]) -> list[str]:
+        """고친 단락을 `[5]`와 같은 잣대로 잰다 — 계약은 한 곳에서만 정의된다 (ADR-0034)."""
+        entry: dict[str, Any] = {"scene_id": job.scene_id, **revised}
+        scene: dict[str, Any] = {
+            "scene_id": job.scene_id,
+            "info": job.review_fields.get("info") or None,
+        }
+        return promptplan.cross_errors({"scenes": [entry]}, {"scenes": [scene]})
+
+    def _rebuild(self, job: SceneJob, parts: dict[str, str]) -> tuple[str, str] | None:
+        """고친 단락 → 같은 골격의 프롬프트. 골격은 여전히 코드·어휘의 것이다 (ADR-0060)."""
+        try:
+            prompt, negative = build_video_prompt(
+                subject_prompt=parts[promptplan.SUBJECT_FIELD],
+                staging=job.staging,
+                camera=job.camera,
+                camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD, ""),
+                red_prompt=parts.get(promptplan.RED_FIELD),
+            )
+        except (ValueError, KeyError):
+            return None
+        return fill_seconds(prompt, job.seconds), negative
+
     # --- 사다리 -----------------------------------------------------------
 
     def run_scene(self, job: SceneJob) -> SceneOutcome:
@@ -606,22 +735,27 @@ class _Runner:
             scene_id=job.scene_id, seconds=job.seconds, lang_seconds=job.lang_seconds,
             clamped=job.clamped, has_info=job.has_info,
         )
-        variants: list[tuple[str, str, str]] = [
-            (VARIANT_INFO if job.has_info else VARIANT_VIDEO, job.prompt, job.negative_prompt)
-        ]
+        # 단락과 조립본은 사다리를 도는 동안 **같이** 움직인다 (ADR-0067) — 고쳐쓰기가
+        # 단락을 바꾸면 조립본을 다시 만들고, RED 뺀 변종도 그 조립본에서 파생된다.
+        parts = dict(job.parts)
+        prompt, negative = job.prompt, job.negative_prompt
+        kinds = [VARIANT_INFO if job.has_info else VARIANT_VIDEO]
         if job.has_info:
-            try:
-                variants.append((VARIANT_NO_RED, *demote_info(job.prompt, job.negative_prompt)))
-            except ValueError as exc:
-                outcome.warnings.append(f"RED 절 강등 변종을 만들 수 없다: {exc}")
+            kinds.append(VARIANT_NO_RED)
 
         number = 0
-        for variant, prompt, negative in variants:
+        for variant in kinds:
             if variant == VARIANT_NO_RED:
+                try:
+                    prompt, negative = demote_info(prompt, negative)
+                except ValueError as exc:
+                    outcome.warnings.append(f"RED 절 강등 변종을 만들 수 없다: {exc}")
+                    break
+                parts.pop(promptplan.RED_FIELD, None)
                 outcome.warnings.append(
                     "검수 2회 실패 → RED 절을 뺀 프롬프트로 재생성한다 (demoted_from: info — 틀린 숫자보다 없는 숫자가 낫다)"
                 )
-            for _ in range(ATTEMPTS_PER_PROMPT):
+            for index in range(ATTEMPTS_PER_PROMPT):
                 if self.stop.is_set():
                     outcome.status = FAILED
                     outcome.reasons.append("프로바이더 거절로 중단")
@@ -666,6 +800,26 @@ class _Runner:
                 if attempt.get("error"):
                     reasons.append(attempt["error"])
                 outcome.reasons.append(f"시도 {number} ({variant}): " + ("; ".join(reasons) or "검수 실패"))
+
+                # 같은 프롬프트를 다시 던지지 않는다 (ADR-0067). 이 변종에 시도가 남아 있을
+                # 때만 고친다 — 마지막 시도 뒤의 고쳐쓰기는 쓸 곳이 없다.
+                if index + 1 >= ATTEMPTS_PER_PROMPT or not reasons:
+                    continue
+                revised, record = self._revise(job, parts, reasons)
+                if record is not None:
+                    attempt["revision"] = record
+                if revised is None:
+                    outcome.warnings.append(
+                        f"시도 {number}: 고쳐쓰기가 서지 않아 같은 단락으로 재시도한다"
+                    )
+                    continue
+                rebuilt = self._rebuild(job, revised)
+                if rebuilt is None:
+                    outcome.warnings.append(
+                        f"시도 {number}: 고친 단락을 골격에 얹지 못해 되돌린다"
+                    )
+                    continue
+                parts, (prompt, negative) = revised, rebuilt
 
         outcome.status = NEEDS_REUSE
         outcome.warnings.append("생성·검수가 전부 실패해 인접 씬 클립을 재사용한다 (demoted_from: video)")
@@ -798,11 +952,21 @@ def run_videogen_stage(
 
     state.mark_running(STAGE)
 
-    ocr_backend = ocr if ocr is not None else (detect() if review != REVIEW_NONE else None)
-    if review != REVIEW_NONE and ocr_backend is None:
-        warnings.append(
-            "tesseract가 PATH에 없어 끝 프레임 OCR 게이트를 건너뛴다 — 라벨 대조는 비전 검수만 본다 (ADR-0056 결정 6)"
-        )
+    # 게이트를 켤지는 계약이 정한다 (ADR-0068) — 실측에서 끝 프레임 130장 중 6장만 통과했고
+    # 질감 잡음의 신뢰도가 진짜 라벨보다 높아 문턱으로 갈리지 않았다. 배선은 남긴다.
+    if not END_FRAME_OCR:
+        ocr_backend = None
+        if review != REVIEW_NONE:
+            warnings.append(
+                "끝 프레임 OCR 게이트는 계약에서 꺼져 있다 (script-rules.json checks.end_frame_ocr, "
+                "ADR-0068) — 라벨 대조는 비전 검수만 본다"
+            )
+    else:
+        ocr_backend = ocr if ocr is not None else (detect() if review != REVIEW_NONE else None)
+        if review != REVIEW_NONE and ocr_backend is None:
+            warnings.append(
+                "tesseract가 PATH에 없어 끝 프레임 OCR 게이트를 건너뛴다 — 라벨 대조는 비전 검수만 본다 (ADR-0056 결정 6)"
+            )
 
     pending = [job for job in all_jobs if job.scene_id not in done_before]
     if done_before:
