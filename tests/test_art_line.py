@@ -60,12 +60,14 @@ def test_only_art_lets_the_frames_carry_the_style():
 
 def test_subject_comes_before_style():
     """어순이 곧 가중치다 — 뒤집으면 소재가 죽는다 (실측)."""
+    style = vocab.line_style("art")
     line = vr.build_mj_prompt(
-        subject=SUBJECT, base_style=vocab.line_style("art"),
+        subject=SUBJECT, base_style=style,
         negatives=vr.negative_items(has_info=False),
     )
     body = line.split("--", 1)[0]
-    assert body.index("sine wave") < body.index("cel shaded")
+    # 스타일 낱말을 여기 옮겨 적지 않는다 — 룩은 계약이 바꾼다 (ADR-0034 §3)
+    assert body.index("sine wave") < body.index(style.split(",")[0])
 
 
 def test_flags_follow_the_mj_dialect():
