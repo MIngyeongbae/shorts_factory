@@ -19,6 +19,12 @@ env/
 runs/*
 !runs/.gitkeep
 
+# 배치·서버 콘솔 로그 자리. 디렉터리만 리포지토리가 들고 있는다 — 없으면
+# `> runs/logs/x.log` 리다이렉트가 실패한다 (내용은 커밋하지 않는다)
+!runs/logs/
+runs/logs/*
+!runs/logs/.gitkeep
+
 # 전체 검사 보고서 (로컬 전용)
 reports/
 
