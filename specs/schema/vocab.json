@@ -228,7 +228,9 @@
       "static": {
         "gloss": "고정",
         "video_prompt": "locked-off camera, only the subject's own motion"
-      }
+      },
+      "_info_still": "Absolutely no motion. The camera is completely locked off — no pan, no tilt, no zoom, no push, no drift, not even a slow one. Nothing inside the frame moves either: the subject, the water, the sky, the light and every object stay perfectly frozen exactly as they are. This is a still photograph held on screen. The one and only change across the clip is the red annotation appearing over the frozen image.",
+      "_info_still_note": "`art` 라인의 `info` 씬이 쓰는 문구 (ADR-0072 결정 4). **카메라 워크 문구를 대체한다** — [3s]가 무엇을 골랐든 이 씬의 영상 프롬프트는 정지를 진다 (씬 계약의 `camera` 값 자체는 [3s]의 기록이라 고치지 않는다). `static`을 쓰지 않는 이유는 그 문구가 \"only the subject's own motion\"으로 **피사체 움직임을 허용**하기 때문이다 — 우리가 막으려는 것이 정확히 그것이다. 근거는 ADR-0071의 역할 분담: 표시의 정확성은 정지 이미지가 지고 영상 모델은 잇기만 한다. 그림이 움직이면 지시선이 가리키던 지점이 그 아래에서 이동해 표시가 어긋난다 (사람 관찰 2026-08-25)."
     },
     "framing": {
       "_role": "구도 토큰. shot이 영상 프롬프트 SUBJECT 절 뒤에 그대로 들어간다. scale은 그 토큰이 어느 subject_scale에 어울리는지의 표시이고 강제가 아니다 — 고르는 것은 [3s]다 (ADR-0033 §3).",
@@ -500,7 +502,7 @@
       }
     },
     "video_line": {
-      "_role": "2부 영상 생산 라인 (ADR-0059). 라인 = [7]의 어댑터 + 그 라인의 값 몇 개이고, 씬 계약·클립 계약·검수·3개 국어 공유는 라인과 무관하다. 사람이 판정 게이트(judgment/human.json `video_line`)에서 고른다 — 소재 유형 규칙으로 자동 선택하지 않는다 (ADR-0059 결정 2). `provider`는 CLI `--provider` 이름이고 null이면 미구현이라 [7]이 멈춘다. `shot2`가 false면 [3s]가 그 라인에서 2샷(ADR-0058)을 만들지 않는다. `art`는 라인 고유 값이 더 있다 (ADR-0070): `base_style`(라인이 자기 룩을 진다), `fallback_provider`(잔량 소진·장애 때), `style_in_frames`(true면 [5]가 영상 프롬프트에 STYLE 절을 싣지 않는다 — 스타일은 first/last 프레임이 진다).",
+      "_role": "2부 영상 생산 라인 (ADR-0059). 라인 = [7]의 어댑터 + 그 라인의 값 몇 개이고, 씬 계약·클립 계약·검수·3개 국어 공유는 라인과 무관하다. 사람이 판정 게이트(judgment/human.json `video_line`)에서 고른다 — 소재 유형 규칙으로 자동 선택하지 않는다 (ADR-0059 결정 2). `provider`는 CLI `--provider` 이름이고 null이면 미구현이라 [7]이 멈춘다. **`info_provider`가 있으면 그 라인은 씬마다 엔진이 갈린다** — `info` 씬만 그쪽으로 가고 나머지는 `provider`다 (ADR-0072 결정 5가 '라인 = 어댑터 하나'를 깼다). `shot2`가 false면 [3s]가 그 라인에서 2샷(ADR-0058)을 만들지 않는다. `art`는 라인 고유 값이 더 있다 (ADR-0070): `base_style`(라인이 자기 룩을 진다), `fallback_provider`(잔량 소진·장애 때), `style_in_frames`(true면 [5]가 영상 프롬프트에 STYLE 절을 싣지 않는다 — 스타일은 first/last 프레임이 진다).",
       "_default": "local",
       "local": {
         "gloss": "로컬 GPU — ComfyUI + MiniMax H3. 변동비 0. 초기 기본 (테스트·초기 쇼츠)",
@@ -519,7 +521,10 @@
         "shot2": false,
         "style_in_frames": true,
         "base_style": "stylized 3D render, cel shaded with clean fine ink outlines, hand-painted watercolour textures on accurate 3D geometry, global illumination and ambient occlusion, real cast shadows and depth, volumetric haze, realism dominant over painterly looseness, the full environment and sky rendered edge to edge with no blank margins",
-        "_base_style": "이 라인만의 룩 (사람 선택 2026-08-25). 전역 `style.base_style`(세미 스타일라이즈드 3D)을 대체하지 않는다 — `local`·`api`는 그대로다. **3D 렌더 어휘가 핵심이다**: 회화 매체 어휘로 쓰면 깊이 단서가 없어 영상 모델이 카메라를 못 민다 (실측). 셀셰이딩의 잉크 외곽선이 선 느낌을 진다. 글자 하나를 바꾸면 재검증이 필요하다"
+        "_base_style": "이 라인만의 룩 (사람 선택 2026-08-25). 전역 `style.base_style`(세미 스타일라이즈드 3D)을 대체하지 않는다 — `local`·`api`는 그대로다. **3D 렌더 어휘가 핵심이다**: 회화 매체 어휘로 쓰면 깊이 단서가 없어 영상 모델이 카메라를 못 민다 (실측). 셀셰이딩의 잉크 외곽선이 선 느낌을 진다. 글자 하나를 바꾸면 재검증이 필요하다",
+        "_style_in_frames": "true면 프레임이 그림을 진다 — [5]는 영상 프롬프트에 STYLE 절을 싣지 않고(ADR-0070 규칙 1), **ADR-0072가 나머지 절도 걷어냈다**: FORMAT·STAGING·CAMERA 표제도, camera_target도, NEGATIVE도 없이 카메라 워크 구절 하나이고, `info` 씬은 그 자리에 `camera._info_still`이 들어간다. 이유는 엔진 규약이다 — 이미지 입력 엔진(MJ)에서 화면비는 입력 이미지가, 길이는 엔진이 정하고, 서술형 종속절은 규약 밖이다. **ADR-0059의 '라인이 달라도 프롬프트는 같다'는 여기서 폐기된다** (실측: FORMAT·CAMERA 30단어 서술형이 MJ 영상 잡에 그대로 나가고 있었다).",
+        "info_provider": "comfy-h3-fl2v",
+        "_info_provider": "`info` 씬만 이 어댑터로 간다 (ADR-0072 결정 5). 나머지 씬은 `provider`(MJ)다 — **한 라인 안에서 씬의 `info` 유무가 엔진을 고른다.** 근거는 실측이다: MJ `endImage`는 끝 이미지를 목표로 접근할 뿐 들고 가지 못해 중간 프레임에서 계측 표시가 무너지고(빨간 화소 2041→224→3964, 정지 문구를 넣어도 그림이 회전한다), H3 first/last는 보간이라 2초부터 끝까지 평평하다(4524~4579). 반대로 일반 씬은 MJ의 그림체·카메라 워크가 낫고 로컬 GPU를 쓰지 않는다. null이면 라인 전체가 한 엔진이다."
       }
     },
     "mj_dialect": {
@@ -531,6 +536,16 @@
       "_words": "플래그(`--`) 앞 본문의 단어 수. 실측 2026-08-25 (v8.2): ~200단어는 MJ가 재작성해 프록시가 결과를 못 묶고, ~120단어는 스타일 절이 꼬리에서 무시되고, 27단어는 소재를 잃는다. 79단어가 소재·스타일을 둘 다 살렸다",
       "multi_prompt": false,
       "_multi_prompt": "`::` 멀티프롬프트는 v8.2가 거절한다 — `Multiple text prompts aren't supported`"
+    },
+    "review_ladder": {
+      "_role": "검수는 **시도마다 기준을 낮춘다** (사람 결정 2026-08-25). 같은 잣대로 반복 기각하면 재검수가 시간·세션·종량 호출을 먹고도 끝나지 않는다 — 실측: 한 편에 [7] 세션 81회(필요분 18), NB2 16회(필요분 7), 3시간 50분. 사다리의 마지막 칸은 **반드시 채택**이므로 루프가 닫힌다. 근거는 ADR-0047이다: 청자는 지식이 없고 관심도 없으며 **이미지는 전달을 보조하는 수단**이다 — 숫자는 내레이션·자막·라벨이 지고, 그림은 완벽할 필요가 없다. `[6]`·`[7]`의 모든 검수가 이 표를 쓰고, 코드는 시도 번호로 고른다(마지막 문구를 넘어서면 그것이 계속 쓰인다).",
+      "standards": [
+        "**1차 — 계약대로인가.** 계약이 말한 대상·구조가 화면에 서는지 본다. 어긋나면 기각한다. 다만 스타일·화풍·색감, 비례의 미세한 오차, 배경의 사소한 차이는 이 단계에서도 판정하지 않는다.",
+        "**2차 — 쓸 만한가.** 앞 장이 이미 한 번 기각됐다. 이제 \"계약대로인가\"가 아니라 \"이 장으로 그 씬을 설명할 수 있는가\"를 묻는다. 정도의 문제(비례가 정확하지 않다, 구도가 아쉽다, 디테일이 부족하다)는 **전부 통과**다. 대상이 다른 것이거나 라벨을 얹을 자리가 없을 때만 기각한다.",
+        "**3차 — 못 쓸 정도인가.** 두 번 기각했으면 남은 장이 더 나으리라는 보장이 없다. **치명적 결함만** 기각한다: 계약이 말한 것이 화면에 아예 없다 / 사람·사물이 기형이다 / 화면 절반이 뭉개졌다 / 계약에 없는 글자가 크게 박혔다. 그 밖에는 전부 채택한다.",
+        "**마지막 — 이거라도 쓴다.** 더 시도할 칸이 없다. **화면 사고가 아니면 채택한다.** 여기서 기각하면 그 씬은 옆 씬 클립으로 때워지거나 계측 표시 없이 나가므로, 아쉬운 그림보다 나쁜 결과가 된다. 판단이 조금이라도 애매하면 `pass`다."
+      ],
+      "_standards": "인덱스가 시도 번호다(0부터). 문구는 **판정의 잣대**만 말하고 무엇을 보는지(기준 목록)는 각 프롬프트가 정한다 — 잣대는 공통이고 대상은 단계마다 다르기 때문이다."
     }
   }
 }

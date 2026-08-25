@@ -33,7 +33,8 @@ specs/05-pipeline.md:
 
     생성 → 검수 실패 → 재생성 1회 (같은 프롬프트)
       → info 씬이면 RED 절을 뺀 프롬프트로 재생성 (demoted_from: "info")
-      → 그래도 실패 / 일반 씬이면 인접 씬 클립 재사용 (demoted_from: "video", source_scene)
+      → 그래도 실패면 **그 씬의 첫 후보를 그대로 채택** (demoted_from: "unreviewed").
+        인접 재사용은 하지 않는다 — 옆 씬 복사는 같은 그림을 편 안에서 반복시킨다
 
 **강등을 조용히 하지 않는다** — `clips.json`에 씬마다 `demoted_from`, `clip_review.json`에
 시도마다 판정 사유. 인접 재사용은 **모든 씬의 생성이 끝난 뒤** 직렬로 푼다 (앞 씬이 아직
@@ -119,13 +120,20 @@ END_FRAME_OCR: bool = bool(vocab.checks().get("end_frame_ocr", True))
 
 #: 같은 프롬프트로 시도하는 횟수 — 생성 1 + 재생성 1 (스펙 05 `[7]`).
 ATTEMPTS_PER_PROMPT = 2
+
+#: 검수 세션의 기본 동시 수 (ADR-0072 결정 1). 프로바이더 한도와 **다른 자원**이라 따로
+#: 센다 — 검수는 구독 헤드리스라 영상 엔진이 아니라 플랜 한도를 쓴다. `--review-jobs`가 이긴다.
+DEFAULT_REVIEW_SLOTS = 4
 #: 429 재시도 상한과 백오프 밑(초).
 RATE_LIMIT_RETRIES = 4
 RATE_LIMIT_BACKOFF = 15.0
 
 PASS, FAIL, ERROR = "pass", "fail", "error"
-DONE, NEEDS_REUSE, FAILED = "done", "needs_reuse", "failed"
-DEMOTED_INFO, DEMOTED_VIDEO = "info", "video"
+DONE, FAILED = "done", "failed"
+DEMOTED_INFO = "info"
+#: 검수를 통과한 시도가 없어 **그 씬의 첫 후보를 그대로 쓴** 표시 (사람 결정 2026-08-25).
+#: `video`(인접 재사용)를 대체한다 — 옆 씬 복사는 같은 그림을 편 안에서 반복시킨다.
+DEMOTED_UNREVIEWED = "unreviewed"
 VARIANT_VIDEO, VARIANT_INFO, VARIANT_NO_RED = "video", "info", "no_red"
 
 
@@ -199,6 +207,9 @@ class SceneJob:
     #: 온 **공개 https 주소**다. 그 라인이 아니면 둘 다 None이고 텍스트→영상으로 간다.
     first_frame: str | None = None
     last_frame: str | None = None
+    #: 프레임을 입력으로 받는 라인인가 (ADR-0072). 프롬프트 규약이 라인마다 다르므로
+    #: 고쳐쓰기·강등 재조립도 이 값을 따라간다 — 이 라인은 초 수 자리도 없다.
+    frames_line: bool = False
 
 
 def build_jobs(
@@ -258,7 +269,7 @@ def build_jobs(
         frame_urls = _frame_urls(sid, frames)
         jobs.append(SceneJob(
             scene_id=sid,
-            prompt=fill_seconds(str(entry["prompt"]), seconds),
+            prompt=_with_seconds(str(entry["prompt"]), seconds, frames_line=frames is not None),
             negative_prompt=str(entry.get("negative_prompt") or ""),
             has_info=has_info,
             labels=labels,
@@ -284,8 +295,17 @@ def build_jobs(
             camera=str(entry.get("camera") or scene.get("camera") or ""),
             first_frame=frame_urls[0],
             last_frame=frame_urls[1],
+            frames_line=frames is not None,
         ))
     return jobs, warnings
+
+
+def _with_seconds(prompt: str, seconds: int, *, frames_line: bool) -> str:
+    """FORMAT 절의 초 수를 채운다. **프레임 라인은 그 절이 없다** (ADR-0072 결정 3) —
+    화면비도 길이도 입력 이미지와 엔진이 정하므로 프롬프트가 초를 말하지 않는다."""
+    if frames_line:
+        return prompt
+    return fill_seconds(prompt, seconds)
 
 
 def _frame_urls(
@@ -309,18 +329,6 @@ def _frame_urls(
     return clean, info
 
 
-def nearest_source(scene_id: int, available: Sequence[int]) -> int | None:
-    """인접 재사용의 출처 — 가까운 앞 씬 우선, 없으면 가까운 뒤 씬 (스펙 05 `[7]`)."""
-    earlier = [sid for sid in available if sid < scene_id]
-    if earlier:
-        return max(earlier)
-    later = [sid for sid in available if sid > scene_id]
-    return min(later) if later else None
-
-
-# --- 결과 ---------------------------------------------------------------------
-
-
 @dataclass
 class SceneOutcome:
     scene_id: int
@@ -332,7 +340,6 @@ class SceneOutcome:
     has_info: bool = False
     attempts: list[dict[str, Any]] = field(default_factory=list)
     demoted_from: str | None = None
-    source_scene: int | None = None
     rate_limited: int = 0
     warnings: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
@@ -347,7 +354,7 @@ class SceneOutcome:
             "scene_id": self.scene_id,
             "status": self.status,
             "file": self.file,
-            "provider": provider if self.source_scene is None else "reuse",
+            "provider": provider,
             "seconds": self.seconds,
             "lang_seconds": self.lang_seconds,
             "clamped": self.clamped,
@@ -356,7 +363,6 @@ class SceneOutcome:
             "retries": max(0, self.generated - 1),
             "rate_limited": self.rate_limited,
             "demoted_from": self.demoted_from,
-            "source_scene": self.source_scene,
             "request_ids": [a["request_id"] for a in self.attempts if a.get("request_id")],
         }
 
@@ -416,12 +422,9 @@ class VideogenResult:
         return (
             f"[7] {self.topic} — {self.scene_count}씬 / 호출 {self.generated_clips}회 "
             f"({self.purchased_seconds}초, {self.provider}) / 검수 {self.review} / "
-            f"강등 info {self.demoted(DEMOTED_INFO)} · video {self.demoted(DEMOTED_VIDEO)} "
+            f"강등 info {self.demoted(DEMOTED_INFO)} · 미검수채택 {self.demoted(DEMOTED_UNREVIEWED)} "
             f"→ {CLIPS_DIR}/ + {RECORD_FILE}{tail}"
         )
-
-
-# --- 실행기 ------------------------------------------------------------------
 
 
 def _load_json(path: Path, what: str) -> dict[str, Any]:
@@ -468,8 +471,14 @@ def render_fix_prompt(
 
 def render_review_prompt(
     *, topic: str, scene_id: int, fields: dict[str, Any], frames: Sequence[Path],
+    attempt: int = 0,
 ) -> str:
-    """비전 세션 프롬프트. 나레이션 `text`는 넣지 않는다 (ADR-0038 — 그림 목표만 본다)."""
+    """비전 세션 프롬프트. 나레이션 `text`는 넣지 않는다 (ADR-0038 — 그림 목표만 본다).
+
+    `attempt`가 거듭될수록 **잣대가 낮아진다** (`vocab.review_standard`) — 같은 잣대로
+    반복 기각하면 재생성이 끝나지 않고, 사다리 끝은 옆 씬 클립으로 때우는 것이라
+    아쉬운 클립보다 나쁘다.
+    """
     info = fields.get("info") or None
     if info:
         labels = ", ".join(f'"{label}"' for label in info.get("labels", []))
@@ -490,6 +499,7 @@ def render_review_prompt(
         visual_goal=fields.get("visual_goal") or "(없음)",
         info_block=info_block,
         frames=frame_lines,
+        standard=vocab.review_standard(attempt),
     )
 
 
@@ -517,8 +527,15 @@ class _Runner:
         ocr: OCR | None, llm: LLMClient | None, ffmpeg: str, runner: Callable[..., Any],
         video_timeout: int | None, session_timeout: int, sleep: Callable[[float], None],
         backoff: float, on_scene_done: Callable[[SceneOutcome], None],
+        gen_slots: int = 1, review_slots: int = 1,
+        info_client: VideoClient | None = None,
     ) -> None:
         self.client = client
+        # `info` 씬만 다른 엔진으로 보낸다 (ADR-0072 결정 5). MJ는 끝 이미지를 목표로
+        # 접근할 뿐 **들고 가지 못해** 중간 프레임에서 계측 표시가 무너지고(2041→224→3964),
+        # H3는 두 프레임을 보간해 2초부터 끝까지 평평하다(4524~4579). 일반 씬은 MJ의
+        # 그림체·카메라 워크가 낫고 로컬 GPU도 안 쓴다. None이면 라인 전체가 한 엔진이다.
+        self.info_client = info_client
         self.run_dir = run_dir
         self.topic = topic
         self.review = review
@@ -532,6 +549,19 @@ class _Runner:
         self.backoff = backoff
         self.on_scene_done = on_scene_done
         self.stop = threading.Event()
+        # 생성과 검수는 **다른 자원**이다 (ADR-0072 결정 1). 씬마다 스레드가 하나씩 돌되
+        # 프로바이더 호출은 `gen`이, 검수 세션은 `review`가 각각 몇 개까지 동시에 도는지
+        # 정한다 — 한 씬이 검수 중이면 그 씬이 쥐고 있던 생성 슬롯은 즉시 다음 씬에게
+        # 간다. 기각된 씬은 사다리를 돌며 생성 슬롯을 다시 기다리므로 "큐 뒤에 다시
+        # 붙는" 것과 같다. 씬당 워커 하나가 둘을 다 지면 검수 동안 프로바이더가 논다.
+        # **엔진이 다르면 다른 자원이다** (ADR-0072 되돌릴 조건 6 → 확정 2026-08-25). MJ는
+        # 원격 프록시, H3는 이 PC의 GPU라 서로의 한도와 무관한데, 게이트를 공유하면 H3의
+        # 205초짜리 잡이 도는 동안 MJ가 슬롯을 못 써 **두 엔진이 직렬로 합산된다** (실측:
+        # 18씬에 60분). 엔진 이름마다 자기 게이트를 준다.
+        self._gen_gates: dict[str, threading.Semaphore] = {}
+        self._gen_slots = max(1, int(gen_slots))
+        self._gate_lock = threading.Lock()
+        self.review_gate = threading.Semaphore(max(1, int(review_slots)))
         self.refusal: VideoProviderNotConfigured | None = None
         self._serial = False
         self._serial_lock = threading.Lock()
@@ -540,12 +570,48 @@ class _Runner:
 
     # --- 생성 -------------------------------------------------------------
 
-    def _generate(self, job: SceneJob, attempt: dict[str, Any], prompt: str, negative: str) -> Path | None:
+    def gate_for(self, client: VideoClient) -> threading.Semaphore:
+        """그 엔진의 생성 게이트. 처음 보는 엔진이면 만든다 (ADR-0072).
+
+        슬롯 수는 엔진이 말한다 — `--jobs`는 **주 엔진**의 것이고, 곁다리 엔진(로컬 GPU)은
+        자기 `concurrency()`를 쓴다. 둘을 한 숫자로 묶으면 한쪽이 다른 쪽을 굶긴다.
+        """
+        with self._gate_lock:
+            gate = self._gen_gates.get(client.name)
+            if gate is None:
+                slots = self._gen_slots if client is self.client else max(1, int(client.concurrency() or 1))
+                gate = threading.Semaphore(slots)
+                self._gen_gates[client.name] = gate
+            return gate
+
+    def engine_for(self, job: SceneJob, variant: str) -> VideoClient:
+        """이 씬·이 변종을 만들 엔진 (ADR-0072 결정 5).
+
+        `info` 엔진이 있고 그 씬이 계측 표시를 **실제로 실을 때만** 그쪽으로 간다 —
+        RED를 뺀 강등 변종(`no_red`)은 표시가 없으므로 일반 엔진으로 돌아간다. `[6]`이
+        INFO를 못 만들어 강등된 씬(`last_frame` 없음)도 마찬가지다: 보간할 끝 그림이 없다.
+        """
+        if self.info_client is None or variant != VARIANT_INFO:
+            return self.client
+        if not job.last_frame:
+            return self.client
+        return self.info_client
+
+    def _generate(
+        self, job: SceneJob, attempt: dict[str, Any], prompt: str, negative: str,
+        client: VideoClient | None = None, variant: str = VARIANT_VIDEO,
+    ) -> Path | None:
         """호출 1회 (429면 직렬 + 백오프로 재시도) → 원본 파일 경로. 실패면 None + 사유."""
+        client = client or self.client
+        # **RED를 뺀 변종은 끝 그림도 뺀다** (ADR-0072 정정 2026-08-25). 표시를 그리지 말라고
+        # 해 놓고 표시가 그려진 INFO를 끝 그림으로 주면 엔진은 그쪽으로 간다 — 그래서 사다리의
+        # 마지막 칸이 **구조적으로 통과할 수 없었다** (실측: "글자가 없어야 하는데 빨간 라벨이
+        # 있다"로 씬 4·6이 연속 기각). CLEAN 한 장으로 가면 엔진이 알아서 움직인다.
+        last_frame = None if variant == VARIANT_NO_RED else job.last_frame
         request = VideoRequest(
             scene_id=job.scene_id, prompt=prompt, negative_prompt=negative,
             seconds=job.seconds, label=f"scene {job.scene_id} attempt {attempt['attempt']}",
-            first_frame=job.first_frame, last_frame=job.last_frame,
+            first_frame=job.first_frame, last_frame=last_frame,
         )
         for retry in range(RATE_LIMIT_RETRIES + 1):
             if self.stop.is_set():
@@ -556,7 +622,10 @@ class _Runner:
             if lock:
                 lock.acquire()
             try:
-                clip = self.client.generate(request, timeout=self.video_timeout)
+                # 프로바이더 동시 한도는 여기서만 진다 (ADR-0072) — 검수·정규화는 이 슬롯을
+                # 쥐지 않으므로, 이 씬이 검수로 넘어가면 슬롯은 곧바로 다음 씬에게 간다.
+                with self.gate_for(client):
+                    clip = client.generate(request, timeout=self.video_timeout)
             except VideoGenRateLimited as exc:
                 attempt["rate_limited"] = attempt.get("rate_limited", 0) + 1
                 self._serial = True  # 스펙 05 — 429면 워커 1로 줄이고 백오프
@@ -582,7 +651,8 @@ class _Runner:
                     lock.release()
 
             attempt["wall_seconds"] = attempt.get("wall_seconds", 0.0) + (time.monotonic() - started)
-            attempt["request_id"] = clip.request_id or f"{self.client.name}-{job.scene_id}-{attempt['attempt']}"
+            attempt["engine"] = client.name
+            attempt["request_id"] = clip.request_id or f"{client.name}-{job.scene_id}-{attempt['attempt']}"
             attempt["provider"] = {**clip.meta, **{k: v for k, v in clip.raw.items() if k != "uri"}}
             raw_path = self.review_dir / f"{job.scene_id}-{attempt['attempt']}.raw.mp4"
             raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -632,12 +702,14 @@ class _Runner:
         return verdict.record()
 
     def _vision(
-        self, scene_id: int, fields: dict[str, Any], frames: Sequence[Path]
+        self, scene_id: int, fields: dict[str, Any], frames: Sequence[Path],
+        attempt_number: int = 0,
     ) -> dict[str, Any] | None:
         if self.review != REVIEW_FULL or self.llm is None:
             return None
         prompt = render_review_prompt(
             topic=self.topic, scene_id=scene_id, fields=fields, frames=frames,
+            attempt=attempt_number,
         )
         last_error = ""
         for _try in range(2):
@@ -659,7 +731,11 @@ class _Runner:
         return {"verdict": ERROR, "reasons": [f"비전 세션 실패 2회 → 검수 없이 통과: {last_error}"], "target_pointed": None}
 
     def _review_attempt(self, job: SceneJob, attempt: dict[str, Any], variant: str, candidate: Path) -> bool:
-        """검수 ①②. 통과면 True. 기록은 `attempt`에 남긴다."""
+        """검수 ①②. 통과면 True. 기록은 `attempt`에 남긴다.
+
+        **프로바이더 슬롯을 쥐지 않는다** (ADR-0072 결정 1) — 검수는 헤드리스 세션이라
+        영상 엔진과 다른 자원이고, 여기서 기다리는 동안 엔진은 다른 씬을 돌린다.
+        """
         if self.review == REVIEW_NONE:
             attempt["passed"] = True
             return True
@@ -668,6 +744,13 @@ class _Runner:
             attempt["passed"] = False
             return False
         attempt["frames"] = [relative_path(f, self.run_dir) for f in frames]
+        with self.review_gate:
+            return self._judge(job, attempt, variant, frames)
+
+    def _judge(
+        self, job: SceneJob, attempt: dict[str, Any], variant: str, frames: Sequence[Path]
+    ) -> bool:
+        """OCR + 비전 판정. 검수 슬롯 안에서만 돈다 (ADR-0072 결정 1)."""
 
         expect_labels = variant == VARIANT_INFO
         ocr = self._ocr(job, expect_labels, frames[-1])
@@ -678,7 +761,10 @@ class _Runner:
 
         # RED 절을 뺀 변종은 계측 표시가 없는 씬으로 본다 — 라벨을 기대하지 않는다.
         fields = {**job.review_fields, "info": None} if variant == VARIANT_NO_RED else job.review_fields
-        vision = self._vision(job.scene_id, fields, frames)
+        # 시도 번호가 잣대를 정한다 — 0부터 세고, 사다리를 내려갈수록 느슨해진다.
+        vision = self._vision(
+            job.scene_id, fields, frames, attempt_number=max(0, int(attempt.get("attempt", 1)) - 1)
+        )
         attempt["vision"] = vision
         if vision is not None and vision["verdict"] == FAIL:
             attempt["passed"] = False
@@ -756,10 +842,11 @@ class _Runner:
                 camera=job.camera,
                 camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD, ""),
                 red_prompt=parts.get(promptplan.RED_FIELD),
+                frames=job.frames_line,
             )
         except (ValueError, KeyError):
             return None
-        return fill_seconds(prompt, job.seconds), negative
+        return _with_seconds(prompt, job.seconds, frames_line=job.frames_line), negative
 
     # --- 사다리 -----------------------------------------------------------
 
@@ -780,7 +867,10 @@ class _Runner:
         for variant in kinds:
             if variant == VARIANT_NO_RED:
                 try:
-                    prompt, negative = demote_info(prompt, negative)
+                    prompt, negative = demote_info(
+                        prompt, negative,
+                        camera=job.camera if job.frames_line else None,
+                    )
                 except ValueError as exc:
                     outcome.warnings.append(f"RED 절 강등 변종을 만들 수 없다: {exc}")
                     break
@@ -797,7 +887,9 @@ class _Runner:
                 number += 1
                 attempt: dict[str, Any] = {"attempt": number, "variant": variant}
                 outcome.attempts.append(attempt)
-                raw = self._generate(job, attempt, prompt, negative)
+                engine = self.engine_for(job, variant)
+                attempt["engine"] = engine.name
+                raw = self._generate(job, attempt, prompt, negative, client=engine, variant=variant)
                 outcome.rate_limited += attempt.get("rate_limited", 0)
                 if raw is None:
                     attempt["passed"] = False
@@ -854,10 +946,39 @@ class _Runner:
                     continue
                 parts, (prompt, negative) = revised, rebuilt
 
-        outcome.status = NEEDS_REUSE
-        outcome.warnings.append("생성·검수가 전부 실패해 인접 씬 클립을 재사용한다 (demoted_from: video)")
+        # **인접 재사용은 하지 않는다** (사람 결정 2026-08-25). 그 씬을 위해 만든 클립이
+        # 이미 있는데 버리고 옆 씬을 복사하면 **같은 그림이 편 안에서 반복된다** (실측:
+        # 한 편에서 씬 7의 클립이 5회 나왔다). 검수를 통과 못 했어도 그 씬의 것이 낫다 —
+        # 이미지는 전달을 보조하는 수단이고(ADR-0047) 숫자는 내레이션·자막이 진다.
+        salvaged = self._salvage(job, outcome)
+        if salvaged is not None:
+            outcome.file = relative_path(salvaged, self.run_dir)
+            outcome.status = DONE
+            outcome.demoted_from = DEMOTED_UNREVIEWED
+            outcome.warnings.append(
+                "검수를 통과한 시도가 없어 **첫 시도 클립을 그대로 쓴다** "
+                f"(demoted_from: {DEMOTED_UNREVIEWED}) — 옆 씬 복사보다 낫다"
+            )
+        else:
+            outcome.status = FAILED
+            outcome.reasons.append("쓸 수 있는 클립이 하나도 나오지 않았다")
         self._finish(outcome)
         return outcome
+
+    def _salvage(self, job: SceneJob, outcome: SceneOutcome) -> Path | None:
+        """검수를 다 떨어뜨렸을 때 **그 씬의 첫 후보**를 채택한다 (사람 결정 2026-08-25).
+
+        첫 시도를 고르는 이유: 뒤 시도는 기각 사유를 피하려 단락을 고친 것이라 계약에서
+        멀어져 있을 수 있고, 첫 시도가 `[5]`가 쓴 원본 그대로다.
+        """
+        for attempt in outcome.attempts:
+            candidate = self.review_dir / f"{job.scene_id}-{attempt.get('attempt')}.mp4"
+            if candidate.exists():
+                target = self.clips_dir / f"{job.scene_id}.mp4"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(candidate, target)
+                return target
+        return None
 
     def _finish(self, outcome: SceneOutcome) -> None:
         self.on_scene_done(outcome)
@@ -952,7 +1073,9 @@ def run_videogen_stage(
     ocr: OCR | None = None,
     detect: Callable[[], OCR | None] = detect_ocr,
     force: bool = False,
+    info_client: VideoClient | None = None,
     jobs: int | None = None,
+    review_jobs: int | None = None,
     video_timeout: int | None = None,
     session_timeout: int = SESSION_TIMEOUT,
     ffmpeg: str = DEFAULT_FFMPEG,
@@ -1028,7 +1151,7 @@ def run_videogen_stage(
                 scene_id=int(entry["scene_id"]), status=entry.get("status", DONE),
                 file=entry.get("file"), seconds=int(entry.get("seconds") or 0),
                 lang_seconds=entry.get("lang_seconds") or {}, clamped=entry.get("clamped"),
-                demoted_from=entry.get("demoted_from"), source_scene=entry.get("source_scene"),
+                demoted_from=entry.get("demoted_from"),
                 attempts=[{"request_id": rid} for rid in entry.get("request_ids", [])],
             ))
         return VideogenResult(
@@ -1066,7 +1189,7 @@ def run_videogen_stage(
             scene_id=sid, status=DONE, file=entry.get("file"), seconds=int(entry.get("seconds") or 0),
             lang_seconds=entry.get("lang_seconds") or {}, clamped=entry.get("clamped"),
             has_info=bool(review_before.get(sid, {}).get("has_info")),
-            demoted_from=entry.get("demoted_from"), source_scene=entry.get("source_scene"),
+            demoted_from=entry.get("demoted_from"),
             attempts=[
                 {"request_id": rid, "attempt": i + 1, "variant": "previous", "passed": True}
                 for i, rid in enumerate(entry.get("request_ids", []))
@@ -1107,53 +1230,52 @@ def run_videogen_stage(
             outcomes[outcome.scene_id] = outcome
             write_records()
 
+    gen_slots = max(1, int(jobs)) if jobs else max(1, int(client.concurrency() or 1))
+    review_slots = max(1, int(review_jobs or DEFAULT_REVIEW_SLOTS))
     runner_state = _Runner(
         client=client, run_dir=run_dir, topic=topic, review=review, ocr=ocr_backend, llm=llm,
         ffmpeg=ffmpeg, runner=runner, video_timeout=video_timeout, session_timeout=session_timeout,
         sleep=sleep, backoff=backoff, on_scene_done=on_scene_done,
+        gen_slots=gen_slots, review_slots=review_slots, info_client=info_client,
     )
+    if info_client is not None and not info_client.accepts_frames:
+        raise VideogenStageError(
+            f"info 엔진 {info_client.name!r}이 프레임을 받지 않는다 — 계측 표시를 이을 수 없다 "
+            "(ADR-0072 결정 5)"
+        )
     (run_dir / REVIEW_DIR).mkdir(parents=True, exist_ok=True)
     (run_dir / CLIPS_DIR).mkdir(parents=True, exist_ok=True)
     write_records()
 
-    workers = max(1, int(jobs)) if jobs else max(1, int(client.concurrency() or 1))
     log.info(
-        "[%s] %d씬 제출 (워커 %d, 검수 %s, OCR %s) — 지난 done %d", STAGE, len(pending), workers,
+        "[%s] %d씬 제출 (생성 %d · 검수 %d 동시, 엔진 %s%s, 검수 %s, OCR %s) — 지난 done %d",
+        STAGE, len(pending), gen_slots, review_slots, client.name,
+        f" · info는 {info_client.name}" if info_client is not None else "",
         review, getattr(ocr_backend, "name", "없음"), len(done_before),
     )
     if pending:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        # 씬마다 스레드 하나를 띄우고 **한도는 세마포어가 진다** (ADR-0072 결정 1).
+        # 스레드 대부분은 슬롯을 기다리며 자고 있고, 생성 슬롯은 검수로 넘어간 씬이
+        # 즉시 놓아 준다 — 그래서 프로바이더가 큐가 빌 때까지 쉬지 않는다.
+        #
+        # **둘 다 1이면 진짜 직렬이다** — 파이프라이닝은 씬의 완료 순서를 뒤섞는데,
+        # 재현 가능한 순서가 필요한 자리(디버깅·픽스처)가 있어 그 요청을 그대로 지킨다.
+        # 슬롯이 하나뿐이라 성능상 잃는 것도 없다.
+        serial = gen_slots == 1 and review_slots == 1 and info_client is None
+        threads = 1 if serial else len(pending)
+        with ThreadPoolExecutor(max_workers=threads) as pool:
             list(pool.map(runner_state.run_scene, pending))
 
-    # --- 인접 재사용은 전 씬이 끝난 뒤 직렬로 (앞 씬이 생성 중일 수 있다) ---
+    # 인접 재사용은 없다 (사람 결정 2026-08-25) — 검수를 못 통과한 씬은 **자기 첫 후보**를
+    # 그대로 쓴다(`run_scene`의 `_salvage`). 옆 씬을 복사하면 같은 그림이 편 안에서
+    # 반복되고(실측: 한 편에 씬 7이 5회), 그 씬을 위해 산 클립은 버려진다.
+    salvaged = [sid for sid, o in outcomes.items() if o.demoted_from == DEMOTED_UNREVIEWED]
     reuse_warnings: list[str] = []
-    real = sorted(sid for sid, o in outcomes.items() if o.status == DONE and o.source_scene is None)
-    for sid in sorted(outcomes):
-        outcome = outcomes[sid]
-        if outcome.status != NEEDS_REUSE:
-            continue
-        source = nearest_source(sid, real)
-        if source is None:
-            outcome.status = FAILED
-            outcome.reasons.append("재사용할 클립이 한 편에도 없다")
-            continue
-        target = run_dir / CLIPS_DIR / f"{sid}.mp4"
-        shutil.copyfile(run_dir / outcomes[source].file, target)
-        outcome.file = relative_path(target, run_dir)
-        outcome.status = DONE
-        outcome.demoted_from = DEMOTED_VIDEO
-        outcome.source_scene = source
-        reuse_warnings.append(f"씬 {sid}: 씬 {source}의 클립을 재사용했다 (demoted_from: video)")
-
-    reuse_counts: dict[int, int] = {}
-    for outcome in outcomes.values():
-        if outcome.source_scene is not None:
-            reuse_counts[outcome.source_scene] = reuse_counts.get(outcome.source_scene, 0) + 1
-    for source, count in sorted(reuse_counts.items()):
-        if count + 1 >= 3:
-            reuse_warnings.append(
-                f"씬 {source}의 클립이 {count + 1}회 나온다 — 영상 생성이 실패한 편이다 (스펙 03 「카메라」)"
-            )
+    if salvaged:
+        reuse_warnings.append(
+            f"검수를 통과 못 해 첫 후보를 그대로 쓴 씬: {', '.join(map(str, sorted(salvaged)))} "
+            f"— 편당 {len(salvaged)}/{len(outcomes)}씬이면 프롬프트나 검수 잣대를 본다"
+        )
     with write_lock:
         write_records(reuse_warnings)
     warnings.extend(reuse_warnings)
@@ -1175,7 +1297,7 @@ def run_videogen_stage(
         "purchased_seconds": result.purchased_seconds,
         "reused_from_previous_run": len(done_before),
         "demoted_info": result.demoted(DEMOTED_INFO),
-        "demoted_video": result.demoted(DEMOTED_VIDEO),
+        "demoted_unreviewed": result.demoted(DEMOTED_UNREVIEWED),
         "rate_limited": sum(o.rate_limited for o in result.outcomes),
         "review": review,
         "ocr_backend": getattr(ocr_backend, "name", None),

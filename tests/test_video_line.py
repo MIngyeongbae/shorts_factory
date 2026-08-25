@@ -146,3 +146,48 @@ def test_slug_argument_is_preferred_to_deriving_it_from_run_id(paths):
     write_human(paths, video_line="locl")  # 이 슬러그를 읽었다면 실패해야 한다
     with pytest.raises(JudgmentError):
         _resolve_video_provider(args_for(slug=SLUG), paths, "20260101-other")
+
+
+# --- 씬마다 엔진이 갈린다 (ADR-0072 결정 5) -----------------------------------
+
+
+def test_art_line_sends_info_scenes_to_a_frame_interpolating_engine():
+    """`info`는 보간 엔진, 나머지는 라인의 엔진 — 한 라인 안에서 갈린다."""
+    meta = vocab.video_line_meta("art")
+    assert meta["provider"] == "mj-endimage"
+    assert meta["info_provider"] == "comfy-h3-fl2v"
+    # 다른 라인은 갈리지 않는다 — 이 분기는 `art`의 것이다.
+    for line in ("local", "api"):
+        assert not vocab.video_line_meta(line).get("info_provider")
+
+
+def test_the_info_engine_must_accept_frames():
+    """계측 표시를 이으려면 프레임을 받아야 한다 — 안 받는 엔진은 그 자리에 못 온다."""
+    from shorts_factory.videogen.comfy_h3 import ComfyH3Client, ComfyH3FirstLastClient
+
+    assert ComfyH3FirstLastClient.accepts_frames is True
+    assert ComfyH3Client.accepts_frames is False
+
+
+def test_only_info_scenes_with_a_last_frame_take_the_info_engine():
+    """강등된 씬은 끝 그림이 없어 보간할 것이 없다 — 일반 엔진으로 돌아간다."""
+    from shorts_factory.stages.videogen import VARIANT_INFO, VARIANT_NO_RED, VARIANT_VIDEO, SceneJob, _Runner
+
+    runner = _Runner.__new__(_Runner)
+    runner.client = object()
+    runner.info_client = object()
+
+    def job(**over):
+        fields = dict(scene_id=1, prompt="p", negative_prompt="", has_info=True, labels=[],
+                      seconds=5, lang_seconds={}, clamped=None, review_fields={})
+        fields.update(over)
+        return SceneJob(**fields)
+
+    with_frames = job(first_frame="https://x/c.png", last_frame="https://x/i.jpg")
+    assert runner.engine_for(with_frames, VARIANT_INFO) is runner.info_client
+    # RED를 뺀 변종은 표시가 없다.
+    assert runner.engine_for(with_frames, VARIANT_NO_RED) is runner.client
+    # `[6]`이 INFO를 못 만든 씬도 마찬가지다.
+    assert runner.engine_for(job(last_frame=None), VARIANT_INFO) is runner.client
+    # info가 없는 씬은 애초에 해당 없다.
+    assert runner.engine_for(job(has_info=False), VARIANT_VIDEO) is runner.client

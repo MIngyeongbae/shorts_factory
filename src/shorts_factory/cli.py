@@ -79,6 +79,7 @@ from .stages.tts import TTSStageError, run_tts_stage
 from .stages.videogen import (
     REVIEW_FULL,
     REVIEW_MODES,
+    DEFAULT_REVIEW_SLOTS as VIDEOGEN_REVIEW_SLOTS,
     SESSION_TIMEOUT as VIDEOGEN_SESSION_TIMEOUT,
     ProviderRefused,
     VideogenStageError,
@@ -95,7 +96,7 @@ from .tts.elevenlabs import ElevenLabsClient
 from .tts.fake import FakeTTSClient
 from .videogen.base import VideoClient
 from .videogen.fake import FakeVideoClient
-from .videogen.comfy_h3 import ComfyH3Client
+from .videogen.comfy_h3 import ComfyH3Client, ComfyH3FirstLastClient
 from .videogen.midjourney import MidjourneyEndImageClient
 from .videogen.omni import OmniClient
 from .judgment import JudgmentError, read_video_line, slug_from_run_id
@@ -400,7 +401,15 @@ VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
     "omni": OmniClient,
     "comfy-h3": ComfyH3Client,
     # `art` 라인의 영상 엔진 (ADR-0070). CLEAN → INFO를 잇는다.
+    # **fast다** — ADR-0070 「비용」의 "배치는 relax"는 relax가 동시 3으로 병렬이라는
+    # 전제 위에 있었는데, 2026-08-25 실측이 그 전제를 깼다: 계정의 `relaxCoreSize`는 3이지만
+    # 실제로 도는 relax 영상 잡은 1개다(`runningCount 1` / MJ `Running Jobs: 1 starting
+    # soon`). fast도 동시 1(`coreSize`)이라 병렬성은 같고, 클립당 60초 대 208초로 fast가
+    # 3.5배 빠르다 — relax가 사는 값은 시간이 아니라 GPU뿐이다(클립당 1.8분, 18클립이 Pro
+    # 잔량의 2%). 사람 결정 2026-08-25.
     "mj-endimage": MidjourneyEndImageClient,
+    # `art` 라인의 `info` 씬 전용 (ADR-0072 결정 5) — CLEAN·INFO를 **보간**한다.
+    "comfy-h3-fl2v": ComfyH3FirstLastClient,
     "fake": lambda: FakeVideoClient(synth=True),
 }
 
@@ -429,6 +438,26 @@ def _resolve_video_provider(args, paths: Paths, run_id: str) -> str:
 
 def _make_video_client(args, paths: Paths, run_id: str) -> VideoClient:
     return VIDEO_PROVIDERS[_resolve_video_provider(args, paths, run_id)]()
+
+
+def _make_info_client(args, paths: Paths, run_id: str) -> VideoClient | None:
+    """`info` 씬 전용 엔진 — 라인이 `info_provider`를 말할 때만 (ADR-0072 결정 5).
+
+    `--provider`로 어댑터를 직접 고른 실행에는 붙이지 않는다: 그 플래그는 "이 엔진 하나로
+    돌려 보라"는 뜻이고, 씬마다 엔진이 갈리면 그 의도가 깨진다.
+    """
+    if getattr(args, "provider", None):
+        return None
+    line = args.line or read_video_line(paths, args.slug or slug_from_run_id(run_id))
+    provider = vocab.video_line_meta(line).get("info_provider")
+    if not provider:
+        return None
+    if provider not in VIDEO_PROVIDERS:
+        raise VideogenStageError(
+            f"vocab.json meta.video_line.{line}.info_provider={provider!r}가 CLI 어댑터 목록에 없다 "
+            f"(있는 것: {', '.join(sorted(VIDEO_PROVIDERS))})"
+        )
+    return VIDEO_PROVIDERS[provider]()
 
 
 def _cmd_frames(args, paths: Paths) -> int:
@@ -502,11 +531,13 @@ def _cmd_videogen(args, paths: Paths) -> int:
         result = run_videogen_stage(
             run_id,
             client=_make_video_client(args, paths, run_id),
+            info_client=_make_info_client(args, paths, run_id),
             paths=paths,
             llm=llm,
             review=args.review,
             force=args.force,
             jobs=args.jobs,
+            review_jobs=args.review_jobs,
             video_timeout=args.video_timeout,
             session_timeout=args.timeout or VIDEOGEN_SESSION_TIMEOUT,
             ffmpeg=args.ffmpeg,
@@ -823,7 +854,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_videogen.add_argument(
         "--jobs", type=int, default=None,
-        help="동시 워커 수 (기본: 영상 프로바이더에게 묻는다 — 429면 1로 줄인다)",
+        help="**생성** 동시 수 (기본: 영상 프로바이더에게 묻는다 — 429면 1로 줄인다)",
+    )
+    p_videogen.add_argument(
+        "--review-jobs", type=int, default=None,
+        help=(
+            "**검수** 동시 수 (기본: %d). 생성과 다른 자원이라 따로 센다 — 검수는 구독 "
+            "헤드리스라 영상 엔진 한도가 아니라 플랜 한도를 쓴다 (ADR-0072)"
+            % VIDEOGEN_REVIEW_SLOTS
+        ),
     )
     p_videogen.add_argument(
         "--video-timeout", type=int, default=None,

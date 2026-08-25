@@ -166,19 +166,56 @@ def test_format_line_drops_the_style_when_the_frames_carry_it():
     assert vr.BASE_STYLE in vr.format_line()
 
 
-def test_a_frame_line_prompt_is_only_the_length_and_the_camera():
-    """프레임이 그림을 진다 — 남는 말은 둘뿐이다. 길면 MJ가 다시 써서 잡이 죽는다 (ADR-0069)."""
-    prompt, _negative = vr.build_video_prompt(
+def _frame_prompt(**over):
+    fields = dict(
         subject_prompt="A terrain model of a river.", staging="studio",
         camera="tilt_down", camera_target="settling on the channel",
-        red_prompt='RED: one red leader line that reads exactly "Left bank".',
-        frames=True,
+        red_prompt=None, frames=True,
     )
-    assert [line.split(":")[0] for line in prompt.split(chr(10))] == ["FORMAT", "CAMERA"]
-    assert vr.BASE_STYLE not in prompt
-    assert "A terrain model" not in prompt and "Left bank" not in prompt
-    assert vr.SECONDS_PLACEHOLDER in prompt   # [7]이 초 수를 채우는 자리는 남는다
+    fields.update(over)
+    return vr.build_video_prompt(**fields)
+
+
+def test_a_frame_line_prompt_is_only_the_camera_move():
+    """프레임이 그림을 진다 — 남는 말은 카메라 워크와 그 착지뿐이다 (ADR-0072 결정 3).
+
+    **착지는 남는다**: 결정 3의 "착지점은 last 프레임이 정한다"는 `info` 씬에만 참이고,
+    일반 씬은 끝 그림이 없어 CLEAN 한 장만 준다 — 착지까지 빼면 카메라가 갈 곳을 아무도
+    말하지 않아 피사체를 놓친다 (실측 2026-08-25, 일반 씬 6개 기각).
+    """
+    prompt, _negative = _frame_prompt()
+    assert prompt.startswith(vr.CAMERA_PROMPTS["tilt_down"])
+    assert "settling on the channel" in prompt
+    # 표제 절도, 스타일도, 초 수 자리도 없다 — 규약 밖이다.
+    for absent in ("FORMAT", "STAGING", "SUBJECT", "CAMERA:", "NEGATIVE", "9:16"):
+        assert absent not in prompt
+    assert vr.BASE_STYLE not in prompt and "A terrain model" not in prompt
+    assert vr.SECONDS_PLACEHOLDER not in prompt
     assert len(prompt.split()) < vr.MJ_WORDS_MIN
+
+
+def test_an_info_scene_on_a_frame_line_is_frozen():
+    """표시의 정확성은 정지 이미지가 진다 — 그림이 움직이면 지시선이 어긋난다 (ADR-0072 결정 4)."""
+    prompt, _negative = _frame_prompt(
+        red_prompt='RED: one red leader line that reads exactly "Left bank".',
+    )
+    assert prompt == vr.INFO_STILL
+    # 카메라 워크는 실리지 않는다 — [3s]가 무엇을 골랐든 이 씬은 정지다.
+    assert vr.CAMERA_PROMPTS["tilt_down"] not in prompt
+    assert "Left bank" not in prompt
+
+
+def test_demoting_an_info_scene_on_a_frame_line_gives_the_camera_back():
+    """표시가 빠지면 멈춰 있을 이유도 없다 (ADR-0072 결정 4)."""
+    still, negative = _frame_prompt(
+        red_prompt='RED: one red leader line that reads exactly "Left bank".',
+    )
+    moved, demoted_negative = vr.demote_info(still, negative, camera="tilt_down")
+    assert moved.rstrip(".") == vr.CAMERA_PROMPTS["tilt_down"].rstrip(".")
+    assert demoted_negative == ", ".join(vr.negative_items(has_info=False))
+    # 정지 문구가 아닌 것을 강등하려 들면 멈춘다 — 강등할 것이 없다.
+    with pytest.raises(ValueError):
+        vr.demote_info(moved, demoted_negative, camera="tilt_down")
 
 
 def test_mj_subject_budget_is_the_leftover_of_the_line_style():
@@ -403,15 +440,18 @@ def test_a_rejected_info_frame_is_remade_from_the_next_quadrant(paths):
     assert result.quadrant_swaps == 1
 
 
-def test_two_rejections_demote_the_scene_to_clean_only(paths):
+def test_every_quadrant_rejected_demotes_the_scene_to_clean_only(paths):
     _setup(paths, [_scene(1, info=INFO)])
     client = FakeImageClient()
-    llm = FakeLLMClient([_verdict("fail", ["기준 1"]), _verdict("fail", ["기준 1"])])
+    # 사분면을 **넷 다** 쓴 뒤에야 강등한다 — 그리드가 4장이고 U 추출은 과금 0이다.
+    llm = FakeLLMClient([_verdict("fail", ["기준 1"])] * frames_stage.ATTEMPTS)
     result = run_frames_stage(
         "20260825-probe", client=client, editor=FakeEditor(), paths=paths, llm=llm,
         line="art", jobs=1,
     )
     outcome = result.outcomes[0]
+    assert len(outcome.attempts) == frames_stage.ATTEMPTS
+    assert [a["quadrant"] for a in outcome.attempts] == list(range(frames_stage.ATTEMPTS))
     assert outcome.status == DONE and outcome.demoted_from == DEMOTED_INFO
     assert outcome.info_url is None and outcome.clean_url
     assert client.uploads == 0
@@ -525,3 +565,46 @@ def test_a_failed_clean_call_fails_the_scene_not_the_provider(paths):
     assert "[1]" in str(exc.value)
     assert client.tried == [1, 2]  # 씬 하나가 죽어도 남은 씬은 돈다
 
+
+
+def test_four_rejected_quadrants_buy_a_new_grid_from_a_fixed_subject(paths):
+    """사분면 넷이 다 걸리면 사분면 운이 아니라 소재의 문제다 — 단락을 고쳐 새 그리드를 산다."""
+    _setup(paths, [_scene(1, info=INFO)])
+    client = FakeImageClient()
+    fixed = json.dumps({
+        "mj_subject": " ".join(["stone"] * 30),
+        "changed": "척도 기준을 넣었다",
+    })
+    llm = FakeLLMClient(
+        [_verdict("fail", ["기준 5: 척도가 라벨과 모순"])] * frames_stage.ATTEMPTS
+        + [fixed]
+        + [_verdict("pass")]
+    )
+    result = run_frames_stage(
+        "20260825-probe", client=client, editor=FakeEditor(), paths=paths, llm=llm,
+        line="art", jobs=1,
+    )
+    outcome = result.outcomes[0]
+    # 그리드를 두 번 샀다 — 고쳐쓰기 뒤 한 번 더다 (여기서만 과금이 는다).
+    assert client.grids == frames_stage.GRID_ROUNDS
+    assert outcome.status == DONE and outcome.demoted_from is None
+    assert outcome.info_url
+    assert any("소재 단락을 고쳐 새 그리드" in w for w in outcome.warnings)
+
+
+def test_a_fixed_subject_that_breaks_the_budget_is_rolled_back(paths):
+    """고친 단락도 예산·방언을 지켜야 한다 — 어기면 되돌리고 사다리를 끝낸다 (ADR-0069)."""
+    _setup(paths, [_scene(1, info=INFO)])
+    client = FakeImageClient()
+    llm = FakeLLMClient(
+        [_verdict("fail", ["기준 5"])] * frames_stage.ATTEMPTS
+        + [json.dumps({"mj_subject": "too short", "changed": "x"})]
+    )
+    result = run_frames_stage(
+        "20260825-probe", client=client, editor=FakeEditor(), paths=paths, llm=llm,
+        line="art", jobs=1,
+    )
+    outcome = result.outcomes[0]
+    assert client.grids == 1, "예산을 어긴 단락으로 그리드를 사지 않는다"
+    assert outcome.demoted_from == DEMOTED_INFO
+    assert any("예산을 어겨 되돌린다" in w for w in outcome.warnings)

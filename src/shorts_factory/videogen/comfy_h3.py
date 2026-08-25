@@ -46,7 +46,7 @@ from typing import Any, Callable
 from urllib.parse import urlencode
 
 from ..schemas import vocab
-from ..transport import Transport, TransportError, TransportTimeout, urllib_transport
+from ..transport import CDN_HEADERS, Transport, TransportError, TransportTimeout, urllib_transport
 from .base import (
     GeneratedClip,
     VideoClient,
@@ -328,3 +328,125 @@ class ComfyH3Client(VideoClient):
                 "megapixels": megapixels,
             },
         )
+
+
+# --- first/last 프레임 보간 (ADR-0072 결정 5) ---------------------------------
+#
+# 같은 노드(`MiniMaxH3ImageToVideo`)가 `first_frame`·`last_frame`을 **optional IMAGE**로
+# 받는다 (2026-08-25 `/object_info` 실측). 라인이 `info_provider`로 이 어댑터를 지목하면
+# 그 라인의 `info` 씬이 이 경로로 온다 (어느 라인인지는 어휘가 안다 — 여기서 묻지 않는다) —
+# MJ `endImage`는 끝 이미지를 목표로 접근할 뿐 **들고 가지 못해** 중간 프레임에서 계측
+# 표시가 무너지는데(빨간 화소 2041→224→3964), H3는 보간이라 2초부터 끝까지 평평하다
+# (4524~4579). 표시의 정확성은 정지 이미지가 지고 영상은 잇기만 한다는 ADR-0071의
+# 역할 분담이 여기서만 실제로 지켜진다.
+
+FL2V_TEMPLATE_PATH = TEMPLATE_PATH.with_name("h3-fl2v.api.json")
+
+#: 프레임 두 장을 받는 `LoadImage` 노드. class_type이 같아 **`_meta.title`로 가른다.**
+TITLE_FIRST = "First Frame (CLEAN)"
+TITLE_LAST = "Last Frame (INFO)"
+
+UPLOAD_PATH = "/upload/image"
+
+
+def find_node_by_title(workflow: dict[str, Any], title: str) -> str:
+    """`_meta.title`로 노드를 찾는다 — 같은 `class_type`이 둘일 때 쓴다 (프레임 로더)."""
+    ids = [nid for nid, node in workflow.items()
+           if isinstance(node, dict) and (node.get("_meta") or {}).get("title") == title]
+    if len(ids) != 1:
+        raise VideoProviderNotConfigured(
+            f"템플릿에 제목이 {title!r}인 노드가 {len(ids)}개다 (정확히 1개여야 한다) — "
+            f"{FL2V_TEMPLATE_PATH}"
+        )
+    return ids[0]
+
+
+class ComfyH3FirstLastClient(ComfyH3Client):
+    """계측 표시를 실은 씬 — CLEAN·INFO 두 장을 보간한다 (ADR-0072 결정 5).
+
+    `[6]`이 적어 둔 프레임 주소는 **공개 https**(우리 R2)다. ComfyUI는 URL을 못 받으므로
+    내려받아 `/upload/image`로 올린 뒤 그 이름을 `LoadImage`에 꽂는다. 프레임은 MJ의
+    1536×2752이고 워크플로는 0.4MP라 템플릿의 `ImageScale`이 해상도를 맞춘다.
+    """
+
+    name = "comfy-h3-fl2v"
+    accepts_frames = True
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("template_path", FL2V_TEMPLATE_PATH)
+        super().__init__(**kwargs)
+
+    def _fetch_frame(self, url: str, *, what: str) -> bytes:
+        """프레임 주소 → 바이트. **우리 이름을 밝힌다** — r2.dev가 기본 UA를 1010으로 막는다."""
+        status, raw = self.transport("GET", url, CDN_HEADERS, None, self.http_timeout)
+        if status != 200 or not raw:
+            raise VideoGenError(f"{what}: 프레임을 못 받았다 (HTTP {status}, {url})")
+        return raw
+
+    def _upload_frame(self, data: bytes, filename: str, *, what: str) -> str:
+        """ComfyUI input 폴더로 올리고 `LoadImage`가 쓸 이름을 돌려받는다."""
+        boundary = uuid.uuid4().hex
+        body = b"".join([
+            f"--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'.encode(),
+            b"Content-Type: application/octet-stream\r\n\r\n",
+            data,
+            f"\r\n--{boundary}\r\n".encode(),
+            b'Content-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n',
+            f"--{boundary}--\r\n".encode(),
+        ])
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        status, raw = self.transport(
+            "POST", f"{self.base_url}{UPLOAD_PATH}", headers, body, self.http_timeout
+        )
+        if status != 200:
+            raise VideoGenError(f"{what}: 프레임 업로드가 거절됐다 (HTTP {status})")
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise VideoGenError(f"{what}: 업로드 응답을 못 읽었다 ({exc})") from exc
+        name = str(payload.get("name") or "")
+        if not name:
+            raise VideoGenError(f"{what}: 업로드 응답에 name이 없다 ({payload})")
+        subfolder = str(payload.get("subfolder") or "")
+        return f"{subfolder}/{name}" if subfolder else name
+
+    def _stage_frames(self, request: VideoRequest, *, what: str) -> tuple[str, str]:
+        """CLEAN·INFO를 ComfyUI에 올려 `(first, last)` 이름. **둘 다 있어야 한다.**
+
+        이 어댑터는 `info` 씬 전용이다 — 끝 프레임이 없으면 보간할 것이 없으므로, 조용히
+        한 장으로 돌지 않고 멈춘다 (강등은 `[7]`의 사다리가 정할 일이다).
+        """
+        if not request.first_frame or not request.last_frame:
+            raise VideoGenError(
+                f"{what}: first/last 프레임이 둘 다 필요하다 "
+                f"(first={bool(request.first_frame)}, last={bool(request.last_frame)}) — "
+                "이 어댑터는 계측 표시를 잇는 자리다 (ADR-0072 결정 5)"
+            )
+        pairs = []
+        for url, tag in ((request.first_frame, "clean"), (request.last_frame, "info")):
+            data = self._fetch_frame(str(url), what=what)
+            suffix = Path(str(url).split("?")[0]).suffix or ".png"
+            pairs.append(self._upload_frame(
+                data, f"sf-s{request.scene_id}-{tag}{suffix}", what=what,
+            ))
+        return pairs[0], pairs[1]
+
+    def generate(
+        self, request: VideoRequest, *, timeout: int | None = None
+    ) -> GeneratedClip:
+        what = f"씬 {request.scene_id} ComfyUI H3 first/last"
+        first, last = self._stage_frames(request, what=what)
+        # 템플릿에 이름을 박아 두고 상위 구현이 나머지(프롬프트·시드·길이·저장)를 채우게 한다.
+        template = json.loads(json.dumps(self.template))
+        template[find_node_by_title(template, TITLE_FIRST)]["inputs"]["image"] = first
+        template[find_node_by_title(template, TITLE_LAST)]["inputs"]["image"] = last
+        # 프레임 준비가 끝나면 남은 일은 텍스트→영상과 같다 — 공용 경로에 위임한다.
+        # (템플릿을 인스턴스에 밀어 넣지 않는다: 씬이 동시에 돌아 서로의 프레임을 덮는다.)
+        staged = ComfyH3Client(
+            base_url=self.base_url, megapixels=self.megapixels, template=template,
+            transport=self.transport, poll_interval=self.poll_interval,
+            http_timeout=self.http_timeout, seed_fn=self._seed_fn,
+            sleep=self._sleep, clock=self._clock,
+        )
+        return staged.generate(request, timeout=timeout)

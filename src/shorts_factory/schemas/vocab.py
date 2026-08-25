@@ -166,6 +166,29 @@ def video_prompt(camera: str) -> str:
         raise KeyError(f"vocab.json meta.camera.{camera}에 video_prompt가 없다") from exc
 
 
+def info_still() -> str:
+    """`art` 라인 `info` 씬의 정지 문구 (`meta.camera._info_still`, ADR-0072 결정 4).
+
+    **카메라 워크 문구를 대체한다** — 프레임이 계측 표시의 정확성을 지므로(ADR-0071)
+    그 아래 그림이 움직이면 지시선이 가리키던 지점이 어긋난다. `static`을 쓰지 않는
+    이유는 그 문구가 피사체 자신의 움직임을 허용하기 때문이다.
+    """
+    return str(VOCAB["meta"]["camera"]["_info_still"])
+
+
+def review_standard(attempt: int) -> str:
+    """그 시도의 검수 잣대 (`meta.review_ladder.standards`, 사람 결정 2026-08-25).
+
+    **시도가 거듭될수록 낮아진다.** 같은 잣대로 반복 기각하면 재검수가 시간·세션·종량
+    호출을 먹고도 끝나지 않는다 — 마지막 칸이 "이거라도 쓴다"라서 사다리가 닫힌다.
+    표를 넘어서는 시도는 마지막 문구를 계속 쓴다.
+    """
+    ladder = [str(x) for x in VOCAB["meta"]["review_ladder"]["standards"]]
+    if not ladder:  # pragma: no cover - 계약 파일이 깨진 경우
+        raise KeyError("vocab.json meta.review_ladder.standards가 비어 있다")
+    return ladder[min(max(int(attempt), 0), len(ladder) - 1)]
+
+
 def camera_target_forbidden_words() -> tuple[str, ...]:
     """`camera_target`에 들어오면 안 되는 카메라 워크 단어 (`meta.camera._target_forbidden_words`, ADR-0060).
 

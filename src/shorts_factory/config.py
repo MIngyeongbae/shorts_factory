@@ -8,9 +8,15 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+
+#: 원자 교체가 Windows에서 거부될 때(대상이 읽히는 중) 물러났다 다시 시도하는 횟수·간격(초).
+_REPLACE_RETRIES = 5
+_REPLACE_BACKOFF = 0.02
 
 #: 헤드리스 세션 1회의 기본 타임아웃(초). 웹 검색 다회를 감안한 값.
 DEFAULT_LLM_TIMEOUT = 900
@@ -123,7 +129,29 @@ def make_run_id(slug: str, when: date | None = None) -> str:
 
 
 def write_text(path: Path, text: str) -> None:
-    """LF 고정으로 텍스트를 쓴다 (.gitattributes 정책과 일치)."""
+    """LF 고정으로 텍스트를 **원자적으로** 쓴다 (.gitattributes 정책과 일치).
+
+    같은 디렉터리의 임시 파일에 쓰고 `os.replace`로 갈아 끼운다. 곧바로 `open("w")`를
+    하면 파일이 **먼저 비워지므로**, 그 사이에 읽는 쪽(사람, 다른 단계, 진행 감시)이
+    찢어진 JSON을 본다. `[7]`이 씬마다 기록을 갱신하는데 씬이 동시에 끝나므로 갱신이
+    잦고(ADR-0072), "중간에 죽어도 산 클립은 기록에 남는다"(스펙 05 `[7]`)는 약속도
+    쓰다 만 파일에서는 서지 않는다.
+
+    Windows에서는 대상이 **읽히는 중이면** `os.replace`가 거부당하므로(WinError 5) 짧게
+    물러났다 다시 시도한다 — 사람이 기록을 열어 본 순간에 그 씬의 진행을 잃지 않는다.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        for attempt in range(_REPLACE_RETRIES):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                time.sleep(_REPLACE_BACKOFF * (attempt + 1))
+        else:
+            os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

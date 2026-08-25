@@ -77,6 +77,9 @@ CAMERA_PROMPTS: dict[str, str] = {
     token: vocab.video_prompt(token) for token in vocab.values("camera")
 }
 
+#: `art` 라인 `info` 씬의 정지 문구 — 카메라 워크 문구를 **대체한다** (ADR-0072 결정 4).
+INFO_STILL: str = vocab.info_still()
+
 #: FORMAT 절의 초 수 자리. `[5]`는 길이를 쓰지 않는다 — `[7]`이 실측에서 채운다 (스펙 05).
 SECONDS_PLACEHOLDER = "{seconds}"
 
@@ -336,11 +339,17 @@ def build_video_prompt(
     글자 금지가 든다; 있으면 RED 절이 있고 글자 금지는 RED의 마무리 문장(어휘 `_closing`)이
     대신한다 (vocab `negatives._role`). 단락의 계약은 `promptplan.py`가 먼저 쟀다.
 
-    `frames=True`면 **절이 둘뿐이다** — FORMAT(초 수)과 CAMERA. 그림·스타일·계측 표시를
-    first/last 프레임이 지므로 말로 다시 시킬 것이 없고, 실으면 두 가지가 깨진다:
+    `frames=True`면 **절이 없다 — 카메라 워크 구절 하나다** (ADR-0072 결정 3). 그림·스타일·
+    계측 표시를 first/last 프레임이 지므로 말로 다시 시킬 것이 없고, 이미지 입력 엔진에서는
+    화면비를 입력 이미지가, 길이를 엔진이 정한다 — `FORMAT`·`STAGING`·`CAMERA` 표제도,
+    서술형 착지 구절(`camera_target`)도, `NEGATIVE`도 규약 밖이다. 실으면 세 가지가 깨진다:
     스타일 낱말은 중간 프레임을 무너뜨리고(ADR-0070 규칙 1), 긴 본문은 MJ가 **다시 써서**
-    프록시가 결과를 못 묶는다 (ADR-0069·0071 — 358단어를 보내 10분 타임아웃으로 죽었다).
-    어느 라인이 그런지는 어휘가 정하고 여기서는 묻지 않는다.
+    프록시가 결과를 못 묶으며(ADR-0069·0071 — 358단어를 보내 10분 타임아웃으로 죽었다),
+    표제 절은 MJ 영상이 읽지 않는다. 어느 라인이 그런지는 어휘가 정하고 여기서는 묻지 않는다.
+
+    **`info` 씬이면 카메라 구절 자리에 정지 문구가 들어간다** (결정 4) — 표시의 정확성은
+    정지 이미지가 지고 영상 모델은 잇기만 하므로, 그 아래 그림이 움직이면 지시선이
+    가리키던 지점이 어긋난다. `[3s]`가 고른 카메라 값은 씬 계약에 그대로 남는다.
     """
     if staging not in STAGINGS:
         raise ValueError(
@@ -350,12 +359,20 @@ def build_video_prompt(
         raise ValueError("subject_prompt가 비어 있다 — promptplan 검증이 막았어야 한다")
     has_info = bool(red_prompt and red_prompt.strip())
     if frames:
-        # 프레임이 그림을 진다 — 남는 말은 "얼마나 길게, 카메라가 어떻게" 둘뿐이다.
-        prompt = chr(10).join((
-            _section("FORMAT", format_line(style="")),
-            _section("CAMERA", camera_line(camera, camera_target)),
-        ))
-        return prompt, ", ".join(negative_items(has_info=has_info))
+        # 프레임이 그림을 진다 — 남는 말은 카메라뿐이다. `info` 씬은 그것마저 정지다.
+        #
+        # **착지 구절은 `info` 씬에서만 뺀다** (ADR-0072 정정 2026-08-25). 결정 3의 근거는
+        # "착지점은 last 프레임이 정한다"였는데 **그것은 `info` 씬에만 참이다** — 일반 씬은
+        # 끝 그림이 없어 CLEAN 한 장만 주므로, 착지까지 빼면 카메라가 갈 곳을 아무도 말하지
+        # 않는다. 실측(rai-stones): 착지를 뺀 일반 씬 6개가 "씬이 진행될수록 카메라가 빈
+        # 바다로 옮겨가며 핵심 피사체를 놓친다"로 기각됐다.
+        if camera not in CAMERA_PROMPTS:
+            raise ValueError(
+                f"camera 어휘에 '{camera}'이 없다 (허용: {', '.join(CAMERA_PROMPTS)})"
+            )
+        if has_info:
+            return INFO_STILL, ", ".join(negative_items(has_info=True))
+        return camera_line(camera, camera_target), ", ".join(negative_items(has_info=False))
     lines = [
         _section("FORMAT", format_line()),
         _section("STAGING", STAGINGS[staging]),
@@ -375,13 +392,28 @@ def fill_seconds(prompt: str, seconds: int) -> str:
     return prompt.replace(SECONDS_PLACEHOLDER, str(int(seconds)))
 
 
-def demote_info(prompt: str, negative_prompt: str) -> tuple[str, str]:
+def demote_info(
+    prompt: str, negative_prompt: str, *, camera: str | None = None
+) -> tuple[str, str]:
     """RED 절을 뺀 변종 — 검수 실패 사다리의 `demoted_from: info` 칸 (스펙 05 `[7]`, ADR-0056 결정 6).
 
     `prompts.json`의 문자열에서 `RED:` 절을 지우고 NEGATIVE 절을 **info 없는 씬의 것**으로
     다시 만든다 (글자 금지가 든다). 어휘 문구만 쓴다 — 여기서 영어 문장을 짓지 않는다.
     RED 절이 없는 프롬프트에 부르면 실패한다 — 강등할 것이 없다.
+
+    **프레임 라인은 절이 없다** (ADR-0072). `camera`를 주면 그 라인으로 보고, 정지 문구를
+    그 카메라의 워크 구절로 되돌린다 — 표시가 빠지면 그림이 멈춰 있을 이유도 없다.
     """
+    if camera is not None:
+        if prompt.strip() != INFO_STILL.strip():
+            raise ValueError(
+                "프레임 라인인데 정지 문구가 아니다 — info 씬이 아니라 강등할 것이 없다"
+            )
+        if camera not in CAMERA_PROMPTS:
+            raise ValueError(
+                f"camera 어휘에 '{camera}'이 없다 (허용: {', '.join(CAMERA_PROMPTS)})"
+            )
+        return _sentence(CAMERA_PROMPTS[camera]), ", ".join(negative_items(has_info=False))
     kept = [line for line in prompt.split("\n") if not line.upper().startswith("RED:")]
     if len(kept) == len(prompt.split("\n")):
         raise ValueError("RED 절이 없는 프롬프트다 — info 씬이 아니라 강등할 것이 없다")

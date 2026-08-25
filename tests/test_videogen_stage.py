@@ -11,6 +11,8 @@
 
 import json
 import math
+import time
+from unittest import mock
 
 import pytest
 from conftest import PISA, load_script
@@ -30,12 +32,11 @@ from shorts_factory.stages.videogen import (
     VideogenStageError,
     build_jobs,
     clip_seconds,
-    nearest_source,
     parse_review,
     render_review_prompt,
     run_videogen_stage,
 )
-from shorts_factory.stages.videogen import END_FRAME_OCR
+from shorts_factory.stages.videogen import END_FRAME_OCR, _Runner
 from shorts_factory.video.fake import FakeFFmpeg
 from shorts_factory.video.ocr import FakeOCR
 from shorts_factory.videogen.base import (
@@ -182,7 +183,7 @@ def test_stage_buys_one_clip_per_scene_and_writes_both_records(pisa):
     assert record["provider"] == "fake" and len(record["scenes"]) == len(document["scenes"])
     entry = record["scenes"][0]
     assert entry["status"] == "done" and entry["file"] == "clips/1.mp4"
-    assert entry["demoted_from"] is None and entry["source_scene"] is None
+    assert entry["demoted_from"] is None
     assert entry["attempts"] == 1 and entry["retries"] == 0
     assert set(entry) >= {"provider", "seconds", "lang_seconds", "wall_seconds", "request_ids"}
     assert review_of(paths, run_id)["scenes"][0]["final"] == "pass"
@@ -340,12 +341,6 @@ def test_first_scene_reuses_the_next_one_when_nothing_is_earlier(pisa):
     assert scene1["demoted_from"] == "video" and scene1["source_scene"] == 2
 
 
-def test_nearest_source_prefers_the_closest_earlier_scene():
-    assert nearest_source(5, [1, 2, 7]) == 2
-    assert nearest_source(1, [3, 4]) == 3
-    assert nearest_source(4, []) is None
-
-
 def test_generation_error_counts_as_a_failed_attempt(pisa):
     """프로바이더 오류(씬 단위)는 사다리의 한 칸이다 — 멈추지 않는다."""
     paths, run_id, _document = pisa
@@ -389,7 +384,7 @@ def test_full_review_runs_one_session_per_scene_with_the_frames(pisa):
     paths, run_id, document = pisa
     llm = FakeLLMClient([verdict()] * 25)
 
-    result = run(paths, run_id, review="full", llm=llm, jobs=1)
+    result = run(paths, run_id, review="full", llm=llm, jobs=1, review_jobs=1)
 
     assert result.passed and len(llm.calls) == len(document["scenes"])
     first = llm.calls[0]
@@ -431,7 +426,8 @@ def fix(subject="A single continuous span, one bridge only, seen from directly a
 
 def test_vision_fail_triggers_the_ladder(pisa):
     paths, run_id, _document = pisa
-    # 세션은 씬 순서대로(jobs=1) 소비된다. 씬 7은 두 번 판정받고 두 번 다 fail이며,
+    # 세션은 씬 순서대로 소비된다 — 생성·검수 둘 다 동시 1이어야 그 순서가 선다
+    # (ADR-0072로 검수가 별도 자원이 되어 기본값은 병렬이다). 씬 7은 두 번 판정받고 두 번 다 fail이며,
     # **그 사이에 고쳐쓰기 세션이 1회 낀다** (ADR-0067).
     responses = [verdict()] * 6 + [
         verdict("fail", ["기준 1: 엉뚱한 건물"]),
@@ -441,10 +437,12 @@ def test_vision_fail_triggers_the_ladder(pisa):
     responses += [verdict()] * 18
     llm = FakeLLMClient(responses)
 
-    run(paths, run_id, review="full", llm=llm, jobs=1)
+    run(paths, run_id, review="full", llm=llm, jobs=1, review_jobs=1)
 
     scene7 = [s for s in record_of(paths, run_id)["scenes"] if s["scene_id"] == 7][0]
-    assert scene7["demoted_from"] == "video" and scene7["source_scene"] == 6
+    # 옆 씬을 복사하지 않는다 — 그 씬의 첫 후보를 그대로 쓴다 (사람 결정 2026-08-25).
+    assert scene7["demoted_from"] == "unreviewed"
+    assert scene7["file"] == "clips/7.mp4"
     review7 = [s for s in review_of(paths, run_id)["scenes"] if s["scene_id"] == 7][0]
     assert review7["attempts"][0]["vision"]["verdict"] == "fail"
     assert "엉뚱한 건물" in review7["reasons"][0]
@@ -460,7 +458,7 @@ def test_retry_uses_a_prompt_revised_from_the_review(pisa):
     ] + [verdict()] * 30)
     client = FakeVideoClient()
 
-    run(paths, run_id, client=client, review="full", llm=llm, jobs=1)
+    run(paths, run_id, client=client, review="full", llm=llm, jobs=1, review_jobs=1)
 
     first, second = [c for c in client.calls if c["scene_id"] == 1][:2]
     assert first["prompt"] != second["prompt"], "재시도가 같은 프롬프트였다"
@@ -488,7 +486,7 @@ def test_revision_that_breaks_the_contract_is_rolled_back(pisa):
     ] + [verdict()] * 30)
     client = FakeVideoClient()
 
-    run(paths, run_id, client=client, review="full", llm=llm, jobs=1)
+    run(paths, run_id, client=client, review="full", llm=llm, jobs=1, review_jobs=1)
 
     first, second = [c for c in client.calls if c["scene_id"] == 1][:2]
     assert first["prompt"] == second["prompt"], "계약을 어긴 단락이 프롬프트에 들어갔다"
@@ -507,7 +505,7 @@ def test_revision_is_skipped_when_prompts_json_has_no_parts(pisa):
     write_text(path, dump_json(document))
     llm = FakeLLMClient([verdict("fail", ["기준 3: 기형"]), verdict()] + [verdict()] * 30)
 
-    run(paths, run_id, review="full", llm=llm, jobs=1)
+    run(paths, run_id, review="full", llm=llm, jobs=1, review_jobs=1)
 
     assert not [c for c in llm.calls if ":fix:" in c["label"]]
 
@@ -518,7 +516,7 @@ def test_vision_session_failure_passes_with_a_warning(pisa):
     responses = ["not json", "still not json"] + [verdict()] * 24
     llm = FakeLLMClient(responses)
 
-    result = run(paths, run_id, review="full", llm=llm, jobs=1)
+    result = run(paths, run_id, review="full", llm=llm, jobs=1, review_jobs=1)
 
     assert result.passed
     scene1 = result.outcomes[0]
@@ -587,9 +585,35 @@ def test_records_are_written_after_each_scene(pisa):
         return STUB_MP4
 
     client = FakeVideoClient([spy] * 25, concurrency=1)
-    run(paths, run_id, client=client, jobs=1)
+    # 생성·검수 둘 다 1이면 직렬이라 done 수가 한 씬씩 오른다 (ADR-0072).
+    run(paths, run_id, client=client, jobs=1, review_jobs=1)
 
     assert seen[:3] == [0, 1, 2]
+
+
+def test_the_record_is_never_read_half_written(pisa):
+    """기록은 **원자적으로** 갈아 끼운다 — 병렬 갱신 중에 읽어도 찢어진 JSON이 아니다.
+
+    씬이 동시에 끝나면 갱신이 잦아진다 (ADR-0072). `open("w")`는 파일을 먼저 비우므로
+    그 틈에 읽는 쪽이 빈 파일이나 조각을 본다 — 진행 감시도 사람도 그걸 읽는다.
+    """
+    paths, run_id, _document = pisa
+    record_path = paths.run_dir(run_id) / RECORD_FILE
+    torn: list[str] = []
+
+    def spy(request, **_):
+        if record_path.exists():
+            raw = record_path.read_text(encoding="utf-8")
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError:
+                torn.append(raw[:80])
+        return STUB_MP4
+
+    client = FakeVideoClient([spy] * 40, concurrency=4)
+    run(paths, run_id, client=client, jobs=4, review_jobs=4)
+
+    assert not torn, f"쓰다 만 기록을 읽었다: {torn[:2]}"
 
 
 # --- 프로바이더 전체 거절 (D-5) -------------------------------------------------------
@@ -607,6 +631,42 @@ def test_provider_refusal_stops_without_trying_the_rest(pisa):
     assert [s["status"] for s in record["scenes"][:2]] == ["done", "done"]
     assert state_of(paths, run_id)["status"] == "failed"
     assert (paths.run_dir(run_id) / "clips" / "1.mp4").exists()
+
+
+def test_review_does_not_hold_a_generation_slot(paths):
+    """생성과 검수는 다른 자원이다 — 검수 중인 씬이 프로바이더 슬롯을 쥐면 안 된다 (ADR-0072 결정 1).
+
+    생성 동시 1로 묶고 검수를 느리게 만든 뒤, **검수가 도는 동안 생성이 나가는지** 본다.
+    씬당 워커 하나가 [생성→검수]를 다 지던 구조에서는 이 겹침이 한 번도 일어나지 않는다.
+    """
+    import threading
+
+    run_id, _ = install(paths)
+    reviewing = threading.Event()
+    overlapped: list[int] = []
+
+    class Slow(FakeVideoClient):
+        def generate(self, request, *, timeout=None):
+            if reviewing.is_set():
+                overlapped.append(request.scene_id)
+            return super().generate(request, timeout=timeout)
+
+    def slow_review(_self, _job, attempt, _variant, _candidate):
+        reviewing.set()
+        time.sleep(0.3)
+        reviewing.clear()
+        attempt["passed"] = True
+        return True
+
+    client = Slow([STUB_MP4] * 40, concurrency=1)
+    with mock.patch.object(_Runner, "_review_attempt", slow_review):
+        result = run_videogen_stage(
+            run_id, client=client, paths=paths, review="none", detect=lambda: None,
+            runner=FakeFFmpeg(), jobs=1, review_jobs=4,
+        )
+
+    assert result.passed
+    assert overlapped, "검수가 도는 동안 생성이 한 번도 나가지 않았다 — 슬롯이 검수에 묶여 있다"
 
 
 def test_rate_limit_backs_off_and_retries_serially(pisa):
