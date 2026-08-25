@@ -187,6 +187,20 @@ def annotation_closing() -> str:
     return str(VOCAB["meta"]["annotation"]["_closing"])
 
 
+def edit_preamble() -> str:
+    """INFO 편집 지시의 보존 서두 (`meta.annotation._edit_preamble`, ADR-0071).
+
+    영상 프롬프트의 RED 절과 문구를 공유하되 서두만 다르다 — 영상은 "그려라"이고
+    편집은 "그대로 두고 얹어라"다. 문장을 코드가 짓지 않는다 (ADR-0034).
+    """
+    return str(VOCAB["meta"]["annotation"]["_edit_preamble"])
+
+
+def label_join() -> str:
+    """라벨 둘 이상을 `{label}` 한 자리에 잇는 문구 (`meta.annotation._label_join`)."""
+    return str(VOCAB["meta"]["annotation"]["_label_join"])
+
+
 def video_line_default() -> str:
     """사람이 `video_line`을 비웠을 때의 라인 (`meta.video_line._default`, ADR-0059 결정 2)."""
     return require("video_line", str(VOCAB["meta"]["video_line"]["_default"]))

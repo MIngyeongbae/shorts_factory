@@ -62,6 +62,13 @@ from .stages.scenetable import (
     run_scenetable_stage,
 )
 from .stages.factcheck import FactcheckStageError, run_factcheck_stage
+from .stages.frames import (
+    FramesStageError,
+    ProviderRefused as FramesProviderRefused,
+    SESSION_TIMEOUT as FRAMES_SESSION_TIMEOUT,
+    resolve_run_id as resolve_frames_run_id,
+    run_frames_stage,
+)
 from .stages.localize import (
     TARGET_LANGUAGES,
     LocalizeStageError,
@@ -80,6 +87,8 @@ from .stages.videogen import (
 )
 from .schemas import vocab
 from .schemas.timed_scenes import LANGUAGES
+from .imagegen.midjourney import MidjourneyClient
+from .imagegen.nano_banana import NanoBananaClient
 from .tts.audio import DEFAULT_TEMPO
 from .tts.base import TTSClient, TTSError, TTSNotConfigured
 from .tts.elevenlabs import ElevenLabsClient
@@ -369,6 +378,7 @@ def _cmd_prompt(args, paths: Paths) -> int:
             paths=paths,
             force=args.force,
             timeout=args.timeout or PROMPT_TIMEOUT,
+            line=args.line,
         )
     except (PromptStageError, ScenetableStageError) as exc:
         print(f"오류: {exc}", file=sys.stderr)
@@ -400,8 +410,9 @@ def _resolve_video_provider(args, paths: Paths, run_id: str) -> str:
     라인으로 내려가지 않는다 — ADR-0059 결정 2)."""
     if args.provider:
         return str(args.provider)
-    slug = args.slug or slug_from_run_id(run_id)
-    line = read_video_line(paths, slug)
+    # `--line`은 라인 전체를 갈아 끼운다 — 어댑터도 프레임 입력 여부도 그 라인의 것이다.
+    # 여기서 판정 파일만 보면 프로바이더와 프레임 해석이 다른 라인에서 오게 된다.
+    line = args.line or read_video_line(paths, args.slug or slug_from_run_id(run_id))
     provider = vocab.video_line_meta(line).get("provider")
     if not provider:
         raise VideogenStageError(
@@ -418,6 +429,53 @@ def _resolve_video_provider(args, paths: Paths, run_id: str) -> str:
 
 def _make_video_client(args, paths: Paths, run_id: str) -> VideoClient:
     return VIDEO_PROVIDERS[_resolve_video_provider(args, paths, run_id)]()
+
+
+def _cmd_frames(args, paths: Paths) -> int:
+    """[6] 씬당 CLEAN(MJ) + INFO(NB2 편집) 두 장 (ADR-0071).
+
+    **프레임을 입력으로 받는 라인에서만 돈다** — 다른 라인이면 그렇다고 말하고 멈춘다.
+    `info` 씬마다 편집 호출 1회 + 검수 세션 1회가 붙고, 일반 씬은 CLEAN 한 장으로 끝난다.
+
+    - **17** — 프로바이더 전체 거절(키·플랜·프록시 설정). 남은 씬을 시도하지 않고 멈췄다
+    - **8** — 그 밖의 단계 실패 (입력 부재, 프레임을 못 만든 씬)
+    """
+    if not args.run_id and not args.slug:
+        print("오류: --slug나 --run-id 중 하나는 있어야 한다", file=sys.stderr)
+        return 8
+    try:
+        run_id = resolve_frames_run_id(paths, run_id=args.run_id, slug=args.slug)
+        llm = (
+            _make_client(args, paths.run_dir(run_id) / "logs") if args.review else None
+        )
+        result = run_frames_stage(
+            run_id,
+            client=MidjourneyClient(),
+            editor=NanoBananaClient(),
+            paths=paths,
+            llm=llm,
+            line=args.line,
+            slug=args.slug,
+            review=args.review,
+            force=args.force,
+            jobs=args.jobs,
+            image_timeout=args.image_timeout,
+            session_timeout=args.timeout or FRAMES_SESSION_TIMEOUT,
+        )
+    except FramesProviderRefused as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 17
+    except (FramesStageError, JudgmentError) as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 8
+
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    for outcome in result.outcomes:
+        for warning in outcome.warnings:
+            print(f"  경고: 씬 {outcome.scene_id}: {warning}")
+    return 0
 
 
 def _cmd_videogen(args, paths: Paths) -> int:
@@ -452,6 +510,8 @@ def _cmd_videogen(args, paths: Paths) -> int:
             video_timeout=args.video_timeout,
             session_timeout=args.timeout or VIDEOGEN_SESSION_TIMEOUT,
             ffmpeg=args.ffmpeg,
+            line=args.line,
+            slug=args.slug,
         )
     except ProviderRefused as exc:
         print(f"오류: {exc}", file=sys.stderr)
@@ -711,7 +771,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=int, default=None,
         help=f"세션 상한(초) (기본 {PROMPT_TIMEOUT})",
     )
+    p_prompt.add_argument(
+        "--line", default=None,
+        help="영상 라인 (기본: judgment/human.json의 video_line — ADR-0059). 라인이 "
+             "바꾸는 것은 STYLE 절 유무와 mj_subject뿐이다 (ADR-0070·0071)",
+    )
     p_prompt.set_defaults(func=_cmd_prompt)
+
+    p_frames = sub.add_parser(
+        "frames", parents=[common],
+        help="[6] 씬당 CLEAN(MJ) + INFO(NB2 편집) — 프레임을 입력으로 받는 라인만 (ADR-0071)",
+    )
+    p_frames.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
+    p_frames.add_argument("--run-id", default=None)
+    p_frames.add_argument(
+        "--line", default=None,
+        help="영상 라인 (기본: judgment/human.json의 video_line)",
+    )
+    p_frames.add_argument(
+        "--no-review", dest="review", action="store_false", default=True,
+        help="INFO 검수 세션을 끈다 (배관 확인용 — 표시가 대상을 가리키는지 아무도 안 본다)",
+    )
+    p_frames.add_argument(
+        "--jobs", type=int, default=None,
+        help="동시 워커 수 (기본: 프록시 계정의 coreSize)",
+    )
+    p_frames.add_argument(
+        "--image-timeout", type=int, default=None,
+        help="이미지 호출 하나를 기다리는 상한(초) (기본: 어댑터가 정한다 — ADR-0035)",
+    )
+    p_frames.add_argument(
+        "--timeout", type=int, default=None,
+        help=f"INFO 검수 세션 상한(초) (기본: {FRAMES_SESSION_TIMEOUT})",
+    )
+    p_frames.set_defaults(func=_cmd_frames)
 
     p_videogen = sub.add_parser(
         "videogen", parents=[common],
@@ -742,6 +835,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_videogen.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_videogen.add_argument(
+        "--line", default=None,
+        help="영상 라인 (기본: judgment/human.json의 video_line). 프레임을 입력으로 받는 "
+             "라인이면 [6]의 frames.json을 읽어 first/last를 싣는다 (ADR-0071)",
     )
     p_videogen.set_defaults(func=_cmd_videogen)
 

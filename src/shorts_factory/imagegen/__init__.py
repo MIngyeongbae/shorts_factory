@@ -1,14 +1,19 @@
-"""이미지 생성 어댑터 — **휴면**.
+"""이미지 생성 어댑터 — `[6. frames]`가 쓴다 (ADR-0071).
 
-휴면 — 호출자 없음. 정지 이미지 쇼츠가 결정되면 되살린다 (ADR-0056 되돌릴 조건 6).
+ADR-0056이 이미지 단계를 뗐다가, ADR-0071이 **프레임을 입력으로 받는 라인**을 위해
+`[6]`을 되살렸다. 지금 소비자는 `stages/frames.py` 하나다:
 
-ADR-0056이 이미지 단계(`[6]`·`[6r]`·`[6i]`)를 파이프라인에서 뗐다. 어느 단계도 CLI도
-이 패키지를 import하지 않는다. 남긴 것은 MJ 이미지 어댑터(`midjourney.py` — 제출·폴링·
-취소·내려받기·인물 시트 참조 왕복)와 그 계약(`base.py`)·페이크(`fake.py`)이고, 계약
-테스트(`test_image_client`·`test_midjourney_client`)가 썩지 않게 지킨다. NB2 어댑터는
-소비자가 없어져 삭제됐다 (ADR-0005·0021 폐기).
+- `midjourney.py` — CLEAN. imagine(그리드) → `upscale(quadrant)`(낱장 주소) →
+  `download` → `upload`(우리 INFO를 공개 주소로). 제출·폴링·취소·인물 시트 참조 왕복은
+  ADR-0025·0031·0035·0039·0051의 실측이 든 코드 그대로다
+- `nano_banana.py` — INFO. `edit()`가 CLEAN 위에 계측 표시를 얹는다 (ADR-0021의 호출
+  경로 그대로, ADR-0043의 `[6i]`가 쓰던 그 함수다)
+- `base.py` 계약과 `fake.py` 대역
 
-살아 있는 코드가 여기에 기대면 안 된다 — HTTP 경계는 공용 `transport.py`로 옮겼다.
+프레임을 안 받는 라인(`local`·`api`)은 이 패키지를 지나가지 않는다 — 그 라인에서
+화면 그래픽은 `[7]`이 영상 모델에 프롬프트로 시킨다.
+
+HTTP 경계는 공용 `transport.py`다 (`CDN_HEADERS` 포함 — R2 저장에서 기본 UA가 막힌다).
 """
 
 from .base import (

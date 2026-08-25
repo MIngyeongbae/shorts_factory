@@ -52,7 +52,7 @@ CAMERA 절은 "워크 문구, 착지 구절." 꼴로 조립된다. 당신은 **�
 
 **빨강·화살표·라벨·치수선은 `red_prompt`에만 쓴다.** `subject_prompt`·`camera_target`에 "red", "arrow", "label" 같은 단어가 들어오면 기계 검사가 반려한다 — 검수 실패 때 RED 절을 떼고 다시 만드는데, 다른 절에 빨강이 남아 있으면 그 강등이 소용없다. 착지는 "holding on the vent shaft at the crown of the arch"처럼 **피사체의 부위**로 쓴다.
 
-## `subject_prompt_shot2` — 2샷 씬만 (`shot2`가 있는 씬)
+${mj_block}## `subject_prompt_shot2` — 2샷 씬만 (`shot2`가 있는 씬)
 
 같은 피사체·같은 무대의 두 번째 샷(`shot2.framing`)에서 보이는 것. 없으면 쓰지 않는다.
 
@@ -76,6 +76,7 @@ JSON 객체 하나만. 설명·마크다운·코드펜스 없이.
       "subject_prompt": "…",
       "camera_target": "…",
       "red_prompt": "…"            ← info 씬만
+      "mj_subject": "…"            ← 위 절이 있을 때만
       "subject_prompt_shot2": "…"  ← shot2 씬만
     }
   ]

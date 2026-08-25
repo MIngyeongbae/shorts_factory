@@ -50,6 +50,8 @@ class FakeVideoClient(VideoClient):
     """`responses`를 주면 순서대로, 안 주면 껍데기(또는 `synth`) mp4를 돌려준다."""
 
     name = "fake"
+    #: first/last를 실제로 싣는 어댑터다 (ADR-0071).
+    accepts_frames = True
     output_suffix = ".mp4"
 
     def __init__(
@@ -79,6 +81,10 @@ class FakeVideoClient(VideoClient):
             "seconds": request.seconds,
             "timeout": timeout,
             "label": request.label,
+            # 프레임을 입력으로 받는 라인이 무엇을 실었는지 (ADR-0070·0071).
+            # 안 싣는 라인에서는 둘 다 None이고, 그 부재가 곧 계약이다.
+            "first_frame": request.first_frame,
+            "last_frame": request.last_frame,
         })
 
         if self._responses is not None:

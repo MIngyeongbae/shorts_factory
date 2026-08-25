@@ -203,6 +203,8 @@ class VeoClient(VideoClient):
     """ADR-0043의 인포씬 영상 경로. 목표물(공학 쇼츠 워크플로우)이 쓴 그 계열이다."""
 
     name = "veo"
+    #: first/last를 실제로 싣는 어댑터다 (ADR-0071).
+    accepts_frames = True
     output_suffix = ".mp4"
     #: 입력이 로컬 파일이라 `image_source.json`을 읽지 않는다 (ADR-0043).
     source_provider = ""

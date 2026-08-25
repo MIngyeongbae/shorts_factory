@@ -12,10 +12,10 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 
 | 파일 | 무엇 | 읽는 곳 |
 |---|---|---|
-| `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·구도 토큰·전환·무대(staging)·계측 표시(annotation)·단위(unit) + 스타일 문자열과 **프롬프트 영어 문구** (ADR-0056) | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[3s]` 세션 프롬프트, `[5]` 프롬프트 골격 |
+| `vocab.json` | 닫힌 어휘 전부 — beat·subject_scale·camera·구도 토큰·전환·무대(staging)·계측 표시(annotation)·단위(unit) + 스타일 문자열과 **프롬프트 영어 문구** (ADR-0056) + 영상 라인(`video_line`)·MJ 방언(`mj_dialect`)·편집 서두(`annotation._edit_preamble`, ADR-0071) | `schemas/vocab.py` → `scenes.py`·`visual_rules.py`, `[3s]` 세션 프롬프트, `[5]` 프롬프트 골격, `[6]` MJ 한 줄·편집 지시 |
 | `scene.schema.json` | 씬 계약(`scenes.json`)의 JSON Schema. 어휘는 `vocab.json`을 `$ref`한다 | `schemas/scenes.py`, 파생으로 `timed_scenes.py` |
 | `sceneplan.schema.json` | `[3s]` 세션 산출(씬 연출표) — 실측 줄 위의 연출·무대·계측 표시·인물 선택 (ADR-0049 §5) . 필드 정의는 `scene.schema.json`을 `$ref`한다 | `schemas/sceneplan.py` |
-| `promptplan.schema.json` | `[5]` 세션 산출(씬별 샷 서술) — SUBJECT 단락·카메라 착지·RED 기하, 영어·ASCII·길이 (ADR-0060). 골격 조립은 코드가 `vocab.json`에서 | `schemas/promptplan.py` |
+| `promptplan.schema.json` | `[5]` 세션 산출(씬별 샷 서술) — SUBJECT 단락·카메라 착지·RED 기하, 영어·ASCII·길이 (ADR-0060) + 프레임 라인의 `mj_subject`(ADR-0071). 골격 조립은 코드가 `vocab.json`에서 | `schemas/promptplan.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프·검사 값) + 언어별 로케일 블록 자리 (ADR-0056) | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
 | `speech-rules.json` | 발화형 — TTS에 보낼 때 숫자·단위를 그 언어가 읽는 대로 펴는 로케일별 수사표·단위 사전 (ADR-0063). 자막은 원문을 쓴다 | `schemas/speech_rules.py` → `tts/speech.py` |

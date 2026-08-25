@@ -115,7 +115,7 @@ def test_reference_requires_public_url():
     """`imageUrl`(로컬 저장소 주소)로는 안 된다 — MJ 서버가 못 가져간다 (ADR-0046 실측)."""
     from shorts_factory.imagegen.midjourney import MidjourneyClient
 
-    with pytest.raises(ImageGenError, match="닿는 URL"):
+    with pytest.raises(ImageGenError, match="닿는 https 주소"):
         MidjourneyClient._reference_from_task(
             "up1", {"url": None, "imageUrl": "http://localhost:8086/attachments/x.png"}
         )

@@ -105,8 +105,8 @@ def test_slug_from_malformed_run_id_fails():
 # --- CLI 선택 ---------------------------------------------------------------------
 
 
-def args_for(provider=None, slug=None):
-    return SimpleNamespace(provider=provider, slug=slug)
+def args_for(provider=None, slug=None, line=None):
+    return SimpleNamespace(provider=provider, slug=slug, line=line)
 
 
 def test_explicit_provider_wins_over_the_line(paths):
@@ -121,6 +121,16 @@ def test_line_resolves_through_the_vocab_table(paths):
             continue
         write_human(paths, video_line=line)
         assert _resolve_video_provider(args_for(), paths, RUN_ID) == provider
+
+
+def test_the_line_flag_moves_the_adapter_too(paths):
+    """`--line`은 라인 전체를 갈아 끼운다 — 어댑터와 프레임 해석이 갈리면 안 된다 (ADR-0071)."""
+    write_human(paths, video_line="local")
+    for line in vocab.values("video_line"):
+        provider = vocab.video_line_meta(line)["provider"]
+        if provider is None:
+            continue
+        assert _resolve_video_provider(args_for(line=line), paths, RUN_ID) == provider
 
 
 def test_line_without_an_adapter_stops_instead_of_switching_lines(paths):

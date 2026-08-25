@@ -52,6 +52,14 @@
           "pattern": "^[ -~]+$",
           "description": "info 씬만. 계측 표시의 기하 — 보조선이 어디서 어디로, 화살촉, 라벨 박스가 어디 붙는지. info.labels의 각 문자열을 큰따옴표째 정확히 포함한다 (\"4 mm\"). 마무리 문장(유일한 빨강·유일한 텍스트)은 코드가 어휘에서 붙이므로 쓰지 않는다."
         },
+        "mj_subject": {
+          "type": "string",
+          "minLength": 100,
+          "maxLength": 400,
+          "pattern": "^[ -~]+$",
+          "description": "프레임을 입력으로 받는 라인만 (ADR-0071). CLEAN 정지 이미지용 **명사구 나열 한 줄** — 서술 문장이 아니다. 같은 씬의 subject_prompt가 말하는 것을 MJ 방언으로 압축한 것이고, 콜론·세미콜론·줄바꿈을 쓰지 않는다 (ADR-0027). **글자·라벨·빨강을 쓰지 않는다** — CLEAN에는 문자가 없고 계측 표시는 [6]이 편집으로 얹는다. 단어 수 상한은 여기가 아니라 vocab.json meta.mj_dialect의 예산에서 그 라인의 base_style 몫을 뺀 나머지이고, 코드가 조립한 한 줄로 검사한다 (ADR-0034·0069). 여기 길이는 그 예산이 들어갈 수 있는 글자 수 범위일 뿐이다.",
+          "$comment": "art 라인 기준 실측 몫은 28~38단어 (예산 75~85 − base_style 47)."
+        },
         "subject_prompt_shot2": {
           "type": "string",
           "minLength": 120,

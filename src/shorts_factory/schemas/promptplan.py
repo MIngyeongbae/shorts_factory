@@ -29,6 +29,8 @@ SUBJECT_FIELD = "subject_prompt"
 CAMERA_TARGET_FIELD = "camera_target"
 RED_FIELD = "red_prompt"
 SHOT2_FIELD = "subject_prompt_shot2"
+#: 프레임을 입력으로 받는 라인만 쓰는 필드 (ADR-0071) — CLEAN 정지 이미지용 MJ 한 줄의 소재부.
+MJ_SUBJECT_FIELD = "mj_subject"
 
 
 def schema_errors(data: Any) -> list[str]:
@@ -67,8 +69,51 @@ def _red_words_outside_red(text: str) -> list[str]:
     return _words_in(text, vocab.only_in_red_words())
 
 
-def cross_errors(data: dict[str, Any], contract: dict[str, Any]) -> list[str]:
-    """씬 계약과의 교차 규칙. 스키마를 통과한 입력을 전제한다."""
+def _mj_errors(sid: int, entry: dict[str, Any], *, line: str | None) -> list[str]:
+    """`mj_subject`의 유무와 예산 (ADR-0071).
+
+    예산은 여기서 세지 않는다 — **조립한 한 줄**을 `visual_rules.check_mj_prompt`가 잰다.
+    단어 수 상한이 라인의 `base_style` 길이에 딸린 값이라, 스키마에 적으면 라인마다
+    다른 값을 계약 하나가 들게 된다 (ADR-0034).
+    """
+    from .visual_rules import MJPromptError, build_mj_prompt, negative_items
+
+    if line is None:
+        return []
+    wanted = vocab.style_in_frames(line)
+    text = str(entry.get(MJ_SUBJECT_FIELD) or "").strip()
+    if wanted and not text:
+        return [
+            f"scenes/{sid}: 라인 '{line}'은 CLEAN 이미지를 사는데 {MJ_SUBJECT_FIELD}가 없다 "
+            "— MJ에 보낼 소재 한 줄이 필요하다 (ADR-0071)"
+        ]
+    if not wanted:
+        if text:
+            return [
+                f"scenes/{sid}: 라인 '{line}'은 프레임을 안 받는데 {MJ_SUBJECT_FIELD}가 있다 "
+                "— 쓰이지 않는 필드다"
+            ]
+        return []
+    try:
+        build_mj_prompt(
+            subject=text,
+            base_style=vocab.line_style(line),
+            negatives=negative_items(has_info=False),
+        )
+    except MJPromptError as exc:
+        return [f"scenes/{sid}: {MJ_SUBJECT_FIELD} — {exc}"]
+    return []
+
+
+def cross_errors(
+    data: dict[str, Any], contract: dict[str, Any], *, line: str | None = None
+) -> list[str]:
+    """씬 계약과의 교차 규칙. 스키마를 통과한 입력을 전제한다.
+
+    `line`이 있으면 **라인이 요구하는 필드**까지 본다 (ADR-0071) — 프레임을 입력으로
+    받는 라인은 씬마다 `mj_subject`가 있어야 하고, 안 받는 라인에는 없어야 한다.
+    라인을 모르면(None) 그 축은 보지 않는다 — 옛 산출물이나 라인 밖 호출이다.
+    """
     errors: list[str] = []
     contract_scenes = {int(s["scene_id"]): s for s in contract.get("scenes", [])}
     planned = {}
@@ -110,13 +155,14 @@ def cross_errors(data: dict[str, Any], contract: dict[str, Any]) -> list[str]:
             errors.append(f"scenes/{sid}: shot2 씬인데 {SHOT2_FIELD}가 없다")
         if shot2_prompt and not shot2:
             errors.append(f"scenes/{sid}: shot2가 없는 씬에 {SHOT2_FIELD}가 있다")
-        for field in (SUBJECT_FIELD, CAMERA_TARGET_FIELD, SHOT2_FIELD):
+        for field in (SUBJECT_FIELD, CAMERA_TARGET_FIELD, SHOT2_FIELD, MJ_SUBJECT_FIELD):
             leaked = _red_words_outside_red(str(entry.get(field, "") or ""))
             if leaked:
                 errors.append(
                     f"scenes/{sid}: {field}가 계측 표시를 언급한다 ({', '.join(leaked)}) — 빨강·화살표·라벨은 "
                     f"{RED_FIELD}에만 쓴다. RED를 뗀 강등 재생성에서 빨강이 남는다 (ADR-0060)"
                 )
+        errors.extend(_mj_errors(sid, entry, line=line))
         bad_words = _forbidden_camera_words(str(entry.get(CAMERA_TARGET_FIELD, "")))
         if bad_words:
             errors.append(
@@ -127,10 +173,10 @@ def cross_errors(data: dict[str, Any], contract: dict[str, Any]) -> list[str]:
 
 
 def validate_promptplan(
-    data: Any, contract: dict[str, Any]
+    data: Any, contract: dict[str, Any], *, line: str | None = None
 ) -> list[str]:
     """스키마 → 교차 규칙. 스키마가 깨지면 교차 규칙은 보지 않는다."""
     errors = schema_errors(data)
     if errors:
         return errors
-    return cross_errors(data, contract)
+    return cross_errors(data, contract, line=line)

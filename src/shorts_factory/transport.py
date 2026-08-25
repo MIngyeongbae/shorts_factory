@@ -36,6 +36,14 @@ class TransportTimeout(TransportError):
     """`timeout`초 안에 응답이 오지 않았다."""
 
 
+#: 파일을 받아 올 때 쓰는 신원. **우리 서버가 아니라 CDN에 가는 요청**의 헤더다.
+#: MJ 프록시가 결과를 R2에 두면(ADR-0070) 주소가 `pub-….r2.dev`가 되고, Cloudflare가
+#: **기본 `Python-urllib/3.x` UA를 403 (error code 1010)으로 막는다** (실측 2026-08-25).
+#: 막는 것은 그 UA 하나라 우리 이름을 밝히면 그대로 온다 — 브라우저인 척하지 않는다.
+#: 여기 두는 이유는 이미지·영상 두 어댑터가 같은 CDN에서 받기 때문이다 (ADR-0034 §3).
+CDN_HEADERS: dict[str, str] = {"User-Agent": "shorts-factory/0.1 (knowledge-shorts pipeline)"}
+
+
 #: `(method, url, headers, body, timeout) -> (status, body)`. 어댑터 대부분이 쓰는 모양이다.
 Transport = Callable[[str, str, dict[str, str], bytes | None, int], "tuple[int, bytes]"]
 

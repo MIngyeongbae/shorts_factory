@@ -62,6 +62,7 @@ from ..schemas.visual_rules import (
     RESOLUTION,
     STAGINGS,
     build_video_prompt,
+    mj_subject_budget,
     resolve_framing,
     resolve_staging,
     schema_errors,
@@ -247,6 +248,32 @@ def format_refs(refs: dict[str, Any] | None, contract: dict[str, Any]) -> tuple[
     )
 
 
+#: `mj_subject` 절의 본문. 단어 수만 치환한다 — 예산은 어휘에서 계산해 넣는다
+#: (`mj_subject_budget`, ADR-0034: 숫자를 프롬프트에 적어 넣지 않는다).
+MJ_BLOCK = """## `mj_subject` — CLEAN 정지 이미지용 한 줄 (영어, **{low}~{high}단어**, 모든 씬)
+
+이 라인은 씬마다 **정지 이미지를 먼저 그리고** 영상 모델이 그 사이를 잇는다 (ADR-0070·0071). 그 이미지를 사는 프롬프트의 **소재부**를 쓴다.
+
+- **서술 문장이 아니라 명사구 나열이다.** `subject_prompt`를 줄이는 것이 아니라 같은 씬을 다른 문법으로 쓰는 것이다: 무엇이, 어떤 재질로, 어떻게 놓였는지를 쉼표로 잇는다
+- **콜론·세미콜론·줄바꿈을 쓰지 마라** — 그 문자를 구분자로 읽지 않는 모델이라 라벨이 화면 지시로 섞인다
+- **스타일·화풍·조명·카메라를 쓰지 마라.** 스타일 문자열은 코드가 뒤에 붙인다 — 그 앞에 스타일 낱말이 또 있으면 소재가 밀린다
+- **글자·숫자·라벨·빨강을 쓰지 마라.** 이 이미지는 글자가 없는 CLEAN이고, 계측 표시는 다음 단계가 그 위에 얹는다
+- 단어 수가 {low}보다 적으면 소재를 잃고 {high}보다 많으면 스타일 절이 꼬리에서 무시된다. 기계 검사가 반려한다
+
+"""
+
+
+def format_mj_block(line: str | None) -> str:
+    """`mj_subject` 절 — 프레임을 입력으로 받는 라인에서만 붙는다 (ADR-0071).
+
+    라인 이름으로 분기하지 않는다 — 어휘가 `style_in_frames`로 말한다 (ADR-0034).
+    """
+    if not line or not vocab.style_in_frames(line):
+        return ""
+    low, high = mj_subject_budget(line)
+    return MJ_BLOCK.format(low=low, high=high)
+
+
 def build_session_prompt(
     *,
     topic: str,
@@ -254,6 +281,7 @@ def build_session_prompt(
     factcheck: str | None,
     contract: dict[str, Any],
     refs: dict[str, Any] | None,
+    line: str | None = None,
 ) -> tuple[str, int]:
     """세션 프롬프트 전문. `(prompt, 참조 서술 씬 수)`."""
     refs_block, described = format_refs(refs, contract)
@@ -270,6 +298,7 @@ def build_session_prompt(
         subject_min=subject_min, subject_max=subject_max,
         target_min=target_min, target_max=target_max,
         red_min=red_min, red_max=red_max,
+        mj_block=format_mj_block(line),
     )
     return prompt, described
 
@@ -282,9 +311,17 @@ def build_prompts(
     plan: dict[str, Any],
     *,
     source_script: str,
+    line: str | None = None,
 ) -> dict[str, Any]:
-    """씬 계약 + 세션 단락 → prompts.json 문서. `plan`은 `promptplan.validate_promptplan`을 통과한 것."""
+    """씬 계약 + 세션 단락 → prompts.json 문서. `plan`은 `promptplan.validate_promptplan`을 통과한 것.
+
+    `line`이 프레임을 입력으로 받는 라인이면(ADR-0070·0071) 둘이 달라진다: FORMAT 절에
+    **스타일 문자열을 안 싣고**(스타일은 프레임이 진다), 씬마다 `mj_subject`를 나른다.
+    어느 라인이 그런지는 어휘가 정하고 여기서 라인 이름을 분기하지 않는다 (ADR-0034).
+    """
     planned = {int(e["scene_id"]): e for e in plan["scenes"]}
+    frames_line = bool(line) and vocab.style_in_frames(str(line))
+    look = vocab.line_style(str(line)) if line else BASE_STYLE
     out_scenes: list[dict[str, Any]] = []
     for scene in contract["scenes"]:
         sid = int(scene["scene_id"])
@@ -299,6 +336,7 @@ def build_prompts(
                 camera=scene["camera"],
                 camera_target=str(entry.get(promptplan.CAMERA_TARGET_FIELD, "")),
                 red_prompt=str(entry[promptplan.RED_FIELD]) if info else None,
+                frames=frames_line,
             )
         except ValueError as exc:
             raise PromptStageError(f"씬 {sid}: {exc}") from exc
@@ -325,6 +363,8 @@ def build_prompts(
             record[promptplan.RED_FIELD] = str(entry[promptplan.RED_FIELD])
         if entry.get(promptplan.SHOT2_FIELD):
             record[promptplan.SHOT2_FIELD] = str(entry[promptplan.SHOT2_FIELD])
+        if entry.get(promptplan.MJ_SUBJECT_FIELD):
+            record[promptplan.MJ_SUBJECT_FIELD] = str(entry[promptplan.MJ_SUBJECT_FIELD])
         if scene.get("cast"):
             record["cast"] = list(scene["cast"])
         out_scenes.append(record)
@@ -332,8 +372,11 @@ def build_prompts(
         "run_id": contract["run_id"],
         "topic": contract["topic"],
         "source_script": source_script,
+        **({"line": str(line)} if line else {}),
         "style": {
-            "base_style": BASE_STYLE,
+            # 이 run이 실제로 그리는 룩. 라인이 자기 base_style을 들면 그것이다
+            # (ADR-0070) — 정본은 여전히 vocab이고 여기는 기록이다.
+            "base_style": look,
             "composition": COMPOSITION,
             "aspect_ratio": ASPECT_RATIO,
             "resolution": RESOLUTION,
@@ -365,6 +408,24 @@ def _load_refs(run_dir: Path, run_id: str) -> tuple[dict[str, Any] | None, list[
     return document, []
 
 
+def _resolve_line(paths: Paths, slug: str, line: str | None) -> str | None:
+    """사람이 고른 영상 라인 (`judgment/human.json`, ADR-0059). `--line`이 이긴다.
+
+    **못 읽어도 멈추지 않는다** — 라인이 바꾸는 것은 STYLE 절 유무와 `mj_subject`뿐이고,
+    판정 파일이 아직 없는 상태에서 `[5]`를 돌려 보는 것은 정상이다. 그때는 어휘의 기본
+    라인으로 간다 (`read_video_line`이 이미 그렇게 한다) — 값이 어휘 밖일 때만 멈춘다.
+    """
+    from ..judgment import JudgmentError, read_video_line
+
+    if line:
+        vocab.require("video_line", line)
+        return line
+    try:
+        return read_video_line(paths, slug)
+    except JudgmentError as exc:
+        raise PromptStageError(str(exc)) from exc
+
+
 def run_prompt_stage(
     slug: str,
     *,
@@ -372,6 +433,7 @@ def run_prompt_stage(
     paths: Paths | None = None,
     force: bool = False,
     timeout: int = TIMEOUT,
+    line: str | None = None,
 ) -> PromptResult:
     paths = paths or Paths.from_env()
 
@@ -417,9 +479,10 @@ def run_prompt_stage(
     if factcheck is None:
         warnings.append(f"{FACTCHECK_FILE}이 없어 형태 근거 없이 돈다 — 세션은 대본 머리만 본다 (D-3)")
 
+    resolved_line = _resolve_line(paths, slug, line)
     prompt, described = build_session_prompt(
         topic=topic, script_text=script_text, factcheck=factcheck,
-        contract=contract, refs=refs_doc,
+        contract=contract, refs=refs_doc, line=resolved_line,
     )
     try:
         plan, meta = ask_json(llm, prompt, label=STAGE, tools=(), timeout=timeout)
@@ -427,7 +490,7 @@ def run_prompt_stage(
         state.mark_failed(STAGE, str(exc))
         raise PromptStageError(str(exc)) from exc
 
-    plan_errors = promptplan.validate_promptplan(plan, contract)
+    plan_errors = promptplan.validate_promptplan(plan, contract, line=resolved_line)
     if plan_errors:
         for error in plan_errors:
             log.error("[%s] %s", STAGE, error)
@@ -440,6 +503,7 @@ def run_prompt_stage(
     try:
         document = build_prompts(
             contract, plan, source_script=contract_path.relative_to(paths.root).as_posix(),
+            line=resolved_line,
         )
     except PromptStageError as exc:
         state.mark_failed(STAGE, str(exc))

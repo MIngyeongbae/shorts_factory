@@ -666,3 +666,102 @@ def test_cli_runs_the_stage_with_the_fake_provider(paths, monkeypatch, capsys):
     assert code == 0
     assert "[7]" in capsys.readouterr().out
     assert (paths.run_dir(run_id) / "clips" / "1.mp4").exists()
+
+
+# --- 프레임을 입력으로 받는 라인 (ADR-0070·0071) ------------------------------
+
+
+def _write_frames(paths, run_id, *, line="art", scenes=None, run_key=None):
+    """`[6]`의 산출물을 흉내 낸다 — `[7]`이 읽는 것은 주소 둘뿐이다."""
+    document = {
+        "run_id": run_key or run_id,
+        "topic": "t",
+        "line": line,
+        "provider": "midjourney",
+        "scenes": scenes if scenes is not None else [],
+    }
+    write_text(paths.run_dir(run_id) / "frames.json", dump_json(document))
+    return document
+
+
+def _all_scenes(paths, run_id, *, info_scene=None):
+    contract = json.loads((paths.run_dir(run_id) / "scenes.json").read_text(encoding="utf-8"))
+    return [
+        {
+            "scene_id": scene["scene_id"],
+            "status": "done",
+            "clean_url": f"https://pub-x.r2.dev/clean{scene['scene_id']}.png",
+            "info_url": (
+                "https://pub-x.r2.dev/info.png" if scene["scene_id"] == info_scene else None
+            ),
+        }
+        for scene in contract["scenes"]
+    ]
+
+
+def test_a_frame_line_ships_the_two_addresses_as_first_and_last(paths):
+    run_id, _document = install(paths, info_scenes=(3,))
+    _write_frames(paths, run_id, scenes=_all_scenes(paths, run_id, info_scene=3))
+    client = FakeVideoClient()
+    run(paths, run_id, client=client, line="art")
+    by_scene = {call["scene_id"]: call for call in client.calls}
+    assert by_scene[3]["first_frame"].endswith("clean3.png")
+    assert by_scene[3]["last_frame"] == "https://pub-x.r2.dev/info.png"
+    # info가 없는 씬은 endImage 없이 간다 — 부재가 정상이다 (D-3).
+    assert by_scene[1]["first_frame"] and by_scene[1]["last_frame"] is None
+
+
+def test_a_text_to_video_line_ships_no_frames(paths):
+    run_id, _document = install(paths)
+    client = FakeVideoClient()
+    run(paths, run_id, client=client, line="local")
+    assert all(
+        call["first_frame"] is None and call["last_frame"] is None for call in client.calls
+    )
+
+
+def test_a_frame_line_without_the_frames_file_stops(paths):
+    run_id, _document = install(paths)
+    with pytest.raises(VideogenStageError) as exc:
+        run(paths, run_id, line="art")
+    assert "frames.json" in str(exc.value) and "[6]" in str(exc.value)
+
+
+def test_a_scene_missing_its_clean_address_stops(paths):
+    """CLEAN 없이 사면 라벨 없는 클립을 돈 주고 사게 된다."""
+    run_id, _document = install(paths)
+    scenes = _all_scenes(paths, run_id)
+    scenes[2]["clean_url"] = None
+    _write_frames(paths, run_id, scenes=scenes)
+    with pytest.raises(VideogenStageError) as exc:
+        run(paths, run_id, line="art")
+    assert "CLEAN" in str(exc.value)
+
+
+def test_frames_from_another_line_are_refused(paths):
+    run_id, _document = install(paths)
+    _write_frames(paths, run_id, line="local", scenes=_all_scenes(paths, run_id))
+    with pytest.raises(VideogenStageError) as exc:
+        run(paths, run_id, line="art")
+    assert "라인" in str(exc.value)
+
+
+def test_frames_from_another_run_are_refused(paths):
+    run_id, _document = install(paths)
+    _write_frames(paths, run_id, scenes=_all_scenes(paths, run_id), run_key="20260101-other")
+    with pytest.raises(VideogenStageError) as exc:
+        run(paths, run_id, line="art")
+    assert "run_id" in str(exc.value)
+
+
+def test_an_adapter_that_ignores_the_frames_is_refused(paths):
+    """프레임을 실었는데 어댑터가 버리면 계측 표시가 조용히 사라진다 (ADR-0071)."""
+    run_id, _document = install(paths, info_scenes=(3,))
+    _write_frames(paths, run_id, scenes=_all_scenes(paths, run_id, info_scene=3))
+
+    class TextOnly(FakeVideoClient):
+        accepts_frames = False
+
+    with pytest.raises(VideogenStageError) as exc:
+        run(paths, run_id, client=TextOnly(), line="art")
+    assert "안 받는다" in str(exc.value)

@@ -195,6 +195,10 @@ class SceneJob:
     #: 골격을 다시 조립할 때 필요한 씬 계약의 연출 — 세션이 바꿀 수 없는 값이다.
     staging: str = ""
     camera: str = ""
+    #: 프레임을 입력으로 받는 라인의 first/last (ADR-0070·0071). `[6]`의 `frames.json`에서
+    #: 온 **공개 https 주소**다. 그 라인이 아니면 둘 다 None이고 텍스트→영상으로 간다.
+    first_frame: str | None = None
+    last_frame: str | None = None
 
 
 def build_jobs(
@@ -203,10 +207,14 @@ def build_jobs(
     timed_by_lang: dict[str, dict[str, Any]],
     *,
     seconds_range: tuple[int, int] = (VideoClient.min_seconds, VideoClient.max_seconds),
+    frames: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[list[SceneJob], list[str]]:
     """세 입력 → 씬별 작업. `{seconds}`를 채우고 길이를 정한다. `(jobs, warnings)`.
 
     `seconds_range`는 어댑터가 받는 클립 길이 범위다 (ADR-0059 — 라인마다 다르다).
+    `frames`는 `[6]`의 씬별 프레임 주소다 (ADR-0071) — 프레임을 입력으로 받는 라인에서만
+    넘어오고, 그 라인인데 씬이 비면 **여기서 멈춘다**: 프레임 없이 사면 라벨 없는 클립을
+    돈 주고 사게 된다.
     """
     warnings: list[str] = []
     low, high = seconds_range
@@ -247,6 +255,7 @@ def build_jobs(
         info = scene.get("info") or None
         labels = [str(label) for label in (info or {}).get("labels", [])]
         has_info = bool(entry.get("has_info")) or bool(info)
+        frame_urls = _frame_urls(sid, frames)
         jobs.append(SceneJob(
             scene_id=sid,
             prompt=fill_seconds(str(entry["prompt"]), seconds),
@@ -273,8 +282,31 @@ def build_jobs(
             },
             staging=str(entry.get("staging") or ""),
             camera=str(entry.get("camera") or scene.get("camera") or ""),
+            first_frame=frame_urls[0],
+            last_frame=frame_urls[1],
         ))
     return jobs, warnings
+
+
+def _frame_urls(
+    scene_id: int, frames: dict[int, dict[str, Any]] | None
+) -> tuple[str | None, str | None]:
+    """씬의 `(first, last)` 주소. 프레임 라인이 아니면 `(None, None)`이다 (ADR-0071).
+
+    `last`(INFO)의 부재는 정상이다 — `info`가 없는 씬이거나 검수에 걸려 강등된 씬이고,
+    그러면 `endImage` 없이 MJ가 알아서 움직인다. `first`(CLEAN)의 부재는 정상이 아니다.
+    """
+    if frames is None:
+        return None, None
+    entry = frames.get(scene_id)
+    clean = str((entry or {}).get("clean_url") or "")
+    if not clean:
+        raise VideogenStageError(
+            f"씬 {scene_id}의 CLEAN 주소가 {FRAMES_FILE}에 없다 — [6]을 먼저 돌려야 한다 "
+            "(프레임을 입력으로 받는 라인이다, ADR-0071)"
+        )
+    info = str((entry or {}).get("info_url") or "") or None
+    return clean, info
 
 
 def nearest_source(scene_id: int, available: Sequence[int]) -> int | None:
@@ -513,6 +545,7 @@ class _Runner:
         request = VideoRequest(
             scene_id=job.scene_id, prompt=prompt, negative_prompt=negative,
             seconds=job.seconds, label=f"scene {job.scene_id} attempt {attempt['attempt']}",
+            first_frame=job.first_frame, last_frame=job.last_frame,
         )
         for retry in range(RATE_LIMIT_RETRIES + 1):
             if self.stop.is_set():
@@ -864,6 +897,51 @@ def _existing_review(run_dir: Path, force: bool) -> dict[int, dict[str, Any]]:
     return {int(e["scene_id"]): e for e in previous.get("scenes", []) if "scene_id" in e}
 
 
+FRAMES_FILE = "frames.json"
+
+
+def load_frames(
+    paths: Paths, run_dir: Path, run_id: str, *, slug: str | None, line: str | None
+) -> dict[int, dict[str, Any]] | None:
+    """프레임을 입력으로 받는 라인이면 `[6]`의 `frames.json`을, 아니면 None (ADR-0071).
+
+    **부재가 경고로 끝나지 않는다.** 그 라인인데 파일이 없으면 여기서 멈춘다 — 조용히
+    텍스트→영상으로 내려가면 라벨 없는 클립을 돈 주고 사게 된다 (스펙 05 `[7]`).
+    """
+    from ..judgment import JudgmentError, read_video_line, slug_from_run_id
+
+    try:
+        resolved = line or read_video_line(paths, slug or slug_from_run_id(run_id))
+    except JudgmentError as exc:
+        raise VideogenStageError(str(exc)) from exc
+    if not vocab.style_in_frames(resolved):
+        return None
+    path = run_dir / FRAMES_FILE
+    if not path.exists():
+        raise VideogenStageError(
+            f"영상 라인 '{resolved}'은 프레임을 입력으로 받는데 {FRAMES_FILE}이 없다 — "
+            "[6] frames를 먼저 돌려라 (ADR-0071)"
+        )
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise VideogenStageError(f"{FRAMES_FILE}을 읽을 수 없다: {exc}") from exc
+    if document.get("run_id") != run_id:
+        raise VideogenStageError(
+            f"{FRAMES_FILE}의 run_id({document.get('run_id')})가 대상 run({run_id})과 다르다"
+        )
+    if document.get("line") not in (None, resolved):
+        raise VideogenStageError(
+            f"{FRAMES_FILE}은 라인 '{document.get('line')}'으로 만들어졌는데 지금 라인은 "
+            f"'{resolved}'이다 — [6]을 다시 돌려라"
+        )
+    return {
+        int(entry["scene_id"]): entry
+        for entry in document.get("scenes", [])
+        if "scene_id" in entry
+    }
+
+
 def run_videogen_stage(
     run_id: str,
     *,
@@ -881,6 +959,8 @@ def run_videogen_stage(
     runner: Callable[..., Any] = subprocess.run,
     sleep: Callable[[float], None] = time.sleep,
     backoff: float = RATE_LIMIT_BACKOFF,
+    line: str | None = None,
+    slug: str | None = None,
 ) -> VideogenResult:
     if review not in REVIEW_MODES:
         raise VideogenStageError(f"review는 {'|'.join(REVIEW_MODES)} 중 하나다: {review!r}")
@@ -925,8 +1005,16 @@ def run_videogen_stage(
     record_path = run_dir / RECORD_FILE
     review_path = run_dir / REVIEW_FILE
 
+    frames = load_frames(paths, run_dir, run_id, slug=slug, line=line)
+    if frames is not None and not client.accepts_frames:
+        raise VideogenStageError(
+            f"이 라인은 씬마다 프레임 두 장을 주는데 어댑터 '{client.name}'은 그것을 안 받는다 "
+            "(ADR-0071) — 프레임을 실어도 버려지므로 [6]이 만든 계측 표시가 화면에서 사라진다. "
+            "라인의 provider로 돌리거나 --line으로 텍스트→영상 라인을 지정하라"
+        )
     all_jobs, warnings = build_jobs(
         contract, prompts, timed_by_lang, seconds_range=(client.min_seconds, client.max_seconds),
+        frames=frames,
     )
     done_before = _existing_done(run_dir, force)
     review_before = _existing_review(run_dir, force)

@@ -479,3 +479,118 @@ def test_the_account_response_is_read_once_per_client():
     assert c.wait_budget() == 300
     admin = [u for _m, u, _b in c.transport.calls if "admin/accounts" in u]
     assert len(admin) == 1
+
+
+# --- `[6]`이 쓰는 표면 (ADR-0071) --------------------------------------------
+
+
+def test_upscale_presses_the_quadrant_the_caller_asked_for():
+    """사분면이 다르면 다른 그림이다 — q0 고정이면 재시도가 같은 칸을 되돌린다."""
+    script = [
+        ("/mj/task/list", (200, [])),
+        ("task/grid1/fetch", (200, {
+            "status": "SUCCESS",
+            "buttons": [
+                {"customId": "MJ::JOB::upsample::1::uuid"},
+                {"customId": "MJ::JOB::upsample::2::uuid"},
+            ],
+        })),
+        ("submit/action", (200, {"code": 1, "result": "up2"})),
+        ("task/up2/fetch", (200, {"status": "SUCCESS", "url": CDN})),
+    ]
+    c = client(script)
+    reference = c.upscale("grid1", quadrant=1, timeout=5)
+    assert reference.url == CDN
+    body = json.loads(next(b for _m, u, b in c.transport.calls if "submit/action" in u))
+    assert body["customId"] == "MJ::JOB::upsample::2::uuid"
+
+
+def test_upscale_reuses_only_the_same_quadrant():
+    """부모가 같아도 칸이 다르면 다른 그림이다 (ADR-0031 §2)."""
+    completed = {
+        "id": "up1", "action": "UPSCALE", "status": "SUCCESS", "parentId": "grid1",
+        "url": CDN, "properties": {"custom_id": "MJ::JOB::upsample::1::uuid"},
+    }
+    reused = client([("/mj/task/list", (200, [completed]))])
+    assert reused.upscale("grid1", quadrant=0, timeout=5).upscale_task_id == "up1"
+
+    script = [
+        ("/mj/task/list", (200, [completed])),
+        ("task/grid1/fetch", (200, {
+            "status": "SUCCESS",
+            "buttons": [{"customId": "MJ::JOB::upsample::2::uuid"}],
+        })),
+        ("submit/action", (200, {"code": 1, "result": "up2"})),
+        ("task/up2/fetch", (200, {"status": "SUCCESS", "url": CDN})),
+    ]
+    fresh = client(script)
+    assert fresh.upscale("grid1", quadrant=1, timeout=5).upscale_task_id == "up2"
+
+
+def test_upscale_says_which_buttons_exist_when_the_quadrant_is_missing():
+    script = [
+        ("/mj/task/list", (200, [])),
+        ("task/grid1/fetch", (200, {
+            "status": "SUCCESS", "buttons": [{"customId": "MJ::JOB::upsample::1::uuid"}],
+        })),
+    ]
+    with pytest.raises(ImageGenError) as exc:
+        client(script).upscale("grid1", quadrant=3, timeout=5)
+    assert "U4" in str(exc.value) and "upsample::1" in str(exc.value)
+
+
+def test_upload_returns_the_public_address_the_proxy_gives():
+    url = "https://pub-x.r2.dev/attachments/20260825/abc.png"
+    c = client([("/mj/submit/upload-discord-images", (200, {"code": 1, "result": [url]}))])
+    assert c.upload(PNG, mime_type="image/png", timeout=5) == url
+    body = json.loads(next(b for _m, u, b in c.transport.calls if "upload" in u))
+    assert body["base64Array"][0].startswith("data:image/png;base64,")
+
+
+def test_upload_refuses_a_local_address_before_anything_is_bought():
+    """`http://localhost…`를 MJ에 넘기면 3분 뒤 `Invalid link`로 죽는다 (ADR-0070)."""
+    local = "http://localhost:8086/attachments/abc.png"
+    c = client([("/mj/submit/upload-discord-images", (200, {"code": 1, "result": [local]}))])
+    with pytest.raises(ProviderNotConfigured) as exc:
+        c.upload(PNG, mime_type="image/png", timeout=5)
+    assert "imageStorageType" in str(exc.value)
+
+
+def test_downloads_declare_who_we_are():
+    """R2 저장(ADR-0070)에서 기본 `Python-urllib` UA는 Cloudflare 403으로 막힌다 (실측)."""
+    from shorts_factory.transport import CDN_HEADERS
+
+    seen: list[dict] = []
+
+    def transport(method, url, headers, body, timeout):
+        seen.append(headers)
+        return 200, PNG
+
+    c = MidjourneyClient(base_url="http://proxy:8086", secret="admin", transport=transport)
+    assert c.download(CDN, timeout=5) == PNG
+    assert seen[0]["User-Agent"] == CDN_HEADERS["User-Agent"]
+
+
+def test_upscale_prefers_the_permanent_address_over_the_signed_one():
+    """`[6]`이 적은 주소를 `[7]`이 나중에 쓴다 — 만료되는 서명 URL을 적으면 재실행이 죽는다."""
+    r2 = "https://pub-x.r2.dev/attachments/1/2/clean.png"
+    signed = "https://cdn.discordapp.com/attachments/1/2/clean.png?ex=6a8e80d4"
+    completed = {
+        "id": "up1", "action": "UPSCALE", "status": "SUCCESS", "parentId": "grid1",
+        "url": signed, "imageUrl": r2,
+        "properties": {"custom_id": "MJ::JOB::upsample::1::uuid"},
+    }
+    c = client([("/mj/task/list", (200, [completed]))])
+    assert c.upscale("grid1", quadrant=0, timeout=5).url == r2
+
+
+def test_upscale_falls_back_to_the_signed_address_when_storage_is_local():
+    """`imageStorageType = LOCAL`이면 `imageUrl`이 localhost다 — MJ가 못 가져간다 (ADR-0046)."""
+    signed = "https://cdn.discordapp.com/attachments/1/2/clean.png?ex=6a8e80d4"
+    completed = {
+        "id": "up1", "action": "UPSCALE", "status": "SUCCESS", "parentId": "grid1",
+        "url": signed, "imageUrl": "http://localhost:8086/attachments/1/2/clean.png",
+        "properties": {"custom_id": "MJ::JOB::upsample::1::uuid"},
+    }
+    c = client([("/mj/task/list", (200, [completed]))])
+    assert c.upscale("grid1", quadrant=0, timeout=5).url == signed

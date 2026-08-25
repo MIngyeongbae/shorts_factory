@@ -150,9 +150,17 @@ def _section(name: str, text: str) -> str:
     return f"{name}: {text}"
 
 
-def format_line(*, seconds: str = SECONDS_PLACEHOLDER) -> str:
-    """FORMAT 절. 초 수 자리는 `[7]`이 채운다 — 여기서는 자리표시자 그대로다."""
-    return f"A {COMPOSITION} shot, {seconds} seconds long, {BASE_STYLE}."
+def format_line(*, seconds: str = SECONDS_PLACEHOLDER, style: str | None = None) -> str:
+    """FORMAT 절. 초 수 자리는 `[7]`이 채운다 — 여기서는 자리표시자 그대로다.
+
+    `style`이 `None`이면 전역 베이스 스타일이 실린다. **빈 문자열이면 스타일 절이
+    통째로 빠진다** — 프레임을 입력으로 받는 라인이 그렇다 (ADR-0070 규칙 1: 스타일을
+    말로 시키면 영상 모델이 자기 프라이어로 해석해 프레임과 싸운다).
+    """
+    look = BASE_STYLE if style is None else style.strip()
+    if not look:
+        return f"A {COMPOSITION} shot, {seconds} seconds long."
+    return f"A {COMPOSITION} shot, {seconds} seconds long, {look}."
 
 
 #: 어휘 문구 안의 치환 자리 (vocab `annotation._role`).
@@ -235,6 +243,17 @@ def check_mj_prompt(line: str) -> None:
         )
 
 
+def mj_subject_budget(line: str) -> tuple[int, int]:
+    """그 라인에서 `mj_subject`가 쓸 수 있는 단어 수 `(min, max)` (ADR-0069·0071).
+
+    예산 전체에서 그 라인의 `base_style`이 먹는 몫을 뺀 나머지다. 세션 프롬프트가
+    보여 줄 값이고, 실제 판정은 조립한 한 줄로 `check_mj_prompt`가 한다 — 여기서 센
+    수와 거기서 센 수가 갈리면 **거기가 정답이다**.
+    """
+    style_words = len(vocab.line_style(line).split())
+    return max(1, MJ_WORDS_MIN - style_words), max(1, MJ_WORDS_MAX - style_words)
+
+
 def build_mj_prompt(
     *,
     subject: str,
@@ -261,6 +280,39 @@ def build_mj_prompt(
     return line
 
 
+# --- INFO 편집 지시 (ADR-0071) -----------------------------------------------
+
+#: 편집 지시의 보존 서두와 라벨 잇기 — 둘 다 어휘의 것이다.
+EDIT_PREAMBLE: str = vocab.edit_preamble()
+LABEL_JOIN: str = vocab.label_join()
+
+
+def build_edit_instruction(*, annotation: str, target: str, labels: Sequence[str]) -> str:
+    """CLEAN → INFO 편집 지시 (`[6]`이 부르는 유일한 입구, ADR-0071).
+
+    `{보존 서두} {annotation.{kind}.phrase 치환본} {annotation._closing}`.
+
+    **`[5]`의 `red_prompt`를 쓰지 않는다.** 그것은 영상 프롬프트의 한 절이라 무대 어구를
+    달고 있고, 편집 모델은 그 어구도 지시로 읽는다 — 실측에서 배경 한 구획이 갈아엎혔다
+    (ADR-0071 실측 (b)). 여기서 문장을 짓지 않는다: 서두·문구·마무리·라벨 잇기가 전부
+    어휘의 것이고 코드는 치환만 한다 (ADR-0034).
+    """
+    if annotation not in ANNOTATIONS:
+        raise ValueError(
+            f"annotation 어휘에 '{annotation}'이 없다 (허용: {', '.join(ANNOTATION_TOKENS)})"
+        )
+    target = str(target or "").strip().rstrip(".")
+    if not target:
+        raise ValueError("info.target이 비어 있다 — 무엇을 가리킬지 없이 편집할 수 없다")
+    wanted = [str(label).strip() for label in labels if str(label).strip()]
+    if not wanted:
+        raise ValueError("info.labels가 비어 있다 — 그릴 글자가 없다")
+    phrase = ANNOTATIONS[annotation].replace(TARGET_SLOT, target).replace(
+        LABEL_SLOT, LABEL_JOIN.join(wanted)
+    )
+    return " ".join((EDIT_PREAMBLE, _sentence(phrase), ANNOTATION_CLOSING))
+
+
 def _flatten(text: str) -> str:
     """`:`·`;`·줄바꿈을 콤마로 눕힌다 — MJ는 그것을 구분자로 읽지 않는다 (ADR-0027)."""
     out = str(text or "")
@@ -276,12 +328,19 @@ def build_video_prompt(
     camera: str,
     camera_target: str = "",
     red_prompt: str | None = None,
+    frames: bool = False,
 ) -> tuple[str, str]:
     """`(prompt, negative_prompt)` — 어휘 골격 + 세션 단락. `[5]`가 부르는 유일한 입구다.
 
     판단이 없다. 절 순서대로 놓을 뿐이다. `red_prompt`가 없으면 RED 절이 없고 NEGATIVE에
     글자 금지가 든다; 있으면 RED 절이 있고 글자 금지는 RED의 마무리 문장(어휘 `_closing`)이
     대신한다 (vocab `negatives._role`). 단락의 계약은 `promptplan.py`가 먼저 쟀다.
+
+    `frames=True`면 **절이 둘뿐이다** — FORMAT(초 수)과 CAMERA. 그림·스타일·계측 표시를
+    first/last 프레임이 지므로 말로 다시 시킬 것이 없고, 실으면 두 가지가 깨진다:
+    스타일 낱말은 중간 프레임을 무너뜨리고(ADR-0070 규칙 1), 긴 본문은 MJ가 **다시 써서**
+    프록시가 결과를 못 묶는다 (ADR-0069·0071 — 358단어를 보내 10분 타임아웃으로 죽었다).
+    어느 라인이 그런지는 어휘가 정하고 여기서는 묻지 않는다.
     """
     if staging not in STAGINGS:
         raise ValueError(
@@ -290,6 +349,13 @@ def build_video_prompt(
     if not subject_prompt.strip():
         raise ValueError("subject_prompt가 비어 있다 — promptplan 검증이 막았어야 한다")
     has_info = bool(red_prompt and red_prompt.strip())
+    if frames:
+        # 프레임이 그림을 진다 — 남는 말은 "얼마나 길게, 카메라가 어떻게" 둘뿐이다.
+        prompt = chr(10).join((
+            _section("FORMAT", format_line(style="")),
+            _section("CAMERA", camera_line(camera, camera_target)),
+        ))
+        return prompt, ", ".join(negative_items(has_info=has_info))
     lines = [
         _section("FORMAT", format_line()),
         _section("STAGING", STAGINGS[staging]),
@@ -369,6 +435,9 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         "camera_target": {"type": "string"},
         "red_prompt": {"type": "string", "minLength": 1},
         "subject_prompt_shot2": {"type": "string", "minLength": 1},
+        # ADR-0071 — 프레임을 입력으로 받는 라인만. `[6]`이 CLEAN 이미지를 살 때 쓰는
+        # 소재 한 줄이고, MJ 방언 골격은 `build_mj_prompt`가 그때 얹는다.
+        "mj_subject": {"type": "string", "minLength": 1},
         # ADR-0051 — 선택. 이 씬에 등장하는 인물 id. 씬 계약의 cast를 그대로 복사해 온
         # 값이다 (고치는 곳은 씬 계약 하나다 — ADR-0020). 외형 서술은 prompt 안에 있다.
         "cast": {
@@ -389,6 +458,10 @@ PROMPTS_SCHEMA: dict[str, Any] = {
         "run_id": {"type": "string", "minLength": 1},
         "topic": {"type": "string", "minLength": 1},
         "source_script": {"type": "string", "minLength": 1},
+        # ADR-0071 — 이 프롬프트를 만든 영상 라인. 선택이다(옛 산출물에는 없다).
+        # 하류가 "다른 라인으로 만든 prompts.json"을 알아보는 자리다 — 라인이 다르면
+        # STYLE 절 유무와 `mj_subject` 유무가 다르다.
+        "line": {"type": "string", "minLength": 1},
         "style": {
             "type": "object",
             "required": ["base_style", "composition", "aspect_ratio", "resolution"],

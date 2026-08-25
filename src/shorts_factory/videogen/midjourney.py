@@ -49,7 +49,7 @@ import os
 import time
 from typing import Any, Callable
 
-from ..transport import Transport
+from ..transport import CDN_HEADERS, Transport
 from ..transport import urllib_transport as _urllib_transport
 from .base import (
     GeneratedClip,
@@ -174,6 +174,8 @@ class MidjourneyEndImageClient(VideoClient):
     """`art` 라인의 영상 엔진 (ADR-0070). CLEAN → INFO를 잇는다."""
 
     name = "mj-endimage"
+    #: first/last를 실제로 싣는 어댑터다 (ADR-0071).
+    accepts_frames = True
     output_suffix = ".mp4"
     #: 같은 계정의 잡이라야 U 버튼을 누를 수 있다 (ADR-0041).
     source_provider = "midjourney"
@@ -303,9 +305,18 @@ class MidjourneyEndImageClient(VideoClient):
             self.sleep(self.poll_interval)
 
     def download(self, url: str, *, timeout: int) -> bytes:
-        status, raw = self.transport("GET", url, {}, None, timeout)
+        """mp4를 받는다. **CDN 신원이 필요하다** — 아래 `CDN_HEADERS` 주석.
+
+        여기의 403은 프록시 인증이 아니라 CDN의 거절이다. `_fail`을 쓰지 않는 이유가
+        그것이다 — 그 함수는 403을 "MJ_API_SECRET을 확인하라"로 읽는다.
+        """
+        status, raw = self.transport("GET", url, dict(CDN_HEADERS), None, timeout)
         if status != 200:
-            raise _fail(status, raw, what="클립 내려받기")
+            detail = raw.decode("utf-8", "replace")[:200]
+            raise VideoGenError(
+                f"클립 내려받기: HTTP {status}: {detail}. 프록시 인증이 아니라 파일이 놓인 "
+                f"CDN의 응답이다 (주소: {url.split('?')[0]})"
+            )
         return raw
 
     # --- 사슬 -------------------------------------------------------------

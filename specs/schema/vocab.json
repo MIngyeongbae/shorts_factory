@@ -433,6 +433,10 @@
         "annotation",
         "annotations"
       ],
+      "_edit_preamble": "Edit this image. Keep the picture exactly as it is - same composition, same framing, same colours, same lighting, same drawing style. Do not redraw, restyle, crop or move anything that is already in the frame. Add only the annotation described below, drawn on top of the existing picture.",
+      "_edit_preamble_role": "[6]이 INFO 이미지를 만들 때 편집 모델에 보내는 지시의 서두 (ADR-0071). 뒤에 annotation.{kind}.phrase(치환본)와 _closing이 이어진다. 보존이 첫 규칙이라 서두가 먼저다 — 실측에서 무대 어구가 앞에 오면 편집 모델이 배경을 갈아엎었다. 영상 프롬프트의 RED 절과 문구를 공유하되 서두만 다르다: 영상은 '그려라'이고 편집은 '그대로 두고 얹어라'다.",
+      "_label_join": "\" and \"",
+      "_label_join_role": "라벨이 둘 이상일 때 phrase의 {label} 한 자리에 잇는 문구 (ADR-0071). 따옴표를 포함한다 — 결과는 reads exactly \"A\" and \"B\"가 된다. 영상 프롬프트의 RED 절은 세션이 red_prompt로 직접 쓰므로 이 값을 안 쓴다. [6]의 편집 지시에만 쓰인다 (세션이 없는 자리라 코드가 이어야 한다).",
       "dimension": {
         "gloss": "치수선 + 양끝 화살촉 — 길이·폭·두께·처짐",
         "phrase": "RED: one pure red glowing technical dimension annotation, drafting style, a thin dimension line with a small sharp arrowhead at each end exactly spanning {target}, and a small red label box beside it with white text that reads exactly \"{label}\"."
