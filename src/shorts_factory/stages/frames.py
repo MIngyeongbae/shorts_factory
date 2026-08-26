@@ -1,42 +1,48 @@
-"""[6. frames] — `[7]`에 줄 정지 이미지 두 장을 만든다. ADR-0071.
+"""[6. frames] — `[7]`에 줄 CLEAN 정지 이미지를 만든다. ADR-0071, ADR-0075가 범위를 좁혔다.
 
 specs/05-pipeline.md:
-    [6. frames] → frames/{scene_id}-clean.png (+ -info.jpg) + frames.json
-                  (프레임을 입력으로 받는 라인에서만. CLEAN은 MJ, INFO는 그 위의 NB2 편집)
+    [6. frames] → frames/{scene_id}-clean.png + frames.json
+                  (프레임을 입력으로 받는 라인의 **`info`가 없는 씬**만. CLEAN은 MJ가 그린다)
 
-## 왜 있는가 — 코드가 못 하는 일이 하나 있다
+## 왜 있는가 — 그리는 쪽과 움직이는 쪽을 나눈다
 
-계측 표시가 **무엇을 가리키는지**는 그림 안의 위치인데, 계약은 그것을 말로 적는다
-(`info.target: "the width of the river channel between its two banks"`). 말에서 좌표로
-가려면 그림을 읽어야 하고 코드에 그 함수가 없다. 손으로 좌표를 박으면 지시선이 강물
-한가운데 아무 곳을 가리키고 치수선이 강폭 아닌 띠를 잰다 (ADR-0071 실측).
+`[7]`의 일반 씬은 MJ `endImage`라 **시작 프레임 한 장**을 요구한다. 그 한 장을 여기서
+사고, 영상 모델은 그것을 밀고 당기기만 한다 (ADR-0070). 그림체가 편 안에서 흔들리지
+않는 이유도 여기다 — 룩은 정지 이미지가 지고 그 씬의 영상 프롬프트에는 STYLE 절이 없다.
 
-그래서 이 단계는 **그림을 읽는 모델 둘**을 순서대로 부른다: MJ가 CLEAN을 그리고,
-편집 모델이 그 위에 표시를 얹는다. 정확성은 여기서 끝나고 `[7]`의 영상 모델은 두 장을
-잇기만 한다 (ADR-0070).
+## `info` 씬은 여기 오지 않는다 (ADR-0075 결정 1·2)
+
+옛 경로는 [MJ CLEAN → NB2가 그 위에 빨간 표시를 편집 → H3 first/last 보간]이었다.
+기계 지표는 좋았다 — `japan-5060hz` 18씬에서 강등 0, 사분면 교체 2. **사람 판독이
+반대였다**: *"그냥 h3가 잡을 때가 훨씬 질이 좋았어"* (2026-08-26). 강등이 적었던 것은
+그림이 좋아서가 아니라 정지 이미지가 검수 기준(표시가 대상을 가리키는가)을 쉽게
+통과하기 때문이었다. 지표가 아니라 최종 심급이 답했으므로 (ADR-0044) NB2 편집·INFO
+검수(`14-inforeview.md`)·INFO 업로드가 통째로 빠졌다.
+
+그래서 `info` 씬은 `[7]`에서 H3 **텍스트→영상**으로 간다. 프레임을 안 받으니 이 단계가
+만들 것도 없다 — **건너뛴 것은 강등이 아니라 정상이다** (`skipped_info`, `demoted_*`가 아니다).
 
 ## 이 단계가 판단하지 않는 것
 
-- **무엇을 그릴지** — `[5]`의 `mj_subject`가 이미 썼다 (씬 계약을 읽은 세션의 것)
-- **라벨 문구·무엇을 잴지** — 씬 계약 `info`의 것이다 (ADR-0020)
-- **표시의 배치·색·굵기** — 편집 모델 재량이다 (ADR-0043의 그 선). 검수는 배치를
-  판정하지 않고 **가리키는 대상이 맞는가**를 본다
+- **무엇을 그릴지** — `[5]`의 `mj_image_prompt`가 이미 완성한 한 줄이다. 예산·방언 검사도
+  거기서 끝났다 (ADR-0075 결정 3). 이 단계는 조립하지 않는다
+- **어떤 룩인지** — 라인의 `mj_style`이고 그것도 `[5]`가 얹었다 (ADR-0075 결정 7)
 
 ## 사다리는 사분면 넷 → 소재 교정 → 새 그리드다 (사람 결정 2026-08-25)
 
 MJ imagine이 주는 것은 2×2 그리드다. 그리드를 보고 고르는 세션은 두지 않는다 — 평시
-세션은 `info` 씬당 1회(검수)뿐이다. 검수에 걸리면 **다음 사분면의 CLEAN으로 갈아**
+세션은 씬당 1회(CLEAN 검수)뿐이다. 검수에 걸리면 **다음 사분면의 CLEAN으로 갈아**
 만든다. **넷을 다 쓴다**: U 추출은 과금 0이라 q0에서 멈출 이유가 없다.
 
 넷이 다 걸리면 그때는 **사분면 운이 아니라 소재 단락의 문제**다. 기각 사유를 넣어 단락을
 고치는 세션 1회를 부르고(`15-cleanfix.md`) 새 그리드를 산다 — 여기서만 과금이 는다.
 같은 프롬프트로 다시 사면 같은 결함이 네 장 더 나올 뿐이다 (ADR-0067의 태도).
 
-## 강등은 `info_url`의 부재로 전달된다
+## 사다리 끝은 채택이다
 
-사다리를 다 쓰고도 INFO가 안 서면 그 씬은 **CLEAN만 남기고** `demoted_from: info`를 적는다. `[7]`은
-`info_url`이 없으면 `endImage` 없이 돌아 MJ가 알아서 움직인다 (옛 ADR-0039 동작).
-틀린 표시보다 없는 표시가 낫고, 숫자는 내레이션·자막이 진다.
+여덟 장이 다 걸려도 CLEAN은 나간다 — 마지막 장을 쓰고 `demoted_from: unreviewed`를 적는다
+(ADR-0072의 마지막 칸, `[7]`과 같은 이름). `[7]`은 first 프레임 없이 못 도는데 여기서
+씬을 죽이면 편이 멈춘다. 아쉬운 그림이 없는 그림보다 낫고, 다음 심급은 `[7]`의 클립 검수다.
 """
 
 from __future__ import annotations
@@ -47,11 +53,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Sequence
 
 from ..config import Paths, write_text
 from ..imagegen.base import (
-    GeneratedImage,
     ImageGenError,
     ImageRequest,
     ProviderNotConfigured,
@@ -63,7 +68,6 @@ from ..schemas import promptplan, vocab
 from ..schemas.visual_rules import (
     ASPECT_RATIO,
     RESOLUTION,
-    build_edit_instruction,
     build_mj_prompt,
     check_mj_prompt,
     mj_subject_budget,
@@ -76,10 +80,9 @@ from .session import load_prompt
 log = logging.getLogger(__name__)
 
 STAGE = "6-frames"
-PROMPT = "14-inforeview.md"
 #: 사분면 넷이 다 걸렸을 때 소재 단락을 고치는 세션 (사람 결정 2026-08-25).
 FIX_PROMPT = "15-cleanfix.md"
-#: CLEAN 게이트 — NB2 앞에 서서 못 쓸 그림을 거른다 (사람 결정 2026-08-25).
+#: CLEAN 게이트 — **`[6]`의 유일한 검수다.** INFO 검수는 NB2와 함께 빠졌다 (ADR-0075 결정 2).
 CLEAN_PROMPT = "16-cleanreview.md"
 
 #: 그리드를 사는 횟수. 1이면 옛 동작(사분면 넷을 쓰고 끝), 2면 고쳐쓰기 뒤 한 번 더 산다.
@@ -90,7 +93,11 @@ GRID_ROUNDS = 2
 RECORD_FILE = "frames.json"
 FRAMES_DIR = "frames"
 
-#: 검수 세션의 도구 — 두 장을 직접 열어 본다 (`[7]`과 같은 메커니즘).
+#: `[5]`가 완성해 실어 주는 MJ 한 줄 (`prompts.json`의 필드 — `visual_rules.PROMPT_SCENE_SCHEMA`).
+#: **`info` 씬에는 없는 것이 정상이다** — 그 씬은 MJ를 타지 않는다 (ADR-0075 결정 3).
+MJ_IMAGE_PROMPT_FIELD = "mj_image_prompt"
+
+#: 검수 세션의 도구 — CLEAN을 직접 열어 본다 (`[7]`과 같은 메커니즘).
 TOOLS: tuple[str, ...] = ("Read",)
 SESSION_TIMEOUT = 300
 
@@ -100,11 +107,12 @@ ATTEMPTS = 4
 
 PASS, FAIL, ERROR = "pass", "fail", "error"
 DONE, FAILED = "done", "failed"
-DEMOTED_INFO = "info"
+#: 사다리를 다 쓰고도 게이트가 안 열렸을 때 마지막 장을 그대로 쓴 표식 (ADR-0072).
+#: `[7]`의 그것과 같은 이름이다 — **강등을 조용히 하지 않는다**.
+DEMOTED_UNREVIEWED = "unreviewed"
 
-#: 파일 이름. 씬 하나에 두 장이고 확장자는 프로바이더가 정한다 (NB2는 JPEG만 낸다).
+#: 파일 이름. 씬 하나에 한 장이다 — INFO 두 번째 장은 ADR-0075 결정 2가 지웠다.
 CLEAN_SUFFIX = "-clean"
-INFO_SUFFIX = "-info"
 
 
 class FramesStageError(Exception):
@@ -113,16 +121,6 @@ class FramesStageError(Exception):
 
 class ProviderRefused(FramesStageError):
     """프로바이더 전체 거절 — 남은 씬을 시도하지 않고 멈췄다 (D-5)."""
-
-
-class ImageEditor(Protocol):
-    """`[6]`이 요구하는 편집 표면 하나. `NanoBananaClient.edit`가 구현한다 (ADR-0021)."""
-
-    name: str
-
-    def edit(
-        self, instruction: str, image_path: Path, *, timeout: int | None = None
-    ) -> GeneratedImage: ...
 
 
 # --- 입력 ---------------------------------------------------------------------
@@ -157,17 +155,18 @@ def _load_json(path: Path, what: str) -> dict[str, Any]:
 
 @dataclass
 class FrameJob:
-    """씬 하나가 이 단계에 요구하는 것 전부."""
+    """씬 하나가 이 단계에 요구하는 것 전부. **`info`가 없는 씬에만 만들어진다.**"""
 
     scene_id: int
+    #: `[5]`가 완성한 MJ 한 줄. 여기서 조립하지 않는다 (ADR-0075 결정 3).
     mj_prompt: str
-    #: `info`가 없으면 None — 그 씬은 CLEAN 한 장으로 끝난다.
-    edit_instruction: str | None
-    info: dict[str, Any] | None
+    #: 그 한 줄의 **원료**. 사분면이 다 걸렸을 때 고쳐 다시 조립하는 것이 이쪽이다
+    #: (ADR-0067의 사다리) — 완성본을 고치라고 주면 스타일 나열과 `--ar` 플래그까지
+    #: 세션의 손에 들어가 예산이 깨진다.
+    mj_subject: str = ""
     #: 검수가 **그림 자체**를 계약과 대조할 때 쓰는 씬 계약의 그림 필드 (2026-08-25).
-    #: 표시만 보던 검수는 CLEAN이 계약의 물리를 어겨도 통과시켰다 — 실측: 원반이 사람
-    #: 대비 8배로 그려져 `3.6 m` 라벨과 모순된 씬, 두 섬이 안 갈라져 "400 km 열린 바다"가
-    #: 안 보이는 씬이 `[6]`을 통과하고 `[7]`에서 기각됐다.
+    #: 실측: 원반이 사람 대비 8배로 그려져 `3.6 m` 라벨과 모순된 씬, 두 섬이 안 갈라져
+    #: "400 km 열린 바다"가 안 보이는 씬이 `[6]`을 통과하고 `[7]`에서 기각됐다.
     subject: str = ""
     visual_goal: str = ""
 
@@ -175,87 +174,65 @@ class FrameJob:
 def build_jobs(
     contract: dict[str, Any], prompts: dict[str, Any], *, line: str
 ) -> tuple[list[FrameJob], list[str]]:
-    """씬 계약 + `[5]` 산출 → 씬별 작업. **호출 전에 전부 조립하고 검사한다.**
+    """씬 계약 + `[5]` 산출 → 씬별 작업. **`info`가 없는 씬만 나온다** (ADR-0075 결정 1·2).
 
-    MJ 한 줄의 예산 위반은 `build_mj_prompt`가 여기서 올린다 (ADR-0069) — 제출 뒤에
-    걸리면 사유가 "타임아웃"으로 오고 원인이 안 보인다. 한 씬이라도 못 만들면 이 단계는
-    시작하지 않는다: 절반만 산 편이 제일 비싸다.
+    MJ 한 줄은 여기서 조립하지 않는다 — `[5]`가 `mj_image_prompt`로 완성했고 예산·방언
+    검사도 거기서 최종 전송 문자열에 걸린다 (ADR-0075 결정 3). 이 단계가 다시 조립하면
+    `[5]`가 잰 줄과 실제로 보내는 줄이 갈릴 수 있다.
+
+    한 씬이라도 그 필드가 없으면 시작하지 않는다: 절반만 산 편이 제일 비싸다.
     """
     warnings: list[str] = []
-    base_style = vocab.line_style(line)
-    #: CLEAN에는 **어느 씬에서도** 글자가 없어야 한다 — 표시는 다음 칸에서 얹는다.
-    negatives = negative_items(has_info=False)
-
     by_id = {
         int(scene["scene_id"]): scene for scene in prompts.get("scenes", [])
     }
     jobs: list[FrameJob] = []
-    for scene in contract.get("scenes", []):
+    skipped = 0
+    scenes = contract.get("scenes", [])
+    if not scenes:
+        raise FramesStageError("씬 계약에 씬이 없다")
+    for scene in scenes:
         scene_id = int(scene["scene_id"])
+        if scene.get("info"):
+            # `info` 씬은 `[7]`에서 텍스트→영상으로 간다 — 프레임을 안 받으므로 만들 것이
+            # 없다 (ADR-0075 결정 1). 건너뛴 것은 강등이 아니다.
+            skipped += 1
+            continue
         planned = by_id.get(scene_id)
         if planned is None:
             raise FramesStageError(
                 f"{PROMPTS_FILE}에 씬 {scene_id}이 없다 — [5]를 다시 돌려야 한다"
             )
-        subject = str(planned.get(promptplan.MJ_SUBJECT_FIELD) or "").strip()
-        if not subject:
+        mj_prompt = str(planned.get(MJ_IMAGE_PROMPT_FIELD) or "").strip()
+        if not mj_prompt:
             raise FramesStageError(
-                f"씬 {scene_id}에 `{promptplan.MJ_SUBJECT_FIELD}`가 없다. 라인 '{line}'은 "
-                f"CLEAN 이미지를 사므로 [5]가 그 단락을 써야 한다 (ADR-0071) — "
-                "라인을 고른 뒤 [5]를 다시 돌려라"
+                f"씬 {scene_id}에 `{MJ_IMAGE_PROMPT_FIELD}`가 없다. 라인 '{line}'은 이 씬의 "
+                "CLEAN 이미지를 사므로 [5]가 MJ 한 줄을 완성해 실어야 한다 (ADR-0075 결정 3) "
+                "— 옛 prompts.json이면 [5]를 다시 돌려라"
             )
-        mj_prompt = build_mj_prompt(
-            subject=subject, base_style=base_style, negatives=negatives,
-            aspect_ratio=ASPECT_RATIO,
-        )
-        info = scene.get("info") or None
-        instruction = (
-            build_edit_instruction(
-                annotation=str(info["annotation"]),
-                target=str(info["target"]),
-                labels=list(info["labels"]),
-            )
-            if info
-            else None
-        )
         jobs.append(
             FrameJob(
                 scene_id=scene_id, mj_prompt=mj_prompt,
-                edit_instruction=instruction, info=info,
+                mj_subject=str(planned.get(promptplan.MJ_SUBJECT_FIELD) or ""),
                 subject=str(scene.get("subject") or ""),
                 visual_goal=str(scene.get("visual_goal") or ""),
             )
         )
-    if not jobs:
-        raise FramesStageError("씬 계약에 씬이 없다")
-    if not any(job.info for job in jobs):
+    if skipped:
         warnings.append(
-            "info 씬이 없다 — CLEAN만 만들고 편집 호출도 검수 세션도 돌지 않는다"
+            f"info {skipped}씬은 건너뛴다 — 텍스트→영상이라 프레임을 안 받는다 "
+            "(ADR-0075 결정 1, 강등이 아니다)"
+        )
+    if not jobs:
+        warnings.append(
+            "전 씬이 info라 만들 CLEAN이 없다 — 빈 frames.json으로 끝난다. [7]을 바로 돌려라"
         )
     return jobs, warnings
 
 
 # --- 검수 세션 -----------------------------------------------------------------
 
-
-def render_review_prompt(
-    *, topic: str, job: FrameJob, clean: Path, info: Path, attempt: int = 0
-) -> str:
-    """INFO 검수 세션 프롬프트. 나레이션도 대본도 넣지 않는다 — 계약과 두 장뿐이다.
-
-    `attempt`가 거듭될수록 잣대가 낮아진다 (`vocab.review_standard`) — 마지막 칸은
-    "이거라도 쓴다"라서 사다리가 닫힌다.
-    """
-    fields = job.info or {}
-    labels = ", ".join(f'"{label}"' for label in fields.get("labels", []))
-    return load_prompt(PROMPT).safe_substitute(
-        topic=topic, scene_id=job.scene_id,
-        clean=clean, info=info,
-        annotation=fields.get("annotation", ""),
-        target=fields.get("target", ""),
-        labels=labels,
-        standard=vocab.review_standard(attempt),
-    )
+#: `[6]`이 얹는 라벨은 없다 — NB2가 빠졌고 화면 글자는 `[7]`의 H3가 그린다 (ADR-0075 결정 2·6).
 
 
 def render_clean_prompt(
@@ -263,14 +240,16 @@ def render_clean_prompt(
 ) -> str:
     """CLEAN 검수 세션 프롬프트 (사람 결정 2026-08-25).
 
-    **NB2 앞에 선다.** 그림이 못 쓸 것이면 표시를 얹기 전에 다음 사분면으로 간다 —
-    종량 호출은 그림이 옳은 장에만 쓴다 (실측: 기준을 INFO 검수에 두었더니 CLEAN이
-    틀린 씬에서도 NB2가 사분면마다 돌아 한 씬에 3회가 나갔다).
+    **`[7]` 앞의 게이트다.** 못 쓸 그림을 여기서 거르는 이유는 하나다 — 이 한 장이 클립의
+    first 프레임이 되는데, `[7]`의 사다리는 프롬프트만 고쳐 쓸 뿐 프레임을 갈지 못한다.
+    거기서 다시 그리면 클립 하나에 165~255초가 나가고, 여기서 다음 사분면으로 가면 0이다.
+
+    `attempt`가 거듭될수록 잣대가 낮아진다 (`vocab.review_standard`) — 마지막 칸은
+    "이거라도 쓴다"라서 사다리가 닫힌다.
     """
     return load_prompt(CLEAN_PROMPT).safe_substitute(
         topic=topic, scene_id=job.scene_id, clean=clean,
         subject=job.subject, visual_goal=job.visual_goal,
-        labels=", ".join(f'"{x}"' for x in (job.info or {}).get("labels") or []) or "(없음)",
         standard=vocab.review_standard(attempt),
     )
 
@@ -283,7 +262,6 @@ def render_fix_prompt(
     return load_prompt(FIX_PROMPT).safe_substitute(
         topic=topic, scene_id=job.scene_id,
         subject=job.subject, visual_goal=job.visual_goal,
-        labels=", ".join(f'"{x}"' for x in (job.info or {}).get("labels") or []),
         mj_subject=mj_subject,
         reasons=chr(10).join(f"- {r}" for r in reasons) or "- (사유 없음)",
         words_min=low, words_max=high,
@@ -315,9 +293,6 @@ class SceneOutcome:
     grid_task_id: str | None = None
     clean_file: str | None = None
     clean_url: str | None = None
-    info_file: str | None = None
-    info_url: str | None = None
-    labels: list[str] = field(default_factory=list)
     demoted_from: str | None = None
     attempts: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -330,9 +305,6 @@ class SceneOutcome:
             "grid_task_id": self.grid_task_id,
             "clean_file": self.clean_file,
             "clean_url": self.clean_url,
-            "info_file": self.info_file,
-            "info_url": self.info_url,
-            "labels": list(self.labels),
             "demoted_from": self.demoted_from,
             "attempts": list(self.attempts),
             "warnings": list(self.warnings),
@@ -346,7 +318,6 @@ class _Runner:
         self,
         *,
         client: Any,
-        editor: ImageEditor | None,
         llm: LLMClient | None,
         run_dir: Path,
         topic: str,
@@ -357,7 +328,6 @@ class _Runner:
         line: str = "",
     ) -> None:
         self.client = client
-        self.editor = editor
         self.llm = llm
         self.run_dir = run_dir
         self.frames_dir = run_dir / FRAMES_DIR
@@ -407,43 +377,24 @@ class _Runner:
         path.write_bytes(data)
         return path, url
 
-    # --- NB2 INFO ---------------------------------------------------------
-
-    def _info(self, job: FrameJob, clean_path: Path) -> tuple[Path, GeneratedImage]:
-        if self.editor is None:
-            raise ProviderNotConfigured(
-                "info 씬이 있는데 편집 어댑터가 없다 — INFO를 만들 수 없다"
-            )
-        edited = self.editor.edit(
-            str(job.edit_instruction), clean_path, timeout=self.image_timeout
-        )
-        suffix = ".jpg" if "jpeg" in edited.mime_type else ".png"
-        path = self.frames_dir / f"{job.scene_id}{INFO_SUFFIX}{suffix}"
-        path.write_bytes(edited.data)
-        return path, edited
+    # --- CLEAN 게이트 ------------------------------------------------------
 
     def _clean_gate(self, job: FrameJob, clean: Path, attempt: int) -> dict[str, Any]:
-        """**NB2 앞의 게이트** — 못 쓸 그림에 종량 호출을 쓰지 않는다 (사람 결정 2026-08-25).
+        """CLEAN 검수 세션 1회. **세션이 두 번 죽으면 통과시킨다** — 검수기 고장으로 파이프라인을
+        세우지 않는다 (`[7]`의 그 규칙과 같다).
 
-        `info`가 없는 씬에는 돌지 않는다: 그런 씬은 CLEAN이 곧 결과물이고, 이 게이트가
-        걸러도 할 수 있는 일이 다음 사분면뿐인데 그 판정은 `[7]`이 클립을 보고 한다.
+        `[6]`에 남은 유일한 검수다 (ADR-0075 결정 2). 이 게이트가 기각하면 할 수 있는 일은
+        다음 사분면뿐인데, 그것이 정확히 여기서 해야 하는 이유다 — `[7]`은 프레임을 갈지
+        못하고 사분면 교체는 과금 0이다.
         """
-        if not self.review or self.llm is None or job.info is None:
-            return {"verdict": PASS, "reasons": [], "target_pointed": None}
+        if not self.review or self.llm is None:
+            return {
+                "verdict": PASS,
+                "reasons": ["검수 없이 채택 (--no-review)"],
+                "target_pointed": None,
+            }
         prompt = render_clean_prompt(topic=self.topic, job=job, clean=clean, attempt=attempt)
         return self._session(prompt, job, what="CLEAN 검수")
-
-    def _vision(
-        self, job: FrameJob, clean: Path, info: Path, attempt: int = 0
-    ) -> dict[str, Any]:
-        """INFO 검수 세션 1회. **세션이 두 번 죽으면 통과시킨다** — 검수기 고장으로 돈을
-        더 쓰지 않는다 (`[7]`의 그 규칙과 같다)."""
-        if not self.review or self.llm is None:
-            return {"verdict": PASS, "reasons": ["검수 없이 채택 (--no-review)"], "target_pointed": None}
-        prompt = render_review_prompt(
-            topic=self.topic, job=job, clean=clean, info=info, attempt=attempt
-        )
-        return self._session(prompt, job, what="검수")
 
     def _session(self, prompt: str, job: FrameJob, *, what: str) -> dict[str, Any]:
         last_error = ""
@@ -469,9 +420,7 @@ class _Runner:
     # --- 씬 하나 ----------------------------------------------------------
 
     def run_scene(self, job: FrameJob) -> SceneOutcome:
-        outcome = SceneOutcome(
-            scene_id=job.scene_id, labels=list((job.info or {}).get("labels") or [])
-        )
+        outcome = SceneOutcome(scene_id=job.scene_id)
         if self.stop.is_set():
             outcome.warnings.append("프로바이더 거절로 시도하지 않았다")
             self.on_scene_done(outcome)
@@ -480,7 +429,7 @@ class _Runner:
         for grid_round in range(GRID_ROUNDS):
             if grid_round:
                 # 사분면 넷이 다 걸렸다 — 사분면 운이 아니라 소재 단락의 문제다.
-                fixed = self._fix_subject(job, mj_prompt, outcome)
+                fixed = self._fix_subject(job, outcome)
                 if fixed is None:
                     break
                 mj_prompt = fixed
@@ -499,29 +448,24 @@ class _Runner:
             if done is not None:
                 self.on_scene_done(done)
                 return done
-            if job.info is None:
-                break
 
-        # 사다리 끝 — CLEAN이 있으면 INFO 없이 산다 (D-5).
+        # 사다리 끝 — 마지막 CLEAN을 검수 없이 쓴다 (ADR-0072의 마지막 칸, D-5).
         if outcome.clean_url:
             outcome.status = DONE
-            outcome.demoted_from = DEMOTED_INFO
-            outcome.info_file = None
-            outcome.info_url = None
+            outcome.demoted_from = DEMOTED_UNREVIEWED
             outcome.warnings.append(
-                f"INFO가 {ATTEMPTS * GRID_ROUNDS}회 다 걸려 계측 표시 없이 간다 "
-                "(demoted_from: info) — 숫자는 내레이션·자막이 진다"
+                f"CLEAN {ATTEMPTS * GRID_ROUNDS}장이 다 걸려 마지막 장을 검수 없이 쓴다 "
+                f"(demoted_from: {DEMOTED_UNREVIEWED}) — [7]은 first 프레임 없이 못 돈다"
             )
         self.on_scene_done(outcome)
         return outcome
 
-    def _fix_subject(
-        self, job: FrameJob, mj_prompt: str, outcome: SceneOutcome
-    ) -> str | None:
+    def _fix_subject(self, job: FrameJob, outcome: SceneOutcome) -> str | None:
         """기각 사유 → 고친 MJ 한 줄. 못 고치면 None이고 사다리가 끝난다 (D-5).
 
         같은 프롬프트로 그리드를 다시 사지 않는다 — 같은 결함이 네 장 더 나올 뿐이다.
-        고친 단락은 예산·방언 검사를 다시 받고, 어기면 되돌린다 (ADR-0069·0034).
+        **고치는 것은 원료(`mj_subject`)이고 조립은 코드가 다시 한다** (ADR-0067·0034) —
+        고친 단락은 예산·방언 검사를 다시 받고, 어기면 되돌린다 (ADR-0069).
         """
         if self.llm is None or not self.review:
             return None
@@ -531,7 +475,7 @@ class _Runner:
             for reason in ((attempt.get("review") or {}).get("reasons") or [])
         ]
         prompt = render_fix_prompt(
-            topic=self.topic, job=job, mj_subject=job.mj_prompt,
+            topic=self.topic, job=job, mj_subject=job.mj_subject or job.mj_prompt,
             reasons=reasons[-6:], line=self.line,
         )
         try:
@@ -549,8 +493,11 @@ class _Runner:
             return None
         try:
             # 조립도 검사도 예산을 본다 — 둘 다 여기서 잡는다 (ADR-0069가 제출 전에 멈춘다).
+            # 룩은 MJ 엔진의 것을 쓴다 — `ttv_style`은 서술형이라 이 한 줄에 못 눕는다
+            # (ADR-0075 결정 7).
             candidate = build_mj_prompt(
-                subject=subject, base_style=vocab.line_style(self.line),
+                subject=subject,
+                mj_style=vocab.line_style(self.line, engine=vocab.MJ_ENGINE),
                 negatives=negative_items(has_info=False), aspect_ratio=ASPECT_RATIO,
             )
             check_mj_prompt(candidate)
@@ -584,44 +531,15 @@ class _Runner:
             outcome.clean_url = clean_url
             attempt["clean_file"] = outcome.clean_file
 
-            if job.info is None:
-                outcome.status = DONE
-                self.on_scene_done(outcome)
-                return outcome
-
-            try:
-                info_path, edited = self._info(job, clean_path)
-            except ProviderNotConfigured as exc:
-                self._refuse(str(exc))
-                attempt["error"] = str(exc)
-                break
-            except ImageGenError as exc:
-                attempt["error"] = f"INFO 편집 실패: {exc}"
-                continue
-            attempt["info_file"] = _relative(info_path, self.run_dir)
-            attempt["editor"] = {"model": edited.model_id, "request_id": edited.request_id}
-
-            verdict = self._vision(job, clean_path, info_path)
+            # 잣대는 **씬 전체의 시도 번호**로 낮아진다 — 그리드를 새로 샀다고 처음
+            # 잣대로 돌아가면 사다리가 닫히지 않는다 (ADR-0072).
+            verdict = self._clean_gate(job, clean_path, grid_round * ATTEMPTS + quadrant)
             attempt["review"] = verdict
             if verdict["verdict"] == FAIL:
                 continue
             if verdict["verdict"] == ERROR:
                 outcome.warnings.extend(verdict["reasons"])
 
-            try:
-                outcome.info_url = self.client.upload(
-                    info_path.read_bytes(),
-                    mime_type=edited.mime_type,
-                    timeout=self.image_timeout,
-                )
-            except ProviderNotConfigured as exc:
-                self._refuse(str(exc))
-                attempt["error"] = str(exc)
-                break
-            except ImageGenError as exc:
-                attempt["error"] = f"INFO 업로드 실패: {exc}"
-                continue
-            outcome.info_file = attempt["info_file"]
             outcome.status = DONE
             self.on_scene_done(outcome)
             return outcome
@@ -656,18 +574,13 @@ class FramesResult:
     warnings: list[str] = field(default_factory=list)
     record_path: Path | None = None
     skipped: bool = False
+    #: `info`라서 만들지 않은 씬 수 — **강등이 아니라 정상이다** (ADR-0075 결정 2).
+    #: `[7]`이 그 씬을 텍스트→영상으로 그린다.
+    skipped_info: int = 0
 
     @property
     def scene_count(self) -> int:
         return len(self.outcomes)
-
-    @property
-    def info_scenes(self) -> int:
-        return sum(1 for o in self.outcomes if o.info_url)
-
-    @property
-    def demoted(self) -> int:
-        return sum(1 for o in self.outcomes if o.demoted_from == DEMOTED_INFO)
 
     @property
     def quadrant_swaps(self) -> int:
@@ -675,11 +588,18 @@ class FramesResult:
         return sum(1 for o in self.outcomes if o.quadrant > 0)
 
     @property
+    def unreviewed(self) -> int:
+        """사다리를 다 쓰고 검수 없이 채택한 씬 수 — 게이트가 닫히는지 보는 지표."""
+        return sum(1 for o in self.outcomes if o.demoted_from == DEMOTED_UNREVIEWED)
+
+    @property
     def summary(self) -> str:
         tail = " (스킵)" if self.skipped else ""
         return (
-            f"[6] {self.topic} — {self.scene_count}씬 CLEAN / INFO {self.info_scenes} "
-            f"(강등 {self.demoted} · 사분면 교체 {self.quadrant_swaps}) → {RECORD_FILE}{tail}"
+            f"[6] {self.topic} — CLEAN {self.scene_count}씬 "
+            f"(info {self.skipped_info}씬은 [7]이 텍스트→영상으로 그린다 · "
+            f"사분면 교체 {self.quadrant_swaps} · 미검수 채택 {self.unreviewed}) "
+            f"→ {RECORD_FILE}{tail}"
         )
 
 
@@ -707,8 +627,6 @@ def _outcome_from(entry: dict[str, Any]) -> SceneOutcome:
         quadrant=int(entry.get("quadrant") or 0),
         grid_task_id=entry.get("grid_task_id"),
         clean_file=entry.get("clean_file"), clean_url=entry.get("clean_url"),
-        info_file=entry.get("info_file"), info_url=entry.get("info_url"),
-        labels=list(entry.get("labels") or []),
         demoted_from=entry.get("demoted_from"),
         attempts=list(entry.get("attempts") or []),
         warnings=list(entry.get("warnings") or []),
@@ -732,7 +650,6 @@ def run_frames_stage(
     run_id: str,
     *,
     client: Any,
-    editor: ImageEditor | None = None,
     paths: Paths | None = None,
     llm: LLMClient | None = None,
     line: str | None = None,
@@ -770,6 +687,8 @@ def run_frames_stage(
         )
 
     all_jobs, warnings = build_jobs(contract, prompts, line=resolved_line)
+    #: 만들지 **않은** 씬 수. 지표로 남기지만 강등이 아니다 (ADR-0075 결정 2).
+    skipped_info = sum(1 for scene in contract.get("scenes", []) if scene.get("info"))
     done_before = _existing(run_dir, force)
 
     state = RunState.load_or_create(run_dir, run_id, topic=topic)
@@ -787,16 +706,13 @@ def run_frames_stage(
             provider=str(previous.get("provider") or getattr(client, "name", "")),
             outcomes=[_outcome_from(e) for e in previous.get("scenes", [])],
             warnings=previous.get("warnings", []), record_path=record_path, skipped=True,
+            skipped_info=skipped_info,
         )
 
-    if review and llm is None:
+    # 만들 것이 없으면 검수기도 필요 없다 — 전 씬이 `info`인 편이 그렇다.
+    if all_jobs and review and llm is None:
         raise FramesStageError(
             "검수 세션 클라이언트가 없다 — `review=False`로 끄거나 LLM을 넘겨라"
-        )
-    if any(job.info for job in all_jobs) and editor is None:
-        raise FramesStageError(
-            "info 씬이 있는데 편집 어댑터가 없다. INFO 없이 CLEAN만 만들 생각이면 "
-            "씬 계약에서 info를 빼야 한다 — 조용히 건너뛰지 않는다 (ADR-0071)"
         )
 
     state.mark_running(STAGE)
@@ -814,7 +730,6 @@ def run_frames_stage(
             "topic": topic,
             "line": resolved_line,
             "provider": getattr(client, "name", ""),
-            "editor": getattr(editor, "name", None),
             "scenes": [
                 outcomes[job.scene_id].record()
                 for job in all_jobs
@@ -830,7 +745,7 @@ def run_frames_stage(
             write_record()
 
     runner = _Runner(
-        client=client, editor=editor, llm=llm, run_dir=run_dir, topic=topic,
+        client=client, llm=llm, run_dir=run_dir, topic=topic,
         review=review, image_timeout=image_timeout, session_timeout=session_timeout,
         on_scene_done=on_scene_done, line=resolved_line,
     )
@@ -838,9 +753,9 @@ def run_frames_stage(
 
     workers = max(1, int(jobs)) if jobs else max(1, int(_concurrency(client)))
     log.info(
-        "[%s] %d씬 (라인 %s, 워커 %d, 검수 %s) — 지난 done %d",
+        "[%s] %d씬 (라인 %s, 워커 %d, 검수 %s) — info로 건너뛴 씬 %d, 지난 done %d",
         STAGE, len(pending), resolved_line, workers, "on" if review else "off",
-        len(done_before),
+        skipped_info, len(done_before),
     )
     if pending:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -853,7 +768,7 @@ def run_frames_stage(
         run_id=run_id, run_dir=run_dir, topic=topic, line=resolved_line,
         provider=getattr(client, "name", ""),
         outcomes=[outcomes[job.scene_id] for job in all_jobs if job.scene_id in outcomes],
-        warnings=warnings, record_path=record_path,
+        warnings=warnings, record_path=record_path, skipped_info=skipped_info,
     )
     for outcome in result.outcomes:
         for warning in outcome.warnings:
@@ -863,13 +778,12 @@ def run_frames_stage(
 
     info = {
         "scene_count": result.scene_count,
-        "info_scenes": result.info_scenes,
-        "demoted_info": result.demoted,
+        "skipped_info": skipped_info,
+        "unreviewed": result.unreviewed,
         "quadrant_swaps": result.quadrant_swaps,
         "reused_from_previous_run": len(done_before),
         "line": resolved_line,
         "provider": result.provider,
-        "editor": getattr(editor, "name", None),
         "warnings": warnings,
         "outputs": [record_path.relative_to(paths.root).as_posix()],
     }

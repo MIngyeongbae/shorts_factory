@@ -35,6 +35,12 @@ SCHEMA_DIR = Path(
     or Path(__file__).resolve().parents[3] / "specs" / "schema"
 )
 
+#: 룩을 받아 가는 두 엔진 (ADR-0075 결정 7). 값이 아니라 **어느 계약 필드를 읽는가**의
+#: 이름이다 — 문자열 자체는 어휘가 들고 있다 (ADR-0034). 이미지 엔진은 명사구 나열에
+#: 47단어 예산이 걸리고(`mj_style`), 텍스트→영상 엔진은 서술형이고 예산이 없다(`ttv_style`).
+MJ_ENGINE, TTV_ENGINE = "mj", "ttv"
+STYLE_KEYS = {MJ_ENGINE: "mj_style", TTV_ENGINE: "ttv_style"}
+
 
 @lru_cache(maxsize=None)
 def load(name: str) -> dict[str, Any]:
@@ -115,24 +121,45 @@ def mj_dialect(key: str) -> Any:
     return VOCAB["meta"]["mj_dialect"][key]
 
 
-def line_style(line: str) -> str:
-    """라인 고유 `base_style`. 없으면 전역 `meta.style.base_style`로 떨어진다.
+def line_style(line: str, *, engine: str = MJ_ENGINE) -> str:
+    """라인 고유 룩. 없으면 전역 `meta.style.base_style`로 떨어진다.
 
-    라인이 자기 룩을 질 수 있다 (ADR-0070). 어느 라인이 그러는지는 어휘가 정하고
-    코드는 묻지 않는다 — 여기서 라인 이름을 분기하면 출처가 둘이 된다 (ADR-0034).
+    라인이 자기 룩을 질 수 있고 (ADR-0070), **엔진마다 쓰는 말이 다르다** (ADR-0075
+    결정 7): `mj_style`은 MJ imagine 한 줄에 들어가는 명사구 나열이라 47단어 예산이
+    걸리고, `ttv_style`은 H3 텍스트→영상의 STYLE 절이라 서술형이고 예산이 없다. 같은
+    앵커에서 나왔지만 한 문자열로는 한쪽이 반드시 규약 밖이다 (ADR-0027).
+
+    어느 라인이 자기 룩을 지는지는 어휘가 정하고 코드는 묻지 않는다 — 여기서 라인
+    이름을 분기하면 출처가 둘이 된다 (ADR-0034).
     """
     require("video_line", line)
-    return str(VOCAB["meta"]["video_line"][line].get("base_style") or style("base_style"))
+    if engine not in STYLE_KEYS:
+        raise ValueError(f"engine은 {'/'.join(STYLE_KEYS)} 중 하나다 (받은 값: {engine!r})")
+    return str(VOCAB["meta"]["video_line"][line].get(STYLE_KEYS[engine]) or style("base_style"))
 
 
 def style_in_frames(line: str) -> bool:
-    """이 라인은 스타일을 **프레임이 지는가** (ADR-0070 규칙 1).
+    """이 라인의 **프레임을 받는 씬**은 스타일을 프레임이 지는가 (ADR-0070 규칙 1).
 
-    참이면 `[5]`가 영상 프롬프트에 STYLE 절을 싣지 않는다 — 실으면 영상 모델이 자기
-    프라이어로 그것을 해석해 first/last 프레임과 싸우고 중간 프레임이 무너진다 (실측).
+    참이면 그 씬의 영상 프롬프트에 STYLE 절이 없다 — 실으면 영상 모델이 자기 프라이어로
+    그것을 해석해 입력 프레임과 싸우고 중간 프레임이 무너진다 (실측 2026-08-25).
+
+    **라인이 아니라 씬을 묻는 값으로 읽는다** (ADR-0075 결정 3). `art` 라인의 `info`
+    씬은 프레임을 받지 않으므로 이 스위치 밖이고, 스타일을 말로 해야 한다(`ttv_style`).
+    씬 단위 판정은 `scene_takes_frames()`가 한다.
     """
     require("video_line", line)
     return bool(VOCAB["meta"]["video_line"][line].get("style_in_frames", False))
+
+
+def scene_takes_frames(line: str, *, has_info: bool) -> bool:
+    """이 씬이 프레임을 입력으로 받는가 (ADR-0075 결정 1·3).
+
+    프레임 라인이라도 `info` 씬은 H3 텍스트→영상으로 가므로 프레임이 없다 — 그 씬은
+    `[6]`을 타지 않고 프롬프트가 전체 골격이다. 옛 경로(MJ CLEAN → NB2 표시 편집 →
+    H3 first/last)는 표시 정확성은 얻었지만 사람 판독에서 졌다 (2026-08-26).
+    """
+    return style_in_frames(line) and not has_info
 
 
 def negatives(key: str) -> Any:
@@ -166,14 +193,18 @@ def video_prompt(camera: str) -> str:
         raise KeyError(f"vocab.json meta.camera.{camera}에 video_prompt가 없다") from exc
 
 
-def info_still() -> str:
-    """`art` 라인 `info` 씬의 정지 문구 (`meta.camera._info_still`, ADR-0072 결정 4).
+def info_device_phrase(device: str) -> str:
+    """정보를 지는 구도 장치의 영어 문구 (`meta.info_device.{value}.phrase`, ADR-0075 결정 5).
 
-    **카메라 워크 문구를 대체한다** — 프레임이 계측 표시의 정확성을 지므로(ADR-0071)
-    그 아래 그림이 움직이면 지시선이 가리키던 지점이 어긋난다. `static`을 쓰지 않는
-    이유는 그 문구가 피사체 자신의 움직임을 허용하기 때문이다.
+    **`[5]` 세션 프롬프트에만 실린다** — 조립된 영상 프롬프트에는 들어가지 않는다.
+    세션이 이것을 SUBJECT 서술에 녹여야 하고, 절을 하나 더 붙이는 것으로는 그림이
+    바뀌지 않기 때문이다. 정보를 지는 것은 표시가 아니라 구도다.
     """
-    return str(VOCAB["meta"]["camera"]["_info_still"])
+    require("info_device", device)
+    try:
+        return str(VOCAB["meta"]["info_device"][device]["phrase"])
+    except KeyError as exc:  # pragma: no cover - 계약 파일이 깨진 경우
+        raise KeyError(f"vocab.json meta.info_device.{device}에 phrase가 없다") from exc
 
 
 def review_standard(attempt: int) -> str:
@@ -208,20 +239,6 @@ def only_in_red_words() -> tuple[str, ...]:
 def annotation_closing() -> str:
     """RED 절의 마무리 문장 (`meta.annotation._closing`) — 라벨이 유일한 텍스트·유일한 빨강이라는 못."""
     return str(VOCAB["meta"]["annotation"]["_closing"])
-
-
-def edit_preamble() -> str:
-    """INFO 편집 지시의 보존 서두 (`meta.annotation._edit_preamble`, ADR-0071).
-
-    영상 프롬프트의 RED 절과 문구를 공유하되 서두만 다르다 — 영상은 "그려라"이고
-    편집은 "그대로 두고 얹어라"다. 문장을 코드가 짓지 않는다 (ADR-0034).
-    """
-    return str(VOCAB["meta"]["annotation"]["_edit_preamble"])
-
-
-def label_join() -> str:
-    """라벨 둘 이상을 `{label}` 한 자리에 잇는 문구 (`meta.annotation._label_join`)."""
-    return str(VOCAB["meta"]["annotation"]["_label_join"])
 
 
 def video_line_default() -> str:

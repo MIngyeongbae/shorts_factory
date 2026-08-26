@@ -759,16 +759,22 @@ def _all_scenes(paths, run_id, *, info_scene=None):
     ]
 
 
-def test_a_frame_line_ships_the_two_addresses_as_first_and_last(paths):
+def test_a_frame_line_ships_clean_as_first_and_never_a_last(paths):
+    """일반 씬만 CLEAN을 first로 받는다. **끝 그림은 이제 없다** (ADR-0075 결정 2).
+
+    NB2가 만들던 INFO가 폐기됐고, 계측 표시를 싣는 씬은 텍스트→영상이라 프레임 자체를
+    안 받는다 — `info` 씬에 프레임이 실리면 그 폐기가 안 된 것이다.
+    """
     run_id, _document = install(paths, info_scenes=(3,))
     _write_frames(paths, run_id, scenes=_all_scenes(paths, run_id, info_scene=3))
     client = FakeVideoClient()
     run(paths, run_id, client=client, line="art")
     by_scene = {call["scene_id"]: call for call in client.calls}
-    assert by_scene[3]["first_frame"].endswith("clean3.png")
-    assert by_scene[3]["last_frame"] == "https://pub-x.r2.dev/info.png"
-    # info가 없는 씬은 endImage 없이 간다 — 부재가 정상이다 (D-3).
-    assert by_scene[1]["first_frame"] and by_scene[1]["last_frame"] is None
+    # info 씬은 프레임을 안 받는다 — 텍스트→영상이다.
+    assert by_scene[3]["first_frame"] is None and by_scene[3]["last_frame"] is None
+    # 일반 씬은 CLEAN 한 장을 first로 받고, 끝 그림은 어느 씬에도 없다.
+    assert by_scene[1]["first_frame"].endswith("clean1.png")
+    assert all(call["last_frame"] is None for call in client.calls)
 
 
 def test_a_text_to_video_line_ships_no_frames(paths):

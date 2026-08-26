@@ -6,7 +6,6 @@
 
 - **subject**: $subject
 - **visual_goal**: $visual_goal
-- **화면에 얹힐 라벨**: $labels
 
 # 지금 쓰고 있는 소재 단락
 

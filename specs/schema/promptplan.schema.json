@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "promptplan.schema.json",
   "title": "[5. prompt] 세션 산출 — 씬별 샷 서술 (ADR-0060)",
-  "description": "세션이 쓰는 것은 프롬프트 전체가 아니라 SUBJECT 단락·카메라 착지·RED 기하다. 골격(FORMAT·STAGING·CAMERA 문구·NEGATIVE)은 코드가 vocab.json에서 조립한다 (ADR-0034). 전부 영어·ASCII(패턴) — 한국어가 영상 모델에 가면 글자로 그려진다 (석빙고 1차, ADR-0060 맥락 1). 길이(minLength/maxLength, 문자 수)는 원카랩 참조 프롬프트의 SUBJECT(≈560자)·RED(≈420자) 안팎에서 잡은 초기값이다 — 되돌릴 조건 1. 라벨 문자열이 red_prompt에 따옴표째 정확히 들어 있는지, info·shot2 유무와 필드 유무가 맞는지는 코드가 씬 계약과 대조한다.",
+  "description": "세션이 쓰는 것은 프롬프트 전체가 아니라 SUBJECT 단락·카메라 착지·RED 기하다. 골격(FORMAT·STAGING·CAMERA 문구·NEGATIVE)은 코드가 vocab.json에서 조립한다 (ADR-0034). **엔진별 완성본(`mj_image_prompt`·`video_prompt`)도 코드가 만든다** — 세션은 원료만 쓴다 (ADR-0075 결정 3). 전부 영어·ASCII(패턴) — 한국어가 영상 모델에 가면 글자로 그려진다 (석빙고 1차, ADR-0060 맥락 1). 길이(minLength/maxLength, 문자 수)는 원카랩 참조 프롬프트의 SUBJECT(≈560자)·RED(≈420자) 안팎에서 잡은 초기값이다 — 되돌릴 조건 1. 라벨 문자열이 red_prompt에 따옴표째 정확히 들어 있는지, info·shot2 유무와 필드 유무가 맞는지는 코드가 씬 계약과 대조한다.",
   "type": "object",
   "required": [
     "scenes"
@@ -57,8 +57,8 @@
           "minLength": 100,
           "maxLength": 400,
           "pattern": "^[ -~]+$",
-          "description": "프레임을 입력으로 받는 라인만 (ADR-0071). CLEAN 정지 이미지용 **명사구 나열 한 줄** — 서술 문장이 아니다. 같은 씬의 subject_prompt가 말하는 것을 MJ 방언으로 압축한 것이고, 콜론·세미콜론·줄바꿈을 쓰지 않는다 (ADR-0027). **글자·라벨·빨강을 쓰지 않는다** — CLEAN에는 문자가 없고 계측 표시는 [6]이 편집으로 얹는다. 단어 수 상한은 여기가 아니라 vocab.json meta.mj_dialect의 예산에서 그 라인의 base_style 몫을 뺀 나머지이고, 코드가 조립한 한 줄로 검사한다 (ADR-0034·0069). 여기 길이는 그 예산이 들어갈 수 있는 글자 수 범위일 뿐이다.",
-          "$comment": "art 라인 기준 실측 몫은 28~38단어 (예산 75~85 − base_style 47)."
+          "description": "프레임을 입력으로 받는 **씬**만 (ADR-0071, ADR-0075가 라인 단위에서 씬 단위로 좁혔다) — 즉 `info`가 없는 씬이다. `info` 씬은 H3 텍스트→영상이라 프레임이 없고 이 필드도 없다. CLEAN 정지 이미지용 **명사구 나열 한 줄** — 서술 문장이 아니다. 같은 씬의 subject_prompt가 말하는 것을 MJ 방언으로 압축한 것이고, 콜론·세미콜론·줄바꿈을 쓰지 않는다 (ADR-0027). **글자·라벨·빨강을 쓰지 않는다** — CLEAN에는 문자가 없다. 단어 수 상한은 여기가 아니라 vocab.json meta.mj_dialect의 예산에서 그 라인의 `mj_style` 몫을 뺀 나머지이고, 코드가 조립한 `mj_image_prompt` 한 줄로 검사한다 (ADR-0034·0069·0075). 여기 길이는 그 예산이 들어갈 수 있는 글자 수 범위일 뿐이다.",
+          "$comment": "art 라인 기준 실측 몫은 28~38단어 (예산 75~85 − mj_style 47)."
         },
         "subject_prompt_shot2": {
           "type": "string",

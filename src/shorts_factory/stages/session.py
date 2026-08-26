@@ -143,11 +143,28 @@ def format_vocab() -> str:
         )
     )
 
+    blocks.append(
+        "\n## info_device (info 씬에서 **정보를 지는 구도 장치** — ADR-0075 결정 5)\n"
+    )
+    blocks.append(
+        "\n".join(
+            f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("info_device")
+        )
+    )
+    blocks.append(
+        "\n`info` 씬의 정보는 빨간 표시가 아니라 **그림 자체**가 진다. 표시를 떼어도 그림이 "
+        "여전히 그 씬의 `visual_goal`을 말해야 하고, 이 목록이 그 방법이다. 소재에 맞는 "
+        "장치가 있으면 `info.device`에 고르고, 없으면 비운다 — 억지로 고르지 마라.\n"
+    )
+
     blocks.append("\n## annotation (info의 계측 표시 방식 — ADR-0056 결정 3)\n")
     blocks.append(
         "\n".join(
             f"- `{value}` — {item.get('gloss', '')}" for value, item in _entries("annotation")
         )
+    )
+    blocks.append(
+        "\n표시는 **구도 위의 주석**이다 (ADR-0075) — 이것 하나가 정보를 다 지게 두지 마라.\n"
     )
 
     blocks.append("\n## unit (info.labels에 쓰는 단위 기호 — ASCII만)\n")

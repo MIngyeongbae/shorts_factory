@@ -133,14 +133,14 @@ def test_skeleton_order_and_sources(paths, install):
 
     info_scene = next(s for s in result.prompts["scenes"] if s["scene_id"] == 1)
     plain_scene = next(s for s in result.prompts["scenes"] if s["scene_id"] == 2)
-    assert section_names(info_scene["prompt"]) == list(SECTIONS)
-    assert section_names(plain_scene["prompt"]) == [s for s in SECTIONS if s != "RED"]
-    assert SECONDS_PLACEHOLDER in line_of(info_scene["prompt"], "FORMAT")
-    assert line_of(info_scene["prompt"], "RED").endswith(vocab.annotation_closing())
-    assert '"221 m"' in line_of(info_scene["prompt"], "RED")
+    assert section_names(info_scene["video_prompt"]) == list(SECTIONS)
+    assert section_names(plain_scene["video_prompt"]) == [s for s in SECTIONS if s != "RED"]
+    assert SECONDS_PLACEHOLDER in line_of(info_scene["video_prompt"], "FORMAT")
+    assert line_of(info_scene["video_prompt"], "RED").endswith(vocab.annotation_closing())
+    assert '"221 m"' in line_of(info_scene["video_prompt"], "RED")
     assert info_scene["has_info"] and not plain_scene["has_info"]
     # 착지는 어휘의 워크 문구 뒤에 붙는다
-    camera = line_of(info_scene["prompt"], "CAMERA")
+    camera = line_of(info_scene["video_prompt"], "CAMERA")
     assert camera.startswith("CAMERA: " + vocab.video_prompt(contract["scenes"][0]["camera"]).rstrip("."))
     assert "arriving on the key part of scene 1" in camera
     # 글자 금지는 info 없는 씬의 NEGATIVE에만
@@ -151,10 +151,10 @@ def test_subject_paragraph_is_the_sessions_text(paths, install):
     contract = install(PISA)
     plan = fake_plan(contract, subject="A leaning marble bell tower on a flat neutral studio ground, ")
     result = run_prompt_stage(PISA, llm=FakeLLM(plan), paths=paths)
-    subject = line_of(result.prompts["scenes"][0]["prompt"], "SUBJECT")
+    subject = line_of(result.prompts["scenes"][0]["video_prompt"], "SUBJECT")
     assert subject.startswith("SUBJECT: A leaning marble bell tower")
     # 한국어 subject·앵커는 프롬프트에 실리지 않는다 (ADR-0060 결정 5)
-    assert not any(ord(ch) > 127 for ch in result.prompts["scenes"][0]["prompt"])
+    assert not any(ord(ch) > 127 for ch in result.prompts["scenes"][0]["video_prompt"])
 
 
 def test_direction_still_comes_from_the_contract(paths, install):
@@ -170,7 +170,7 @@ def test_direction_still_comes_from_the_contract(paths, install):
     assert first["framing_source"] == FROM_DEFAULT and first["staging_source"] == FROM_DEFAULT
     assert second["framing"] == "present_wide" and second["framing_source"] == FROM_SCENE
     assert second["staging"] == "location" and second["staging_source"] == FROM_SCENE
-    assert line_of(second["prompt"], "STAGING") == "STAGING: " + vocab.phrase("staging", "location")
+    assert line_of(second["video_prompt"], "STAGING") == "STAGING: " + vocab.phrase("staging", "location")
     # 픽스처의 다른 씬들도 staging을 비워 두었을 수 있다 — 첫 씬이 기본값으로 떨어진 것만 확인한다
     assert result.default_framed_scenes >= 1 and result.default_staged_scenes >= 1
 

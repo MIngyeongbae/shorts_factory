@@ -1,7 +1,8 @@
 {
   "judge": "human",
   "decision": "go",
-  "video_line": "local",
-  "notes": "사람 일괄 지시(2026-08-24, \"새 토픽 6개를 2부 끝까지 진행해서 쇼츠를 만들어\"). 영상 라인은 local(ComfyUI + MiniMax H3, 변동비 0). 축별 점수는 매기지 않았다 — 일괄 go라 scores·confidence를 비운다.",
-  "judged_at": "2026-08-24T10:05:00+09:00"
+  "video_line": "art",
+  "notes": "사람 일괄 지시(2026-08-24, \"새 토픽 6개를 2부 끝까지 진행해서 쇼츠를 만들어\"). 축별 점수는 매기지 않았다 — 일괄 go라 scores·confidence를 비운다. 2026-08-26 local→art로 전환(사람 결정) — 18씬 중 info 12개로 비율이 유독 높은데, local(H3)은 info 씬(계측 표시)을 못 그린다는 게 worklog(45)에서 실측으로 확인됐다 (사인파 파장을 못 가르고, 좌/우안 지시선이 반대로 붙는다). 그 한계 때문에 만든 art(MJ+NB2) 라인으로 옮긴다.",
+  "judged_at": "2026-08-24T10:05:00+09:00",
+  "video_line_changed_at": "2026-08-26T00:00:00+09:00"
 }

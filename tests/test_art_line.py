@@ -2,8 +2,10 @@
 
 - MJ 한 줄의 형식·예산은 `vocab.json` `meta.mj_dialect`에만 있다 (ADR-0034). 코드는 읽는다
 - 어기면 **제출 전에** 멈춘다 — 나중에 실패하면 사유가 "3분 타임아웃"으로 와서 원인이 안 보인다
-- 라인이 자기 룩을 진다 (`video_line.art.base_style`) — `local`·`api`는 전역 문자열 그대로
-- `art`는 스타일을 프레임이 지므로 영상 프롬프트에 STYLE 절을 싣지 않는다
+- 라인이 자기 룩을 지고 **엔진마다 말이 다르다** (`mj_style`·`ttv_style`, ADR-0075) —
+  `local`·`api`는 전역 문자열 그대로
+- `art`의 **일반 씬**은 스타일을 프레임이 지므로 영상 프롬프트에 STYLE 절이 없다.
+  같은 라인의 `info` 씬은 텍스트→영상이라 STYLE 절이 있다 (ADR-0075 결정 3)
 - MJ 영상 어댑터는 **공개 https 주소만** 받는다 (로컬 주소는 3분 뒤 `Invalid link`로 죽는다)
 """
 
@@ -28,7 +30,7 @@ SUBJECT = (
     "studio floor, low three-quarter angle"
 )
 #: 예산을 채우는 스타일 픽스처. 짧은 문자열은 계약이 정당히 거절하므로 실물 길이를 쓴다.
-STYLE = vocab.line_style("art")
+STYLE = vocab.line_style("art", engine=vocab.MJ_ENGINE)
 #: `ftyp` 박스가 있어야 `GeneratedClip`이 받는다 — 어댑터가 JSON과 영상을 가르는 검사다.
 MP4 = bytes([0, 0, 0, 24]) + b"ftypmp42" + bytes(16)
 
@@ -44,8 +46,23 @@ def test_budget_comes_from_the_vocabulary_not_the_code():
 
 def test_art_line_carries_its_own_base_style():
     """라인이 자기 룩을 진다 — 전역을 대체하지 않는다 (ADR-0070)."""
-    assert vocab.line_style("art") != vocab.style("base_style")
+    assert vocab.line_style("art", engine=vocab.MJ_ENGINE) != vocab.style("base_style")
+    assert vocab.line_style("art", engine=vocab.TTV_ENGINE) != vocab.style("base_style")
     assert vocab.line_style("local") == vocab.style("base_style")
+
+
+def test_the_two_engines_get_different_wording():
+    """같은 앵커에서 나오지만 **쓰는 말이 엔진의 것**이다 (ADR-0075 결정 7).
+
+    MJ는 명사구 나열이라 47단어 예산이 걸리고, H3 TTV는 서술형이라 그 예산이 없다.
+    한 문자열로는 한쪽이 반드시 규약 밖이다 (ADR-0027).
+    """
+    mj = vocab.line_style("art", engine=vocab.MJ_ENGINE)
+    ttv = vocab.line_style("art", engine=vocab.TTV_ENGINE)
+    assert mj != ttv
+    # MJ 방언은 문장을 만들지 않는다 — 마침표로 끝나는 서술형이면 규약 밖이다.
+    assert not mj.rstrip().endswith(".")
+    assert ttv.rstrip().endswith(".")
 
 
 def test_only_art_lets_the_frames_carry_the_style():
@@ -60,9 +77,9 @@ def test_only_art_lets_the_frames_carry_the_style():
 
 def test_subject_comes_before_style():
     """어순이 곧 가중치다 — 뒤집으면 소재가 죽는다 (실측)."""
-    style = vocab.line_style("art")
+    style = vocab.line_style("art", engine=vocab.MJ_ENGINE)
     line = vr.build_mj_prompt(
-        subject=SUBJECT, base_style=style,
+        subject=SUBJECT, mj_style=style,
         negatives=vr.negative_items(has_info=False),
     )
     body = line.split("--", 1)[0]
@@ -71,7 +88,7 @@ def test_subject_comes_before_style():
 
 
 def test_flags_follow_the_mj_dialect():
-    line = vr.build_mj_prompt(subject=SUBJECT, base_style=STYLE, negatives=["a", "b"])
+    line = vr.build_mj_prompt(subject=SUBJECT, mj_style=STYLE, negatives=["a", "b"])
     assert f"--ar {vr.ASPECT_RATIO}" in line
     assert "--no a, b" in line
 
@@ -79,7 +96,7 @@ def test_flags_follow_the_mj_dialect():
 def test_budget_is_measured_on_the_body_not_the_flags():
     """플래그(`--no` 15항목)는 예산에 안 든다 — MJ가 무시하는 것은 본문의 꼬리다."""
     line = vr.build_mj_prompt(
-        subject=SUBJECT, base_style=vocab.line_style("art"),
+        subject=SUBJECT, mj_style=vocab.line_style("art", engine=vocab.MJ_ENGINE),
         negatives=vr.negative_items(has_info=False),
     )
     assert vr.MJ_WORDS_MIN <= vr.mj_body_words(line) <= vr.MJ_WORDS_MAX
@@ -88,14 +105,14 @@ def test_budget_is_measured_on_the_body_not_the_flags():
 
 def test_too_short_is_refused_before_submit():
     with pytest.raises(vr.MJPromptError):
-        vr.build_mj_prompt(subject="a bridge", base_style="watercolour", negatives=[])
+        vr.build_mj_prompt(subject="a bridge", mj_style="watercolour", negatives=[])
 
 
 def test_too_long_is_refused_before_submit():
     with pytest.raises(vr.MJPromptError):
         vr.build_mj_prompt(
             subject=" ".join(["word"] * (vr.MJ_WORDS_MAX + 10)),
-            base_style=STYLE, negatives=[],
+            mj_style=STYLE, negatives=[],
         )
 
 
@@ -108,7 +125,7 @@ def test_multi_prompt_is_refused():
 def test_colons_are_flattened_to_commas():
     """MJ는 `:`·줄바꿈을 구분자로 읽지 않아 라벨이 화면 지시로 섞인다 (ADR-0027)."""
     line = vr.build_mj_prompt(
-        subject=SUBJECT, base_style="STYLE: " + STYLE.replace(", ", "; ", 3),
+        subject=SUBJECT, mj_style="STYLE: " + STYLE.replace(", ", "; ", 3),
         negatives=[],
     )
     body = line.split("--", 1)[0]

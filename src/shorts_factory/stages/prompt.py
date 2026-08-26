@@ -61,8 +61,11 @@ from ..schemas.visual_rules import (
     FROM_DEFAULT,
     RESOLUTION,
     STAGINGS,
+    MJPromptError,
+    build_mj_prompt,
     build_video_prompt,
     mj_subject_budget,
+    negative_items,
     resolve_framing,
     resolve_staging,
     schema_errors,
@@ -201,6 +204,14 @@ def scene_brief(scene: dict[str, Any]) -> dict[str, Any]:
                 "phrase": ANNOTATIONS.get(str(info.get("annotation")), ""),
             },
         }
+        # 정보를 지는 구도 장치 (ADR-0075 결정 5). 선택이라 없으면 싣지 않는다 —
+        # 그때는 지금까지대로 표시만으로 간다 (D-3).
+        device = str(info.get("device") or "")
+        if device:
+            brief["info"]["device"] = {
+                "value": device,
+                "phrase": vocab.info_device_phrase(device),
+            }
     shot2 = scene.get("shot2") or None
     if shot2:
         brief["shot2"] = {
@@ -315,13 +326,24 @@ def build_prompts(
 ) -> dict[str, Any]:
     """씬 계약 + 세션 단락 → prompts.json 문서. `plan`은 `promptplan.validate_promptplan`을 통과한 것.
 
-    `line`이 프레임을 입력으로 받는 라인이면(ADR-0070·0071) 둘이 달라진다: FORMAT 절에
-    **스타일 문자열을 안 싣고**(스타일은 프레임이 진다), 씬마다 `mj_subject`를 나른다.
+    **프레임을 받는지는 라인이 아니라 씬이 정한다** (ADR-0075 결정 3). 프레임 라인의
+    일반 씬은 프레임이 그림을 지므로 영상 프롬프트가 카메라 워크 구절 하나이고 MJ 한 줄
+    (`mj_image_prompt`)을 함께 나른다. 같은 라인의 `info` 씬은 텍스트→영상이라 프레임이
+    없으므로 **전체 골격 + STYLE 절**(`ttv_style`)을 받고 MJ를 타지 않는다.
+
     어느 라인이 그런지는 어휘가 정하고 여기서 라인 이름을 분기하지 않는다 (ADR-0034).
     """
     planned = {int(e["scene_id"]): e for e in plan["scenes"]}
-    frames_line = bool(line) and vocab.style_in_frames(str(line))
-    look = vocab.line_style(str(line)) if line else BASE_STYLE
+    #: 영상 프롬프트의 STYLE 절이 쓰는 룩. 프레임 라인이라도 `info` 씬은 이것을 받는다.
+    video_look = (
+        vocab.line_style(str(line), engine=vocab.TTV_ENGINE) if line else BASE_STYLE
+    )
+    #: MJ 한 줄이 쓰는 룩 — 프레임을 받는 씬이 있는 라인에만 있다.
+    mj_look = (
+        vocab.line_style(str(line), engine=vocab.MJ_ENGINE)
+        if line and vocab.style_in_frames(str(line))
+        else None
+    )
     out_scenes: list[dict[str, Any]] = []
     for scene in contract["scenes"]:
         sid = int(scene["scene_id"])
@@ -329,6 +351,10 @@ def build_prompts(
         token, framing_source = resolve_framing(scene)
         staging, staging_source = resolve_staging(scene)
         info = scene.get("info") or None
+        # 이 씬이 프레임을 받는가 — 라인이 프레임 라인이고 `info`가 없을 때만이다.
+        scene_frames = bool(line) and vocab.scene_takes_frames(
+            str(line), has_info=info is not None
+        )
         try:
             prompt_text, negative_text = build_video_prompt(
                 subject_prompt=str(entry[promptplan.SUBJECT_FIELD]),
@@ -336,7 +362,8 @@ def build_prompts(
                 camera=scene["camera"],
                 camera_target=str(entry.get(promptplan.CAMERA_TARGET_FIELD, "")),
                 red_prompt=str(entry[promptplan.RED_FIELD]) if info else None,
-                frames=frames_line,
+                frames=scene_frames,
+                style="" if scene_frames else video_look,
             )
         except ValueError as exc:
             raise PromptStageError(f"씬 {sid}: {exc}") from exc
@@ -350,7 +377,7 @@ def build_prompts(
             "framing": token,
             "framing_source": framing_source,
             "has_info": info is not None,
-            "prompt": prompt_text,
+            "video_prompt": prompt_text,
             "negative_prompt": negative_text,
             # 세션 단락을 조립본 옆에 그대로 싣는다 (ADR-0067) — `[7]`의 고쳐쓰기 재생성이
             # 부분만 고쳐 같은 골격에 다시 얹으려면 부분이 남아 있어야 한다. 판단은 없다.
@@ -361,10 +388,26 @@ def build_prompts(
         }
         if info:
             record[promptplan.RED_FIELD] = str(entry[promptplan.RED_FIELD])
+            # 정보를 지는 구도 장치 (ADR-0075 결정 5) — 씬 계약의 값을 그대로 나른다.
+            # `[7]`의 검수가 "그 장치가 실제로 보이는가"를 볼 수 있는 자리다.
+            if info.get("device"):
+                record["info_device"] = str(info["device"])
         if entry.get(promptplan.SHOT2_FIELD):
             record[promptplan.SHOT2_FIELD] = str(entry[promptplan.SHOT2_FIELD])
         if entry.get(promptplan.MJ_SUBJECT_FIELD):
             record[promptplan.MJ_SUBJECT_FIELD] = str(entry[promptplan.MJ_SUBJECT_FIELD])
+            # MJ 한 줄을 여기서 완성해 싣는다 (ADR-0075 결정 3) — 예산·방언 검사가 재는
+            # 대상은 조립본이고, 지금까지는 `mj_subject`만 재고 최종 문자열은 아무도
+            # 안 쟀다. `[6]`의 고쳐쓰기는 원료를 고쳐 이 함수와 같은 조립을 다시 한다.
+            if scene_frames and mj_look:
+                try:
+                    record["mj_image_prompt"] = build_mj_prompt(
+                        subject=str(entry[promptplan.MJ_SUBJECT_FIELD]),
+                        mj_style=mj_look,
+                        negatives=negative_items(has_info=False),
+                    )
+                except MJPromptError as exc:
+                    raise PromptStageError(f"씬 {sid}: MJ 한 줄이 계약을 어겼다 — {exc}") from exc
         if scene.get("cast"):
             record["cast"] = list(scene["cast"])
         out_scenes.append(record)
@@ -374,9 +417,11 @@ def build_prompts(
         "source_script": source_script,
         **({"line": str(line)} if line else {}),
         "style": {
-            # 이 run이 실제로 그리는 룩. 라인이 자기 base_style을 들면 그것이다
-            # (ADR-0070) — 정본은 여전히 vocab이고 여기는 기록이다.
-            "base_style": look,
+            # 이 run이 실제로 그리는 룩 — 정본은 여전히 vocab이고 여기는 기록이다.
+            # 엔진마다 쓰는 말이 다르므로 둘이다 (ADR-0075 결정 7): `base_style`은 영상
+            # 프롬프트의 STYLE 절이 받은 것, `mj_style`은 MJ 한 줄이 받은 것이다.
+            "base_style": video_look,
+            **({"mj_style": mj_look} if mj_look else {}),
             "composition": COMPOSITION,
             "aspect_ratio": ASPECT_RATIO,
             "resolution": RESOLUTION,

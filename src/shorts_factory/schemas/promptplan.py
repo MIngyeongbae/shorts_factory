@@ -69,25 +69,35 @@ def _red_words_outside_red(text: str) -> list[str]:
     return _words_in(text, vocab.only_in_red_words())
 
 
-def _mj_errors(sid: int, entry: dict[str, Any], *, line: str | None) -> list[str]:
-    """`mj_subject`의 유무와 예산 (ADR-0071).
+def _mj_errors(
+    sid: int, entry: dict[str, Any], *, line: str | None, has_info: bool
+) -> list[str]:
+    """`mj_subject`의 유무와 예산 (ADR-0071, ADR-0075가 씬 단위로 좁혔다).
 
     예산은 여기서 세지 않는다 — **조립한 한 줄**을 `visual_rules.check_mj_prompt`가 잰다.
-    단어 수 상한이 라인의 `base_style` 길이에 딸린 값이라, 스키마에 적으면 라인마다
+    단어 수 상한이 라인의 `mj_style` 길이에 딸린 값이라, 스키마에 적으면 라인마다
     다른 값을 계약 하나가 들게 된다 (ADR-0034).
+
+    **프레임을 받는지는 씬이 정한다** (ADR-0075 결정 1·3). 프레임 라인이라도 `info` 씬은
+    텍스트→영상이라 MJ를 타지 않으므로 `mj_subject`가 **없어야** 한다.
     """
     from .visual_rules import MJPromptError, build_mj_prompt, negative_items
 
     if line is None:
         return []
-    wanted = vocab.style_in_frames(line)
+    wanted = vocab.scene_takes_frames(line, has_info=has_info)
     text = str(entry.get(MJ_SUBJECT_FIELD) or "").strip()
     if wanted and not text:
         return [
-            f"scenes/{sid}: 라인 '{line}'은 CLEAN 이미지를 사는데 {MJ_SUBJECT_FIELD}가 없다 "
-            "— MJ에 보낼 소재 한 줄이 필요하다 (ADR-0071)"
+            f"scenes/{sid}: 라인 '{line}'은 이 씬의 CLEAN 이미지를 사는데 {MJ_SUBJECT_FIELD}가 "
+            "없다 — MJ에 보낼 소재 한 줄이 필요하다 (ADR-0071)"
         ]
     if not wanted:
+        if text and has_info and vocab.style_in_frames(line):
+            return [
+                f"scenes/{sid}: info 씬인데 {MJ_SUBJECT_FIELD}가 있다 — info 씬은 텍스트→영상이라 "
+                "MJ를 타지 않는다 (ADR-0075 결정 1)"
+            ]
         if text:
             return [
                 f"scenes/{sid}: 라인 '{line}'은 프레임을 안 받는데 {MJ_SUBJECT_FIELD}가 있다 "
@@ -97,7 +107,7 @@ def _mj_errors(sid: int, entry: dict[str, Any], *, line: str | None) -> list[str
     try:
         build_mj_prompt(
             subject=text,
-            base_style=vocab.line_style(line),
+            mj_style=vocab.line_style(line, engine=vocab.MJ_ENGINE),
             negatives=negative_items(has_info=False),
         )
     except MJPromptError as exc:
@@ -162,7 +172,9 @@ def cross_errors(
                     f"scenes/{sid}: {field}가 계측 표시를 언급한다 ({', '.join(leaked)}) — 빨강·화살표·라벨은 "
                     f"{RED_FIELD}에만 쓴다. RED를 뗀 강등 재생성에서 빨강이 남는다 (ADR-0060)"
                 )
-        errors.extend(_mj_errors(sid, entry, line=line))
+        errors.extend(
+            _mj_errors(sid, entry, line=line, has_info=bool(scene.get("info")))
+        )
         bad_words = _forbidden_camera_words(str(entry.get(CAMERA_TARGET_FIELD, "")))
         if bad_words:
             errors.append(

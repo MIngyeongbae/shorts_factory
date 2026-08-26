@@ -207,9 +207,14 @@ class SceneJob:
     #: 온 **공개 https 주소**다. 그 라인이 아니면 둘 다 None이고 텍스트→영상으로 간다.
     first_frame: str | None = None
     last_frame: str | None = None
-    #: 프레임을 입력으로 받는 라인인가 (ADR-0072). 프롬프트 규약이 라인마다 다르므로
-    #: 고쳐쓰기·강등 재조립도 이 값을 따라간다 — 이 라인은 초 수 자리도 없다.
-    frames_line: bool = False
+    #: **이 씬이** 프레임을 입력으로 받는가 (ADR-0075 결정 3이 ADR-0072의 라인 단위를
+    #: 씬 단위로 좁혔다). 프롬프트 규약이 여기서 갈리므로 고쳐쓰기·강등 재조립도 이 값을
+    #: 따라간다 — 프레임을 받는 씬은 카메라 구절 하나라 초 수 자리도 없고, `info` 씬은
+    #: 텍스트→영상이라 전체 골격에 STYLE 절까지 있다.
+    takes_frames: bool = False
+    #: 이 씬의 영상 프롬프트가 쓰는 룩 (`ttv_style`). 프레임을 받는 씬은 빈 문자열이다 —
+    #: 스타일을 프레임이 지므로 말로 다시 시키지 않는다 (ADR-0070 규칙 1).
+    style: str = ""
 
 
 def build_jobs(
@@ -229,6 +234,9 @@ def build_jobs(
     """
     warnings: list[str] = []
     low, high = seconds_range
+    #: 이 run의 영상 룩 — `[5]`가 그 라인의 `ttv_style`을 적어 둔 값이다 (ADR-0075 결정 7).
+    #: 고쳐쓰기 재조립이 STYLE 절을 되살릴 때 쓴다. 정본은 vocab이고 여기는 그 기록이다.
+    video_style = str((prompts.get("style") or {}).get("base_style") or "")
     by_prompt = {int(s["scene_id"]): s for s in prompts.get("scenes", [])}
     contract_scenes = {int(s["scene_id"]): s for s in contract.get("scenes", [])}
 
@@ -266,10 +274,15 @@ def build_jobs(
         info = scene.get("info") or None
         labels = [str(label) for label in (info or {}).get("labels", [])]
         has_info = bool(entry.get("has_info")) or bool(info)
-        frame_urls = _frame_urls(sid, frames)
+        # **프레임을 받는지는 씬이 정한다** (ADR-0075 결정 1·3). 프레임 라인이라도 `info`
+        # 씬은 텍스트→영상으로 가므로 `[6]`이 그 씬의 CLEAN을 만들지 않았다.
+        takes_frames = frames is not None and not has_info
+        frame_urls = _frame_urls(sid, frames) if takes_frames else (None, None)
         jobs.append(SceneJob(
             scene_id=sid,
-            prompt=_with_seconds(str(entry["prompt"]), seconds, frames_line=frames is not None),
+            prompt=_with_seconds(
+                str(entry["video_prompt"]), seconds, takes_frames=takes_frames
+            ),
             negative_prompt=str(entry.get("negative_prompt") or ""),
             has_info=has_info,
             labels=labels,
@@ -295,15 +308,17 @@ def build_jobs(
             camera=str(entry.get("camera") or scene.get("camera") or ""),
             first_frame=frame_urls[0],
             last_frame=frame_urls[1],
-            frames_line=frames is not None,
+            takes_frames=takes_frames,
+            style="" if takes_frames else video_style,
         ))
     return jobs, warnings
 
 
-def _with_seconds(prompt: str, seconds: int, *, frames_line: bool) -> str:
-    """FORMAT 절의 초 수를 채운다. **프레임 라인은 그 절이 없다** (ADR-0072 결정 3) —
-    화면비도 길이도 입력 이미지와 엔진이 정하므로 프롬프트가 초를 말하지 않는다."""
-    if frames_line:
+def _with_seconds(prompt: str, seconds: int, *, takes_frames: bool) -> str:
+    """FORMAT 절의 초 수를 채운다. **프레임을 받는 씬은 그 절이 없다** (ADR-0072 결정 3) —
+    화면비도 길이도 입력 이미지와 엔진이 정하므로 프롬프트가 초를 말하지 않는다.
+    같은 라인의 `info` 씬은 텍스트→영상이라 FORMAT 절이 있고 여기서 채운다 (ADR-0075)."""
+    if takes_frames:
         return prompt
     return fill_seconds(prompt, seconds)
 
@@ -311,10 +326,11 @@ def _with_seconds(prompt: str, seconds: int, *, frames_line: bool) -> str:
 def _frame_urls(
     scene_id: int, frames: dict[int, dict[str, Any]] | None
 ) -> tuple[str | None, str | None]:
-    """씬의 `(first, last)` 주소. 프레임 라인이 아니면 `(None, None)`이다 (ADR-0071).
+    """씬의 `(first, last)` 주소. 프레임을 받는 씬에서만 부른다 (ADR-0071·0075).
 
-    `last`(INFO)의 부재는 정상이다 — `info`가 없는 씬이거나 검수에 걸려 강등된 씬이고,
-    그러면 `endImage` 없이 MJ가 알아서 움직인다. `first`(CLEAN)의 부재는 정상이 아니다.
+    **`last`는 언제나 None이다** — 끝 그림(INFO)은 NB2가 만들던 것이고 ADR-0075 결정 2가
+    그 경로를 폐기했다. 계측 표시를 싣는 씬은 이제 텍스트→영상이라 프레임 자체를 안 받는다.
+    `first`(CLEAN)의 부재는 정상이 아니다 — `[6]`을 먼저 돌려야 한다.
     """
     if frames is None:
         return None, None
@@ -325,8 +341,7 @@ def _frame_urls(
             f"씬 {scene_id}의 CLEAN 주소가 {FRAMES_FILE}에 없다 — [6]을 먼저 돌려야 한다 "
             "(프레임을 입력으로 받는 라인이다, ADR-0071)"
         )
-    info = str((entry or {}).get("info_url") or "") or None
-    return clean, info
+    return clean, None
 
 
 @dataclass
@@ -585,15 +600,16 @@ class _Runner:
             return gate
 
     def engine_for(self, job: SceneJob, variant: str) -> VideoClient:
-        """이 씬·이 변종을 만들 엔진 (ADR-0072 결정 5).
+        """이 씬·이 변종을 만들 엔진 (ADR-0072 결정 5, ADR-0075 결정 1이 엔진을 TTV로 바꿨다).
 
-        `info` 엔진이 있고 그 씬이 계측 표시를 **실제로 실을 때만** 그쪽으로 간다 —
-        RED를 뺀 강등 변종(`no_red`)은 표시가 없으므로 일반 엔진으로 돌아간다. `[6]`이
-        INFO를 못 만들어 강등된 씬(`last_frame` 없음)도 마찬가지다: 보간할 끝 그림이 없다.
+        `info` 엔진이 있고 그 씬이 계측 표시를 **실제로 실을 때만** 그쪽으로 간다.
+        RED를 뺀 강등 변종(`no_red`)은 표시가 없으므로 일반 엔진으로 돌아가는데, 그 씬은
+        프레임을 받지 않아 CLEAN이 없다 — 그래서 강등된 뒤에도 텍스트→영상이어야 한다.
+        `takes_frames`가 그것을 가른다: 프레임을 안 받는 씬은 언제나 `info` 엔진이다.
         """
-        if self.info_client is None or variant != VARIANT_INFO:
+        if self.info_client is None:
             return self.client
-        if not job.last_frame:
+        if job.takes_frames:
             return self.client
         return self.info_client
 
@@ -842,11 +858,12 @@ class _Runner:
                 camera=job.camera,
                 camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD, ""),
                 red_prompt=parts.get(promptplan.RED_FIELD),
-                frames=job.frames_line,
+                frames=job.takes_frames,
+                style="" if job.takes_frames else job.style,
             )
         except (ValueError, KeyError):
             return None
-        return _with_seconds(prompt, job.seconds, frames_line=job.frames_line), negative
+        return _with_seconds(prompt, job.seconds, takes_frames=job.takes_frames), negative
 
     # --- 사다리 -----------------------------------------------------------
 
@@ -867,10 +884,7 @@ class _Runner:
         for variant in kinds:
             if variant == VARIANT_NO_RED:
                 try:
-                    prompt, negative = demote_info(
-                        prompt, negative,
-                        camera=job.camera if job.frames_line else None,
-                    )
+                    prompt, negative = demote_info(prompt, negative)
                 except ValueError as exc:
                     outcome.warnings.append(f"RED 절 강등 변종을 만들 수 없다: {exc}")
                     break
@@ -1238,11 +1252,6 @@ def run_videogen_stage(
         sleep=sleep, backoff=backoff, on_scene_done=on_scene_done,
         gen_slots=gen_slots, review_slots=review_slots, info_client=info_client,
     )
-    if info_client is not None and not info_client.accepts_frames:
-        raise VideogenStageError(
-            f"info 엔진 {info_client.name!r}이 프레임을 받지 않는다 — 계측 표시를 이을 수 없다 "
-            "(ADR-0072 결정 5)"
-        )
     (run_dir / REVIEW_DIR).mkdir(parents=True, exist_ok=True)
     (run_dir / CLIPS_DIR).mkdir(parents=True, exist_ok=True)
     write_records()

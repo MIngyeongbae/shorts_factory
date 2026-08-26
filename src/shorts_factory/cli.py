@@ -89,7 +89,6 @@ from .stages.videogen import (
 from .schemas import vocab
 from .schemas.timed_scenes import LANGUAGES
 from .imagegen.midjourney import MidjourneyClient
-from .imagegen.nano_banana import NanoBananaClient
 from .tts.audio import DEFAULT_TEMPO
 from .tts.base import TTSClient, TTSError, TTSNotConfigured
 from .tts.elevenlabs import ElevenLabsClient
@@ -400,7 +399,7 @@ def _cmd_prompt(args, paths: Paths) -> int:
 VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
     "omni": OmniClient,
     "comfy-h3": ComfyH3Client,
-    # `art` 라인의 영상 엔진 (ADR-0070). CLEAN → INFO를 잇는다.
+    # `art` 라인의 영상 엔진 (ADR-0070). CLEAN 한 장을 first로 받아 움직인다.
     # **fast다** — ADR-0070 「비용」의 "배치는 relax"는 relax가 동시 3으로 병렬이라는
     # 전제 위에 있었는데, 2026-08-25 실측이 그 전제를 깼다: 계정의 `relaxCoreSize`는 3이지만
     # 실제로 도는 relax 영상 잡은 1개다(`runningCount 1` / MJ `Running Jobs: 1 starting
@@ -408,7 +407,8 @@ VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
     # 3.5배 빠르다 — relax가 사는 값은 시간이 아니라 GPU뿐이다(클립당 1.8분, 18클립이 Pro
     # 잔량의 2%). 사람 결정 2026-08-25.
     "mj-endimage": MidjourneyEndImageClient,
-    # `art` 라인의 `info` 씬 전용 (ADR-0072 결정 5) — CLEAN·INFO를 **보간**한다.
+    # `art` 라인의 `info` 씬 전용 (ADR-0072 결정 5 → ADR-0075 결정 1) — 프레임 없이
+    # **텍스트→영상**으로 그린다. 정보는 구도가 지고 표시는 그 위의 주석이다.
     "comfy-h3-fl2v": ComfyH3FirstLastClient,
     "fake": lambda: FakeVideoClient(synth=True),
 }
@@ -461,7 +461,7 @@ def _make_info_client(args, paths: Paths, run_id: str) -> VideoClient | None:
 
 
 def _cmd_frames(args, paths: Paths) -> int:
-    """[6] 씬당 CLEAN(MJ) + INFO(NB2 편집) 두 장 (ADR-0071).
+    """[6] 프레임을 받는 씬의 CLEAN(MJ) 한 장 (ADR-0071, ADR-0075가 INFO를 걷어냈다).
 
     **프레임을 입력으로 받는 라인에서만 돈다** — 다른 라인이면 그렇다고 말하고 멈춘다.
     `info` 씬마다 편집 호출 1회 + 검수 세션 1회가 붙고, 일반 씬은 CLEAN 한 장으로 끝난다.
@@ -480,7 +480,6 @@ def _cmd_frames(args, paths: Paths) -> int:
         result = run_frames_stage(
             run_id,
             client=MidjourneyClient(),
-            editor=NanoBananaClient(),
             paths=paths,
             llm=llm,
             line=args.line,
@@ -811,7 +810,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_frames = sub.add_parser(
         "frames", parents=[common],
-        help="[6] 씬당 CLEAN(MJ) + INFO(NB2 편집) — 프레임을 입력으로 받는 라인만 (ADR-0071)",
+        help="[6] 프레임을 받는 씬의 CLEAN(MJ) — info 씬은 텍스트→영상이라 안 만든다 (ADR-0071·0075)",
     )
     p_frames.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
     p_frames.add_argument("--run-id", default=None)
@@ -821,7 +820,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_frames.add_argument(
         "--no-review", dest="review", action="store_false", default=True,
-        help="INFO 검수 세션을 끈다 (배관 확인용 — 표시가 대상을 가리키는지 아무도 안 본다)",
+        help="CLEAN 게이트 세션을 끈다 (배관 확인용 — 그림이 씬 계약을 지는지 아무도 안 본다)",
     )
     p_frames.add_argument(
         "--jobs", type=int, default=None,
@@ -833,7 +832,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_frames.add_argument(
         "--timeout", type=int, default=None,
-        help=f"INFO 검수 세션 상한(초) (기본: {FRAMES_SESSION_TIMEOUT})",
+        help=f"CLEAN 게이트 세션 상한(초) (기본: {FRAMES_SESSION_TIMEOUT})",
     )
     p_frames.set_defaults(func=_cmd_frames)
 

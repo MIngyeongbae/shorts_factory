@@ -168,7 +168,7 @@
         },
         "info": {
           "type": "object",
-          "description": "선택. 화면 계측 표시 — 빨간 치수선·화살표·지시선 + 영어 라벨 (ADR-0056 결정 3). [3s]가 단다. 존재하면 [5]가 RED 절을 넣고 [7]이 끝 프레임 OCR + 비전 검수로 확인한다. labels는 화면에 그려질 문자열 그대로이고 ASCII만이다 — 한글·가나·한자는 자막이 진다 (ADR-0002). 문자열 속 수치는 factcheck.md가 검증한 것만 쓴다 (ADR-0007). target은 무엇을 재는지의 영어 서술(내용, 자유 기술), annotation은 표시 방식(어휘).",
+          "description": "선택. 화면 계측 표시 (ADR-0056 결정 3). [3s]가 단다. 존재하면 [5]가 RED 절을 넣고 [7]이 비전 검수로 확인한다. **정보를 지는 것은 device가 세우는 구도이고 표시(annotation)는 그 위의 주석이다** (ADR-0075 결정 5). labels는 화면에 그려질 문자열 그대로이고 ASCII만이다 — 한글·가나·한자는 자막이 진다 (ADR-0002). 문자열 속 수치는 factcheck.md가 검증한 것만 쓴다 (ADR-0007). target은 무엇을 재는지의 영어 서술(내용, 자유 기술), annotation은 표시 방식(어휘), device는 정보를 지는 구도 장치(어휘, 선택).",
           "required": [
             "labels",
             "target",
@@ -193,6 +193,10 @@
               "minLength": 3,
               "pattern": "^[ -~]+$",
               "description": "무엇을 재는지 — 영어 서술. 예: the diameter of the hole / how far the cable sags below its anchor line"
+            },
+            "device": {
+              "$ref": "vocab.json#/$defs/info_device",
+              "description": "선택. **정보를 지는 구도 장치** (ADR-0075 결정 5). 빨간 표시가 아니라 그림 자체가 정보를 지게 하는 방법이고, [5] 세션이 SUBJECT 단락에서 이 장치를 실제로 무대에 세운다. 어휘는 vocab.json meta.info_device. 비면 지금과 같이 돈다 — annotation만으로 간다."
             },
             "annotation": {
               "$ref": "vocab.json#/$defs/annotation"

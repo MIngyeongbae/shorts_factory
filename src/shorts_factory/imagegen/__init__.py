@@ -4,9 +4,10 @@ ADR-0056이 이미지 단계를 뗐다가, ADR-0071이 **프레임을 입력으�
 `[6]`을 되살렸다. 지금 소비자는 `stages/frames.py` 하나다:
 
 - `midjourney.py` — CLEAN. imagine(그리드) → `upscale(quadrant)`(낱장 주소) →
-  `download` → `upload`(우리 INFO를 공개 주소로). 제출·폴링·취소·인물 시트 참조 왕복은
+  `download` → `upload`(우리 CLEAN을 공개 주소로). 제출·폴링·취소·인물 시트 참조 왕복은
   ADR-0025·0031·0035·0039·0051의 실측이 든 코드 그대로다
-- `nano_banana.py` — INFO. `edit()`가 CLEAN 위에 계측 표시를 얹는다 (ADR-0021의 호출
+- `nano_banana.py` — **소비자 없음.** `edit()`가 CLEAN 위에 계측 표시를 얹던 경로는
+  ADR-0075 결정 2가 폐기했다 (지표는 좋았지만 사람 판독에서 졌다). 어댑터만 남겨 둔다 (ADR-0021의 호출
   경로 그대로, ADR-0043의 `[6i]`가 쓰던 그 함수다)
 - `base.py` 계약과 `fake.py` 대역
 

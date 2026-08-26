@@ -151,26 +151,34 @@ def test_slug_argument_is_preferred_to_deriving_it_from_run_id(paths):
 # --- 씬마다 엔진이 갈린다 (ADR-0072 결정 5) -----------------------------------
 
 
-def test_art_line_sends_info_scenes_to_a_frame_interpolating_engine():
-    """`info`는 보간 엔진, 나머지는 라인의 엔진 — 한 라인 안에서 갈린다."""
+def test_art_line_sends_info_scenes_to_a_text_to_video_engine():
+    """`info`는 텍스트→영상, 나머지는 라인의 엔진 — 한 라인 안에서 갈린다.
+
+    ADR-0075 결정 1이 이 자리의 엔진을 first/last 보간에서 **TTV**로 바꿨다: 계측 표시를
+    정지 이미지가 지던 경로(MJ CLEAN → NB2 편집)가 사람 판독에서 졌다.
+    """
     meta = vocab.video_line_meta("art")
     assert meta["provider"] == "mj-endimage"
-    assert meta["info_provider"] == "comfy-h3-fl2v"
+    assert meta["info_provider"] == "comfy-h3"
     # 다른 라인은 갈리지 않는다 — 이 분기는 `art`의 것이다.
     for line in ("local", "api"):
         assert not vocab.video_line_meta(line).get("info_provider")
 
 
-def test_the_info_engine_must_accept_frames():
-    """계측 표시를 이으려면 프레임을 받아야 한다 — 안 받는 엔진은 그 자리에 못 온다."""
-    from shorts_factory.videogen.comfy_h3 import ComfyH3Client, ComfyH3FirstLastClient
+def test_the_info_engine_is_text_to_video():
+    """`info` 씬은 프레임을 안 받는다 — 그 엔진에 프레임 입력을 요구하지 않는다 (ADR-0075)."""
+    from shorts_factory.videogen.comfy_h3 import ComfyH3Client
 
-    assert ComfyH3FirstLastClient.accepts_frames is True
     assert ComfyH3Client.accepts_frames is False
+    assert vocab.video_line_meta("art")["info_provider"] == ComfyH3Client.name
 
 
-def test_only_info_scenes_with_a_last_frame_take_the_info_engine():
-    """강등된 씬은 끝 그림이 없어 보간할 것이 없다 — 일반 엔진으로 돌아간다."""
+def test_scenes_that_take_no_frames_go_to_the_info_engine():
+    """프레임을 받는 씬만 주 엔진이다 — `info` 씬은 강등된 뒤에도 텍스트→영상이다.
+
+    RED를 뺀 변종(`no_red`)도 그 씬엔 CLEAN이 없으므로 주 엔진(MJ)으로 못 간다.
+    `takes_frames`가 그 판정을 진다 (ADR-0075 결정 3).
+    """
     from shorts_factory.stages.videogen import VARIANT_INFO, VARIANT_NO_RED, VARIANT_VIDEO, SceneJob, _Runner
 
     runner = _Runner.__new__(_Runner)
@@ -183,11 +191,10 @@ def test_only_info_scenes_with_a_last_frame_take_the_info_engine():
         fields.update(over)
         return SceneJob(**fields)
 
-    with_frames = job(first_frame="https://x/c.png", last_frame="https://x/i.jpg")
-    assert runner.engine_for(with_frames, VARIANT_INFO) is runner.info_client
-    # RED를 뺀 변종은 표시가 없다.
-    assert runner.engine_for(with_frames, VARIANT_NO_RED) is runner.client
-    # `[6]`이 INFO를 못 만든 씬도 마찬가지다.
-    assert runner.engine_for(job(last_frame=None), VARIANT_INFO) is runner.client
-    # info가 없는 씬은 애초에 해당 없다.
-    assert runner.engine_for(job(has_info=False), VARIANT_VIDEO) is runner.client
+    info_scene = job(takes_frames=False)
+    assert runner.engine_for(info_scene, VARIANT_INFO) is runner.info_client
+    # RED를 뺀 변종도 CLEAN이 없어 주 엔진으로 못 돌아간다 — 그대로 텍스트→영상이다.
+    assert runner.engine_for(info_scene, VARIANT_NO_RED) is runner.info_client
+    # 프레임을 받는 일반 씬은 주 엔진(MJ)이다.
+    plain = job(has_info=False, takes_frames=True, first_frame="https://x/c.png")
+    assert runner.engine_for(plain, VARIANT_VIDEO) is runner.client
