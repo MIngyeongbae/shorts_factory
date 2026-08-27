@@ -131,7 +131,7 @@ def test_script_is_a_single_call_with_every_line_joined(pisa):
 def test_the_call_carries_the_spoken_form_not_the_script(pisa):
     """ADR-0063 — 읽는 텍스트와 보는 텍스트는 다르다.
 
-    보내는 것은 발화형이고(`12 mm` → `십이 밀리미터`), 자막이 읽는 실측 파일의 `text`는
+    보내는 것은 발화형이고(`12 mm` → `십이밀리미터`), 자막이 읽는 실측 파일의 `text`는
     **원문 그대로**다. 이 둘이 같아지면 자막에 풀어 쓴 숫자가 나가거나(ADR-0060 결정 4의
     라벨 에코가 깨진다) TTS가 약어를 읽게 된다.
     """
@@ -142,7 +142,8 @@ def test_the_call_carries_the_spoken_form_not_the_script(pisa):
 
     assert sent != script  # 픽스처에 숫자가 있다 (1989년·8,000 m³·12 mm)
     assert "mm" not in sent and "밀리미터" in sent
-    assert "8,000" not in sent and "팔천 세제곱미터" in sent
+    # 숫자와 단위는 **붙여** 읽힌다 (ADR-0079) — 띄우면 TTS가 그 자리에서 끊는다.
+    assert "8,000" not in sent and "팔천세제곱미터" in sent
 
     timed = json.loads(result.scenes_path.read_text(encoding="utf-8"))
     assert [scene["text"] for scene in timed["scenes"]] == script_lines()
