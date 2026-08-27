@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Sequence
 
-from ..schemas import vocab
+from ..schemas import speech_rules, vocab
 from ..schemas.script_rules import core_chars, max_total_seconds, noun_stems
 from ..schemas.timed_scenes import PRIMARY_LANGUAGE
 from .session import format_limits, load_prompt  # noqa: F401 — 재수출
@@ -28,6 +29,10 @@ EDGE_RATIO = 0.15
 
 SCRIPT_HEADING = "대본"
 CLAIMS_HEADING = "주장"
+#: TTS가 읽을 줄이 담기는 절 (ADR-0073). 절 이름은 `speech-rules.json`이 정하고, 어느
+#: 언어가 이 절을 갖는지는 그 파일의 `locales.{lang}.reading_line` 블록이 정한다 —
+#: 코드는 언어 이름을 손으로 들지 않는다 (ADR-0034 §3).
+READING_HEADING = speech_rules.reading_section()
 FITNESS_KEY = "매체 적합성"
 UNFIT_MARK = "부적합"
 
@@ -49,11 +54,35 @@ SCRIPT_MARK = "=== SCRIPT ==="
 #: `[2l. localize]` 세션 출력의 언어별 절 마커 — `=== SCRIPT.ja ===`
 #: (prompts/02l-localize.md와 계약). 파일명과 같은 꼴이라 사람이 읽어도 어느 파일인지 보인다.
 LOCALIZED_MARK = "=== SCRIPT.{lang} ==="
-_LOCALIZED_MARK_RE = re.compile(r"^=== SCRIPT\.([a-z]{2}) ===[ \t]*$", re.MULTILINE)
+
+#: 읽기 절만 만드는 경로의 마커 — `=== READING.ja ===` (ADR-0073 결정 7). 대본이 이미
+#: 있어 다시 만들지 않는 언어의 `## 읽기` 절만 세션이 낸다. 절 안은 마크다운 문서가
+#: 아니라 **줄 목록**이다.
+READING_MARK = "=== READING.{lang} ==="
+
+#: 두 마커를 한 정규식으로 찾는다 — 한 세션 출력에 둘이 섞여 나올 수 있고, SCRIPT 절이
+#: 끝나는 자리가 READING 마커일 수 있기 때문이다. 따로 찾으면 SCRIPT 절이 뒤의 READING
+#: 블록을 통째로 삼킨다.
+_MARK_RE = re.compile(r"^=== (SCRIPT|READING)\.([a-z]{2}) ===[ \t]*$", re.MULTILINE)
 
 
 def localized_mark(lang: str) -> str:
     return LOCALIZED_MARK.format(lang=lang)
+
+
+def reading_mark(lang: str) -> str:
+    return READING_MARK.format(lang=lang)
+
+
+def _marked_sections(text: str) -> list[tuple[str, str, str]]:
+    """세션 출력 → `[(kind, lang, 본문)]`. kind는 `SCRIPT` | `READING`."""
+    body = strip_code_fence(text)
+    marks = list(_MARK_RE.finditer(body))
+    out: list[tuple[str, str, str]] = []
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(body)
+        out.append((mark.group(1), mark.group(2), body[mark.end() : end].strip()))
+    return out
 
 
 class ScriptMdError(Exception):
@@ -93,15 +122,29 @@ def split_localized_output(text: str) -> dict[str, str]:
     않으면 그 언어는 없는 것으로 친다 — 호출자가 언어별로 실패를 기록한다. 여기서
     죽이지 않는 이유는 한 언어가 깨져도 다른 언어는 쓸 수 있기 때문이다.
     """
-    body = strip_code_fence(text)
-    marks = list(_LOCALIZED_MARK_RE.finditer(body))
     sections: dict[str, str] = {}
-    for index, mark in enumerate(marks):
-        end = marks[index + 1].start() if index + 1 < len(marks) else len(body)
-        section = strip_code_fence(body[mark.end():end].strip())
+    for kind, lang, body in _marked_sections(text):
+        if kind != "SCRIPT":
+            continue
+        section = strip_code_fence(body)
         if section.startswith("#"):
-            sections[mark.group(1)] = section + "\n"
+            sections[lang] = section + "\n"
     return sections
+
+
+def split_reading_output(text: str) -> dict[str, list[str]]:
+    """`[2l]` 세션 출력 → `{lang: 읽기 줄 목록}` (ADR-0073).
+
+    `=== READING.ja ===` 절만 본다. 절 안은 마크다운 문서가 아니라 줄 목록이므로 비어
+    있지 않은 줄을 그대로 모은다 — 옳고 그름은 `check_reading_lines`가 판정한다.
+    """
+    readings: dict[str, list[str]] = {}
+    for kind, lang, body in _marked_sections(text):
+        if kind != "READING":
+            continue
+        lines = [line.strip() for line in strip_code_fence(body).splitlines()]
+        readings[lang] = [line for line in lines if line]
+    return readings
 
 
 # --- script.md 파싱 ---------------------------------------------------------
@@ -114,6 +157,9 @@ class ScriptMd:
     lines: list[str] = field(default_factory=list)
     claims: list[str] = field(default_factory=list)
     has_script_section: bool = False
+    #: `## 읽기` 절의 줄 — TTS가 읽을 텍스트다 (ADR-0073). 자막·씬 계약은 `lines`를 쓴다.
+    reading: list[str] = field(default_factory=list)
+    has_reading_section: bool = False
 
     @property
     def unfit(self) -> bool:
@@ -136,6 +182,9 @@ def parse_script_md(text: str) -> ScriptMd:
                 doc.has_script_section = True
             elif name == CLAIMS_HEADING:
                 section = "claims"
+            elif name == READING_HEADING:
+                section = "reading"
+                doc.has_reading_section = True
             else:
                 section = "other"
             continue
@@ -153,6 +202,10 @@ def parse_script_md(text: str) -> ScriptMd:
             if line.startswith("#"):
                 continue
             doc.lines.append(line)
+        elif section == "reading":
+            if line.startswith("#") or line.startswith(">"):
+                continue
+            doc.reading.append(line)
         elif section == "claims" and line.startswith("- "):
             doc.claims.append(line[2:].strip())
     return doc
@@ -221,7 +274,12 @@ def check_script_md(text: str) -> tuple[list[str], list[str]]:
 
 
 def script_section_inner_blank_lines(text: str) -> int:
-    """`## 대본` 절 **안쪽**(첫 줄과 마지막 줄 사이)의 빈 줄 수.
+    """`## 대본` 절 **안쪽**(첫 줄과 마지막 줄 사이)의 빈 줄 수."""
+    return section_inner_blank_lines(text, SCRIPT_HEADING)
+
+
+def section_inner_blank_lines(text: str, heading: str) -> int:
+    """`## {heading}` 절 **안쪽**(첫 줄과 마지막 줄 사이)의 빈 줄 수.
 
     `parse_script_md`는 빈 줄을 세지 않으므로 줄 수가 맞아도 중간에 빈 줄이 남아 있을
     수 있다 — 세션이 줄 하나를 비워 둔 채 줄 수를 맞춘 흔적이다. 절 머리·꼬리의 빈 줄은
@@ -232,11 +290,11 @@ def script_section_inner_blank_lines(text: str) -> int:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("## "):
-            if section == "script":
+            if section == "target":
                 break
-            section = "script" if stripped[3:].strip() == SCRIPT_HEADING else "other"
+            section = "target" if stripped[3:].strip() == heading else "other"
             continue
-        if section == "script":
+        if section == "target":
             raw.append(stripped)
     while raw and not raw[0]:
         raw.pop(0)
@@ -307,3 +365,136 @@ def check_localized_script_md(
         warnings.append(f"{lang}: `## 주장` 절이 비어 있다 — 정본의 주장 목록이 옮겨지지 않았다")
 
     return errors, warnings
+
+
+# --- `## 읽기` 절 (specs/01 「번안 대본」 4, ADR-0073) ------------------------
+
+#: 한자와 반복부호. 읽기 줄에 남아 있으면 안 편 것이다 — 숫자 뒤 창만 예외다.
+_KANJI_RE = re.compile(r"[一-鿿㐀-䶿々〆]")
+
+#: 숫자 토큰. `tts/speech.py`의 `NUMBER`와 같은 꼴이어야 한다 — 읽기 줄이 숫자를 그대로
+#: 두는지 보는 검사가 이 토큰 목록을 대조하고, 그 숫자를 나중에 펴는 것이 그 모듈이다.
+_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+#: 줄 끝 문장부호. 씬 경계를 줄 끝에서 잡으므로(ADR-0013) 읽기가 이것을 먹으면 안 된다.
+_TRAILING_PUNCT = "。．.?？!！…、，,"
+
+
+def requires_reading(lang: str) -> bool:
+    """그 언어의 대본이 `## 읽기` 절을 가져야 하는가 (`speech-rules.json`이 정한다)."""
+    return speech_rules.reading_line(lang) is not None
+
+
+def _kanji_outside_window(line: str, window: int) -> str:
+    """숫자 뒤 창 밖에 남은 한자들. 비어 있으면 통과다.
+
+    창은 숫자가 끝난 자리부터 `window`글자다 — `1本`(0) · `4か所`(1) · `10兆円`(1)이
+    전부 그 안에 든다. 값은 계약이 준다 (`reading_line.kanji_window_after_digit`).
+    """
+    allowed: set[int] = set()
+    for match in _NUMBER_RE.finditer(line):
+        allowed.update(range(match.end(), min(len(line), match.end() + window)))
+    return "".join(
+        char
+        for index, char in enumerate(line)
+        if index not in allowed and _KANJI_RE.match(char)
+    )
+
+
+def _trailing_punct(line: str) -> str:
+    """줄 끝에 붙은 문장부호 (없으면 빈 문자열)."""
+    end = len(line)
+    while end > 0 and line[end - 1] in _TRAILING_PUNCT:
+        end -= 1
+    return line[end:]
+
+
+def check_reading_lines(
+    reading: Sequence[str], script_lines: Sequence[str], *, lang: str
+) -> tuple[list[str], list[str]]:
+    """`## 읽기` 절의 기계 검사. (errors, warnings). LLM을 부르지 않는다.
+
+    ADR-0073 결정 5의 다섯 가지다 — 줄 수 일치, 빈 줄 없음, 숫자 뒤 창 밖의 한자 없음,
+    대본 줄과 숫자열 일치, 문장 끝 부호 보존. **읽기가 실패해도 대본은 산다** (결정 6):
+    호출부는 읽기 절만 빼고 대본을 쓴다. 그러면 `[3]`이 원문을 보내고 그것이 ADR-0063
+    이전의 동작이라, 이 계약은 한 방향으로만 움직인다.
+
+    검사는 **바닥**이다. 창 안에서는 느슨한 쪽으로 틀린다 — 무엇을 어떻게 펼지는
+    프롬프트가 정하고, 여기서는 "안 편 한자"와 "숫자를 건드린 흔적"만 잡는다.
+    """
+    rules = speech_rules.reading_line(lang)
+    if rules is None:
+        return [f"{lang}: 읽기 절을 요구하지 않는 언어다 (speech-rules.json reading_line)"], []
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if len(reading) != len(script_lines):
+        errors.append(
+            f"{lang}: 읽기 {len(reading)}줄 — 대본 {len(script_lines)}줄과 다르다 "
+            "(줄 1:1, ADR-0073)"
+        )
+        return errors, warnings
+
+    window = int(rules.get("kanji_window_after_digit", 2))
+    for index, (spoken, source) in enumerate(zip(reading, script_lines), start=1):
+        if not spoken.strip():
+            errors.append(f"{lang}: 읽기 {index}줄이 비어 있다")
+            continue
+
+        left = _kanji_outside_window(spoken, window)
+        if left:
+            errors.append(
+                f"{lang}: 읽기 {index}줄에 안 편 한자 '{left}' — 숫자 뒤 {window}글자 밖의 "
+                f"한자는 가나로 편다 (specs/01 「번안 대본」 4)"
+            )
+
+        numbers = _NUMBER_RE.findall(source)
+        if _NUMBER_RE.findall(spoken) != numbers:
+            errors.append(
+                f"{lang}: 읽기 {index}줄의 숫자가 대본과 다르다 "
+                f"(대본 {numbers or '없음'}) — 숫자는 원문 그대로 두고 [3]이 편다 (ADR-0063)"
+            )
+
+        if _trailing_punct(spoken) != _trailing_punct(source):
+            errors.append(
+                f"{lang}: 읽기 {index}줄의 끝 문장부호가 대본과 다르다 — 씬 경계를 줄 끝에서 "
+                "잡는다 (ADR-0013)"
+            )
+
+        if spoken == source and _KANJI_RE.search(source):
+            warnings.append(f"{lang}: 읽기 {index}줄이 대본과 같다 — 한자가 있는데 안 폈다")
+
+    return errors, warnings
+
+
+def render_reading_section(lines: Sequence[str]) -> str:
+    """`## 읽기` 절 본문 (앞 빈 줄 포함, 끝 개행 없음)."""
+    body = "\n".join(lines)
+    return f"## {READING_HEADING}\n\n{body}"
+
+
+def strip_reading_section(text: str) -> str:
+    """`## 읽기` 절을 들어낸 대본 전문. 나머지 절은 글자까지 그대로다.
+
+    세션이 낸 읽기가 검사에 걸렸을 때 쓴다 — 대본은 멀쩡하므로 읽기만 빼고 쓴다
+    (ADR-0073 결정 6). 그러면 `[3]`이 원문을 보내고 그것이 ADR-0063 이전의 동작이다.
+    """
+    out: list[str] = []
+    dropping = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            dropping = stripped[3:].strip() == READING_HEADING
+        if not dropping:
+            out.append(line)
+    return "\n".join(out).rstrip() + "\n"
+
+
+def append_reading_section(text: str, lines: Sequence[str]) -> str:
+    """대본 전문 뒤에 `## 읽기` 절을 붙인다 — **앞의 바이트는 손대지 않는다**.
+
+    대본이 이미 있고 읽기 절만 없는 파일을 채우는 경로다 (ADR-0073 결정 7). 재생성이
+    아니라 빠진 절을 더하는 것이라 사람이 고친 `## 대본`·`## 주장`이 그대로 산다.
+    """
+    return f"{text.rstrip()}\n\n{render_reading_section(lines)}\n"

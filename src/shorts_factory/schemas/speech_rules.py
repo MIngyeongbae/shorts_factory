@@ -36,6 +36,26 @@ def locale(lang: str) -> dict[str, Any] | None:
     return None if block is None else _public(block)
 
 
+def reading_section() -> str:
+    """읽기 절의 이름 (`## 읽기`). 절 이름은 로케일과 무관하다 — 대본 포맷의 것이다."""
+    return SPEECH_RULES["reading_section"]
+
+
+def reading_line(lang: str) -> dict[str, Any] | None:
+    """그 언어가 요구하는 읽기 절 규칙. 없으면 `None` — 읽기 절을 요구하지 않는다.
+
+    블록의 유무가 곧 "이 언어의 대본에 `## 읽기` 절이 있어야 하는가"다 (ADR-0073 결정 1).
+    코드가 `"ja"`를 손으로 들지 않게 하려는 것이다 — 로케일이 늘면 계약만 고친다.
+    """
+    rules = (locale(lang) or {}).get("reading_line")
+    return None if rules is None else _public(rules)
+
+
+def reading_languages() -> tuple[str, ...]:
+    """읽기 절을 요구하는 언어들."""
+    return tuple(lang for lang in languages() if reading_line(lang))
+
+
 def range_chars() -> tuple[str, ...]:
     """범위·부호 문자. 숫자 양옆에 붙으면 그 숫자를 건드리지 않는다 (ADR-0063 결정 4)."""
     return tuple(SPEECH_RULES["range_chars"])

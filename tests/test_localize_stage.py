@@ -25,7 +25,12 @@ from shorts_factory.stages.localize import (
     LocalizeStageError,
     run_localize_stage,
 )
-from shorts_factory.stages.scriptmd import localized_mark, script_md_name
+from shorts_factory.stages.scriptmd import (
+    READING_HEADING,
+    localized_mark,
+    requires_reading,
+    script_md_name,
+)
 from shorts_factory.stages.session import PROMPTS_DIR
 from shorts_factory.stages.topic import run_topic_stage
 
@@ -55,8 +60,14 @@ class FakeLLM:
 # --- 픽스처 -------------------------------------------------------------------
 
 
-def make_localized(lang: str, lines: list[str], *, claims: bool = True) -> str:
-    """번안 대본 — 정본과 같은 포맷, 줄만 그 언어."""
+def make_localized(
+    lang: str, lines: list[str], *, claims: bool = True, reading: bool = True
+) -> str:
+    """번안 대본 — 정본과 같은 포맷, 줄만 그 언어.
+
+    `reading_line` 로케일(ja)에는 `## 읽기` 절이 붙는다 (ADR-0073) — 지금의 번안 대본
+    포맷이다. `reading=False`로 빼면 ADR-0073 이전에 만들어진 대본이 된다.
+    """
     titles = {"ja": "テスト題材", "en": "Test Topic"}
     parts = [
         f"# {titles.get(lang, lang)}",
@@ -71,6 +82,8 @@ def make_localized(lang: str, lines: list[str], *, claims: bool = True) -> str:
     ]
     if claims:
         parts += ["## 주장", "", "- [줄 1] Hoover Dam — https://example.org/a", ""]
+    if reading and requires_reading(lang):
+        parts += [f"## {READING_HEADING}", "", *reading_for(lang, len(lines)), ""]
     return "\n".join(parts)
 
 
@@ -78,6 +91,18 @@ def lines_for(lang: str, count: int) -> list[str]:
     if lang == "ja":
         return [f"フーバーダムのコンクリートは{i}番目の秘密を隠しています。" for i in range(1, count + 1)]
     return [f"Hoover Dam's concrete hides secret number {i}." for i in range(1, count + 1)]
+
+
+def reading_for(lang: str, count: int) -> list[str]:
+    """`## 읽기` 줄 — 한자는 가나로, **숫자와 그 뒤 조수사는 원문 그대로** (ADR-0073).
+
+    `{i}番目`이 그대로 남는 것이 계약이다: 숫자 읽기는 `[3]`이 `speech-rules.json`으로
+    하고, 조수사를 미리 가나로 바꾸면 엔진이 자기 수사 규칙을 잃는다.
+    """
+    return [
+        f"フーバーダムのコンクリートは{i}番目のひみつをかくしています。"
+        for i in range(1, count + 1)
+    ]
 
 
 def session_output(sections: dict[str, str]) -> str:

@@ -43,6 +43,14 @@ TTS로 나가는 것은 대본 줄이 아니라 **발화형**이다 — 숫자·
 때문이다 (`sync.character_spans`). 무엇을 어떻게 폈는지는 `timing.{lang}.json`의
 `spoken`에 남는다. 사전에 없는 단위는 그대로 나가고 경고만 남는다 (`tts/speech.py`).
 
+**한자를 쓰는 언어는 그 앞에 한 겹이 더 있다** (ADR-0073). `speech-rules.json`에
+`reading_line` 블록이 있는 언어(지금은 ja)의 대본은 `## 읽기` 절을 갖는다 — `[2l]`이 쓴,
+한자를 가나로 편 줄이다. 발화형의 입력이 대본 줄이 아니라 그 줄이고, 그 위에서 위의
+숫자·단위 변환이 그대로 돈다 (읽기 줄은 숫자를 원문으로 두므로 표가 그대로 먹는다).
+**절이 없거나 줄 수가 대본과 어긋나면 통째로 버리고 대본 줄을 보낸다** — 없을 때의 동작이
+ADR-0063 이전과 같아서 이 계약도 한 방향으로만 움직인다. `scenes.timed`로 가는 `text`는
+어느 경우에도 `## 대본`의 원문이다.
+
 ## 이 단계가 하지 않는 것
 
 - **게이트 판정.** `judgment/human.json`의 `decision: go` 확인은 2부 진입점의 몫이다
@@ -288,17 +296,31 @@ def _client_for(tts: TTSClient | TTSFactory, lang: str) -> TTSClient:
     return tts(lang)
 
 
-def _read_script(path: Path, lang: str) -> tuple[str, list[str]]:
-    """그 언어 대본 → `(제목, 대본 줄)`.
+def _read_script(path: Path, lang: str) -> tuple[str, list[str], list[str]]:
+    """그 언어 대본 → `(제목, 대본 줄, 읽기 줄)`.
 
     제목은 `# ` 머리글이고 **선택이다** — 없으면 빈 문자열이고 그 언어 영상에 제목
     훅이 안 붙는다 (ADR-0065, D-3). 대본 줄이 없는 것은 여전히 실패다.
+
+    읽기 줄(`## 읽기`)은 한자를 가나로 편 발화용 줄이다 (ADR-0073). **없으면 빈
+    목록이고 대본 줄이 그대로 나간다** — ADR-0063 이전의 동작이라 편을 세울 이유가
+    없다. 줄 수가 대본과 어긋나면 통째로 버린다: 사람이 대본만 고친 흔적이고, 어긋난
+    채로 보내면 씬 경계가 엉뚱한 줄에 붙는다 (ADR-0013).
     """
     doc = parse_script_md(path.read_text(encoding="utf-8"))
     lines = list(doc.lines)
     if not lines:
         raise TTSStageError(f"{path}에 대본 줄이 없다 (스펙 01 포맷 확인)")
-    return doc.title, lines
+
+    reading = list(doc.reading)
+    if reading and len(reading) != len(lines):
+        log.warning(
+            "[%s] %s: `## 읽기` %d줄이 대본 %d줄과 다르다 — 읽기를 버리고 원문을 보낸다 "
+            "(ADR-0073 되돌릴 조건 6)",
+            STAGE, path.name, len(reading), len(lines),
+        )
+        reading = []
+    return doc.title, lines, reading
 
 
 def _language_state(state: RunState, lang: str) -> dict[str, Any]:
@@ -332,11 +354,15 @@ def run_tts_stage(
         wanted.insert(0, PRIMARY_LANGUAGE)
     present = [l for l in LANGUAGES if l in wanted and script_path(paths, slug, l).exists()]
 
-    scripts_by_lang: dict[str, tuple[str, list[str]]] = {
+    scripts_by_lang: dict[str, tuple[str, list[str], list[str]]] = {
         lang: _read_script(script_path(paths, slug, lang), lang) for lang in present
     }
     texts_by_lang: dict[str, list[str]] = {
-        lang: lines for lang, (_title, lines) in scripts_by_lang.items()
+        lang: lines for lang, (_title, lines, _reading) in scripts_by_lang.items()
+    }
+    # 읽기 줄이 있으면 발화 입력이 그것이다 (ADR-0073). 없으면 빈 목록이고 대본이 나간다.
+    reading_by_lang: dict[str, list[str]] = {
+        lang: reading for lang, (_title, _lines, reading) in scripts_by_lang.items()
     }
     ko_count = len(texts_by_lang[PRIMARY_LANGUAGE])
     for lang in present:
@@ -398,7 +424,7 @@ def run_tts_stage(
             continue
         result.languages[lang] = _run_language(
             lang=lang, texts=texts_by_lang[lang], client=clients[lang], state=state,
-            title=scripts_by_lang[lang][0],
+            title=scripts_by_lang[lang][0], reading=reading_by_lang[lang],
             run_id=run_id, topic=topic, run_dir=run_dir, paths=paths,
             tempo=_tempo_for(tempo, lang), ffmpeg=ffmpeg, runner=runner,
         )
@@ -426,15 +452,25 @@ def run_tts_stage(
     return result
 
 
-def _spoken_record(speech: SpokenScript, narration: Narration) -> dict[str, Any] | None:
-    """`timing.{lang}.json`의 `spoken` 블록 (ADR-0063 결정 5).
+def _spoken_record(
+    speech: SpokenScript, narration: Narration, texts: Sequence[str]
+) -> dict[str, Any] | None:
+    """`timing.{lang}.json`의 `spoken` 블록 (ADR-0063 결정 5, ADR-0073 결정 8).
 
     편 줄이 없고 엔진 정규화도 못 받았으면 키 자체를 넣지 않는다 — 빈 블록은 "폈는데
     아무것도 안 바뀌었다"와 "볼 것이 없다"를 구별해 주지 못한다.
+
+    대조는 **대본 원문 대 보낸 텍스트**다 — 그 사이에 읽기 절과 숫자 표가 겹쳐 있어도
+    사람이 볼 것은 "대본에 이렇게 쓰인 줄을 이렇게 읽혔다" 하나다.
     """
     record: dict[str, Any] = {}
-    if speech.changes:
-        record["lines"] = [dict(change) for change in speech.changes]
+    changed = [
+        {"scene_id": index, "text": source, "spoken": spoken}
+        for index, (source, spoken) in enumerate(zip(texts, speech.lines), start=1)
+        if source != spoken
+    ]
+    if changed:
+        record["lines"] = changed
     engine = narration.raw.get("normalized_text")
     if engine:
         # 엔진이 우리 발화형 위에 무엇을 더 읽었는지 보는 유일한 창이다 (ADR-0063 맥락 2).
@@ -445,6 +481,7 @@ def _spoken_record(speech: SpokenScript, narration: Narration) -> dict[str, Any]
 def _run_language(
     *, lang: str, texts: list[str], client: TTSClient, state: RunState,
     run_id: str, topic: str, run_dir: Path, paths: Paths, title: str = "",
+    reading: Sequence[str] = (),
     tempo: float, ffmpeg: str, runner,
 ) -> LanguageResult:
     """언어 하나 — 단일 호출 → 경계 → atempo → 세 파일. 실패는 `TTSStageError`로 올린다."""
@@ -460,12 +497,15 @@ def _run_language(
     scenes_path.unlink(missing_ok=True)
 
     # 보내는 것은 대본 줄이 아니라 발화형이다 (ADR-0063). 원문은 scenes.timed로 간다.
-    speech = spoken_lines(texts, lang)
+    # 한자를 쓰는 언어는 그 앞에 `## 읽기` 줄이 한 겹 더 있다 (ADR-0073) — 한자가 이미
+    # 가나로 펴져 있고, 숫자·단위 표는 그 위에서 돈다.
+    source = list(reading) if reading else texts
+    speech = spoken_lines(source, lang)
     text = narration_text(speech.lines, joiner=LINE_JOINER)
     log.info(
-        "[%s] %s 단일 호출 %d자(원문 %d자) / %d씬 — 발화형 %d줄 (ADR-0004·0063)",
+        "[%s] %s 단일 호출 %d자(원문 %d자) / %d씬 — %s, 발화형 %d줄 (ADR-0004·0063·0073)",
         STAGE, lang, len(text), len(narration_text(texts, joiner=LINE_JOINER)),
-        len(texts), speech.changed_count,
+        len(texts), "읽기 줄에서" if reading else "대본 줄에서", speech.changed_count,
     )
 
     narration = client.synthesize(text, timeout=TIMEOUT, label=f"{STAGE}:{lang}")
@@ -513,7 +553,7 @@ def _run_language(
         source={"run_id": run_id, "topic": topic}, lang=lang,
         boundaries=boundaries, narration_meta=narration.meta,
         tempo=tempo, raw_duration=raw_duration, audio_duration=audio_duration,
-        warnings=warnings, spoken=_spoken_record(speech, narration),
+        warnings=warnings, spoken=_spoken_record(speech, narration, texts),
     )
     write_text(timing_path, dump_json(timing))
 
