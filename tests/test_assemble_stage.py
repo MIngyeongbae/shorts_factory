@@ -29,6 +29,8 @@ from shorts_factory.video.subtitles import (
     FONT_NAME,
     MAX_LINE_CHARS,
     MAX_LINES,
+    TITLE_MAX_LINES,
+    title_max_line_chars_for,
     TITLE_STYLE_NAME,
     parse_ass,
 )
@@ -760,7 +762,9 @@ def test_no_title_assembles_exactly_as_before(paths):
 def test_overlong_title_degrades_without_losing_the_video(paths):
     """제목 하나 때문에 완성 영상을 잃지 않는다 (D-5)."""
     document = timed_document(PISA)
-    document["title"] = "가" * (MAX_LINE_CHARS * MAX_LINES + 10)
+    # **제목 예산에서 유도한다** — 자막 상한으로 만들면 배율이 바뀔 때(ADR-0080)
+    # 넘치지 않아 테스트가 조용히 무력해진다.
+    document["title"] = "가" * (title_max_line_chars_for("ko") * TITLE_MAX_LINES + 10)
     run_id, _ = install_run(paths, PISA, document=document)
 
     result = run(paths, run_id)

@@ -76,8 +76,14 @@ FONT_SIZE = _STYLE["font_size"]
 #: 자막이 쓸 수 있는 가로 폭(px)
 TEXT_WIDTH = PLAY_RES_X - 2 * MARGIN_LR
 
-#: 한글 한 글자의 가로 advance ÷ 폰트 크기. 한글은 전각이라 1.0이다 (숫자·라틴은 더 좁다).
-GLYPH_WIDTH_RATIO = 1.0
+#: 최상위(전각) 글자의 가로 advance ÷ 폰트 크기. **코드가 값을 선언하지 않는다** —
+#: 계약이 든다 (ADR-0034 §3). 여기 1.0이 손으로 박혀 있었고 ko가 그 값을 물려받았는데,
+#: Do Hyeon의 실측은 0.768이다 (ADR-0080). 로케일 값은 `glyph_width_ratio_for()`.
+GLYPH_WIDTH_RATIO = float(_STYLE["glyph_width_ratio"])
+
+#: 자막 줄바꿈 방식 (ADR-0080). `fill` = 앞줄부터 채운다. 균형 2분할은 좌우 여백을
+#: 250~310px씩 남겼다 (QR 편 실측).
+WRAP = _STYLE["wrap"]
 
 #: 자막 블록이 놓이는 세로 밴드 (화면 비율)
 BAND = tuple(_STYLE["band"])
@@ -93,10 +99,12 @@ TITLE_STYLE_NAME = _TITLE["style_name"]
 TITLE_ALIGNMENT = _TITLE["alignment"]
 TITLE_BAND = tuple(_TITLE["band"])
 
-#: 자막 크기의 배수 (ADR-0074). **88을 적지 않는다** — 자막이 44에서 움직이면 제목도
-#: 따라 움직여야 하고, 줄당 상한도 이 배율이 나눈다 (`title_max_line_chars_for`).
-TITLE_FONT_SCALE = int(_TITLE["font_scale"])
-TITLE_FONT_SIZE = FONT_SIZE * TITLE_FONT_SCALE
+#: 자막 크기의 배수 (ADR-0074, ADR-0080이 2 → 1.5). **99를 적지 않는다** — 자막이
+#: 움직이면 제목도 따라 움직여야 하고, 줄당 상한도 이 배율이 나눈다
+#: (`title_max_line_chars_for`). **정수로 자르지 않는다** — `int(1.5)`는 1이라
+#: 제목이 자막과 같은 크기로 무너진다. ASS `Fontsize`에 넣을 때만 반올림한다.
+TITLE_FONT_SCALE = float(_TITLE["font_scale"])
+TITLE_FONT_SIZE = round(FONT_SIZE * TITLE_FONT_SCALE)
 TITLE_MAX_LINES = int(_TITLE["max_lines"])
 TITLE_OUTLINE = _TITLE["outline"]
 TITLE_SHADOW = _TITLE["shadow"]
@@ -156,11 +164,14 @@ def max_line_chars_for(lang: str) -> int:
 def title_max_line_chars_for(lang: str) -> int:
     """제목의 줄당 글자 상한 = 그 언어 자막 상한 ÷ 배율 (ADR-0074).
 
-    **로케일이 남겨 둔 여유가 나눗셈에 딸려온다** — en이 45자 대신 42자를 쓰는 그 여유
-    (ADR-0062)가 없으면 실측에서 en 최장 제목이 996px로 안전폭을 6px 넘었다. 안전폭에서
-    직접 나누지 않고 자막 상한을 나누는 이유가 그것이다.
+    **로케일이 남겨 둔 여유가 나눗셈에 딸려온다** — 자막 상한이 로케일의 실측 비율에서
+    유도된 값이라(ADR-0080) 그 여유가 그대로 따라온다. 안전폭에서 직접 나누지 않고 자막
+    상한을 나누는 이유가 그것이다.
+
+    **배율이 정수가 아니어도 결과는 정수다** (ADR-0080이 배율을 1.5로 내렸다) — 내림으로
+    닫는다. float를 흘리면 `_kinsoku_cut`의 문자열 인덱싱이 터진다.
     """
-    return max(1, max_line_chars_for(lang) // TITLE_FONT_SCALE)
+    return max(1, int(max_line_chars_for(lang) // TITLE_FONT_SCALE))
 
 
 def glyph_width_ratio_for(lang: str) -> float:
@@ -217,6 +228,22 @@ def wrap_text(
     return base
 
 
+def wrap_subtitle(
+    text: str, *, limit: int = MAX_LINE_CHARS, max_lines: int = MAX_LINES
+) -> list[str]:
+    """자막 한 줄을 화면 줄로 나눈다 — **방식은 계약의 `wrap`이 정한다** (ADR-0080).
+
+    `fill`이면 앞줄부터 채우고(`fill_text`), 그 밖의 값이면 균형 2분할(`wrap_text`)이다.
+    코드가 방식을 고르지 않는다 — 갈아탈 때 계약 한 줄만 바뀌게 둔다 (ADR-0034 §3).
+
+    균형 2분할은 줄 길이를 고르게 만드는 대신 **좌우 여백을 크게 남긴다** — QR 편 실측에서
+    자막 실폭이 안전폭의 37~49%였고 좌우로 250~310px씩 놀았다. 그것이 `fill`로 옮긴 이유다.
+    """
+    if WRAP == "fill":
+        return fill_text(text, limit=limit)
+    return wrap_text(text, limit=limit, max_lines=max_lines)
+
+
 def check_overflow(
     scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS, lang: str = "",
 ) -> None:
@@ -264,15 +291,16 @@ def fill_text(text: str, *, limit: int, kinsoku: str = "") -> list[str]:
       (공백이 없는 CJK). 그 자리에만 금칙이 걸린다 — 공백은 원문이 띄어 쓴 자리다
     - 상한을 넘는 줄은 나오지 않는다. 몇 줄이 됐는지는 부르는 쪽이 판정한다
 
-    **`wrap_text`(자막)와 다른 함수인 이유는 판정이 다르기 때문이다.** 자막은 큐마다
-    균형이 보기 좋고 상한 초과가 **실패**지만, 제목은 한 덩어리이고 초과가 **강등**이며
-    위에서부터 꽉 차야 크게 읽힌다 (실측: 균형 2분할로는 ja 60px · en 57px이 상한이다).
+    **ADR-0080부터 자막도 이 함수를 탄다** (`wrap_subtitle`). 그 전까지 자막은
+    `wrap_text`의 균형 2분할이었는데, 줄 길이가 고른 대신 좌우 여백을 250~310px씩
+    남겼다 (QR 편 실측). 남은 차이는 판정뿐이다 — 자막은 줄 수 초과가 **실패**이고
+    제목은 **강등**이다.
     """
     if limit < 1:
         raise SubtitleError(f"줄당 상한은 1 이상이어야 한다: {limit}")
     collapsed = " ".join(text.split())
     if not collapsed:
-        raise SubtitleError("빈 제목이다")
+        raise SubtitleError("빈 문자열이다")
 
     lines: list[str] = []
     current = ""
@@ -484,7 +512,7 @@ def build_ass(
             )
         previous_end = end
 
-        lines = wrap_text(scene["text"], limit=limit)
+        lines = wrap_subtitle(scene["text"], limit=limit)
         check_overflow(scene_id, lines, limit=limit, lang=lang)
 
         text = LINE_BREAK.join(escape_text(line) for line in lines)
@@ -499,7 +527,7 @@ def build_ass(
         event, warning = title_event(
             title.strip(), float(scenes[0]["end"]),
             limit=title_max_line_chars_for(lang) if lang
-            else max(1, MAX_LINE_CHARS // TITLE_FONT_SCALE),
+            else max(1, int(MAX_LINE_CHARS // TITLE_FONT_SCALE)),
         )
         if warning:
             warnings.append(warning)

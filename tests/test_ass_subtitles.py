@@ -5,7 +5,7 @@
 
 - 씬 하나가 큐 하나로 나가는가 (ADR-0013)
 - 시각이 `scenes.timed.json`과 같은가 (ADR-0020 — 출처는 그 파일 하나)
-- 스타일이 스펙 03의 숫자(위치 72~82%, 외곽선 3px, 1줄 18자, 2줄 상한)와 맞는가
+- 스타일이 계약(`subtitle-style.json`)의 값과 맞는가 — 숫자는 계약이 들고 여기 옮겨 적지 않는다
 """
 
 from pathlib import Path
@@ -16,6 +16,7 @@ from timed_fixtures import HOOVER, PISA, timed_document
 from shorts_factory.schemas import script_rules
 from shorts_factory.video.subtitles import (
     ALIGNMENT,
+    BAND,
     FONT_SIZE,
     FONTS_DIR,
     glyph_width_ratio_for,
@@ -48,6 +49,7 @@ from shorts_factory.video.subtitles import (
     title_band,
     title_max_line_chars_for,
     title_style_line,
+    wrap_subtitle,
     wrap_text,
 )
 
@@ -59,21 +61,28 @@ def scene(scene_id, text, start, end, beat="context"):
     }
 
 
-# --- 줄바꿈 (specs/03 "1줄 최대 18자, 2줄 초과 금지") -------------------------
+# --- 줄바꿈 (채워쓰기 — ADR-0080) --------------------------------------------
 
 
 def test_short_line_stays_on_one_line():
     assert wrap_text("탑 하나가 기울었습니다.") == ["탑 하나가 기울었습니다."]
 
 
-def test_long_line_becomes_two():
-    lines = wrap_text("가장 쉬운 방법은 기울어진 쪽 지반을 다지는 것이었습니다.")
-    assert len(lines) == 2
-    assert " ".join(lines) == "가장 쉬운 방법은 기울어진 쪽 지반을 다지는 것이었습니다."
+def test_a_long_line_is_filled_from_the_top():
+    """자막도 채워쓰기다 (ADR-0080) — 앞줄을 상한까지 채우고 남는 것이 뒷줄로 간다.
+
+    균형 2분할이던 시절에는 같은 줄이 고르게 갈라져 좌우 여백이 250~310px씩 남았다.
+    """
+    text = "가장 쉬운 방법은 기울어진 쪽 지반을 다지는 것이었습니다."
+    lines = wrap_subtitle(text, limit=max_line_chars_for("ko"))
+    assert " ".join(lines) == text
+    # 앞줄이 뒷줄보다 길다 = 위에서부터 채웠다는 증거 (균형이면 비슷해진다)
+    assert len(lines[0]) > len(lines[-1])
+    assert all(len(line) <= max_line_chars_for("ko") for line in lines)
 
 
-def test_never_exceeds_two_lines():
-    """3줄이 되면 자막 블록이 72~82% 밴드를 넘어 피사체 영역을 침범한다."""
+def test_never_exceeds_the_line_budget():
+    """줄 수가 상한을 넘으면 자막 블록이 밴드를 넘어 피사체 영역을 침범한다."""
     for slug in (PISA, HOOVER):
         for item in timed_document(slug)["scenes"]:
             assert len(wrap_text(item["text"])) <= MAX_LINES
@@ -102,7 +111,7 @@ def test_line_within_the_limit_passes_quietly():
 
 
 def test_line_over_the_limit_fails_instead_of_shrinking():
-    """22자×2줄을 넘긴 큐는 스펙 01의 43자를 넘겼다는 뜻이라 1부 문제다."""
+    """줄 수 상한을 넘긴 큐는 스펙 01의 줄당 상한을 넘겼다는 뜻이라 1부 문제다."""
     with pytest.raises(SubtitleError, match="1부에서 고쳐야"):
         check_overflow(7, ["가" * 24, "나" * 20])
 
@@ -115,8 +124,8 @@ def test_the_three_subtitle_values_fit_together():
     assert FONT_SIZE * MAX_LINE_CHARS <= TEXT_WIDTH
 
 
-def test_the_longest_cue_spec_01_allows_still_fits_two_lines():
-    """스펙 01의 상한(줄당 43자)이 스펙 03의 22자×2줄 안에 들어간다.
+def test_the_longest_cue_spec_01_allows_still_fits_the_line_budget():
+    """스펙 01의 줄당 상한이 스펙 03의 (줄당 자수 × 줄 수) 안에 들어간다.
 
     이게 성립하는 동안에는 폰트 축소 경로가 필요 없다. 깨지면 두 스펙이 다시 충돌한다.
     """
@@ -147,7 +156,7 @@ def test_locale_without_a_block_inherits_the_full_width_values():
 
 
 def test_english_cue_that_overflowed_before_now_fits():
-    """석빙고 en 씬 1 (73자) — 전각 상한 22자×2줄로는 죽었고 로케일 상한 42자×2줄로는 산다."""
+    """석빙고 en 씬 1 (73자) — 전각 상한으로는 죽고 로케일 상한(en)으로는 산다 (ADR-0062)."""
     line = "Would you believe Joseon Korea ate ice in midsummer, with no electricity?"
     assert len(line) == 73
     with pytest.raises(SubtitleError):
@@ -162,7 +171,9 @@ def test_english_cue_that_overflowed_before_now_fits():
 
 
 def test_build_ass_uses_the_locale_limit():
-    scenes = [{"scene_id": 1, "text": "Would you believe Joseon Korea ate ice in midsummer, with no electricity?",
+    scenes = [{"scene_id": 1,
+               "text": "The processor finds the three corner squares and normalises "
+                       "the code for size and angle.",
                "start": 0.0, "end": 4.0}]
     # 같은 큐를 ko 상한으로 재면 죽는다 — 상한이 언어를 따라간다는 증거다
     with pytest.raises(SubtitleError, match="ko 대본"):
@@ -191,10 +202,18 @@ def test_empty_text_is_refused():
 # --- 위치·스타일 (specs/03) ---------------------------------------------------
 
 
-@pytest.mark.parametrize("lines", [1, 2])
-def test_subtitle_block_sits_in_the_72_to_82_percent_band(lines):
+@pytest.mark.parametrize("lines", range(1, MAX_LINES + 1))
+def test_subtitle_block_sits_inside_its_band(lines):
+    """**줄 수 상한까지 전부 본다** — `[1, 2]`만 보던 탓에 ADR-0078이 3줄로 올렸을 때
+    밴드가 검사되지 않았다 (ADR-0080이 메웠다). 밴드 값은 계약이 든다.
+    """
     top, bottom = subtitle_band(lines)
-    assert 0.72 <= top < bottom <= 0.82
+    assert BAND[0] <= top < bottom <= BAND[1], (lines, top, bottom)
+
+
+def test_the_title_block_never_reaches_the_subtitle_band():
+    """제목이 아래로 자라고 자막이 위로 자란다 — 최악의 줄 수에서도 안 만나야 한다."""
+    assert title_band(TITLE_MAX_LINES)[1] < subtitle_band(MAX_LINES)[0]
 
 
 def test_style_carries_the_spec_numbers():
@@ -206,8 +225,20 @@ def test_style_carries_the_spec_numbers():
     assert fields[3] == "&H00FFFFFF", "흰색 본문"
     assert fields[5] == "&H00000000", "검정 외곽선"
     assert fields[7] == "-1", "굵게"
-    assert fields[16] == str(OUTLINE) == "3", "외곽선 3px"
+    # 굵기는 계약이 든다 — 여기 숫자를 옮겨 적지 않는다 (ADR-0034 §3). 폰트가 커지면
+    # 외곽선도 같은 em 비율로 따라가야 대비가 유지된다 (ADR-0080).
+    assert fields[16] == str(OUTLINE), "외곽선"
     assert fields[18] == str(ALIGNMENT) == "2", "하단 중앙"
+
+
+def test_the_outline_keeps_its_ratio_to_the_font():
+    """폰트만 키우면 글자만 커지고 배경과의 대비는 안 커진다 (ADR-0080).
+
+    자막과 제목이 **같은 em 비율**을 쓴다 — ADR-0074의 "제목은 자막의 2배"는 그때
+    폰트가 2배였던 결과이지 외곽선 규칙이 아니었다 (3/44 = 6/88 = 0.068).
+    """
+    assert OUTLINE / FONT_SIZE == pytest.approx(TITLE_OUTLINE / TITLE_FONT_SIZE, abs=0.01)
+    assert OUTLINE / FONT_SIZE == pytest.approx(0.068, abs=0.01)
 
 
 def test_play_res_matches_the_output_format():
@@ -397,12 +428,19 @@ def test_title_style_differs_from_subtitle_only_where_the_contract_says():
     assert title[STYLE_SHADOW_FIELD] == str(TITLE_SHADOW)
 
 
-def test_title_is_at_least_twice_the_subtitle():
-    """사람 지시가 "적어도 지금의 2배"다 (ADR-0074) — 배율이 크기와 상한을 같이 정한다."""
-    assert TITLE_FONT_SCALE >= 2
-    assert TITLE_FONT_SIZE == FONT_SIZE * TITLE_FONT_SCALE
-    assert title_max_line_chars_for("ko") == MAX_LINE_CHARS // TITLE_FONT_SCALE
-    assert title_max_line_chars_for("en") == max_line_chars_for("en") // TITLE_FONT_SCALE
+def test_title_is_clearly_bigger_than_the_subtitle():
+    """제목이 자막보다 확실히 커야 한다 (ADR-0074의 의도, ADR-0080이 배율을 2 → 1.5).
+
+    ADR-0074가 지킨 것은 숫자 2가 아니라 **크기로 제목과 자막이 구분되는 것**이다.
+    자막이 66px이 되면서 2배는 132px이 되고 en 제목이 7줄로 강등되므로 배율이 내려갔다.
+    """
+    assert TITLE_FONT_SCALE >= 1.4
+    assert TITLE_FONT_SIZE == round(FONT_SIZE * TITLE_FONT_SCALE)
+    assert TITLE_FONT_SIZE > FONT_SIZE
+    # 상한은 정수다 — float가 새면 `_kinsoku_cut`의 문자열 인덱싱이 터진다
+    assert isinstance(title_max_line_chars_for("ko"), int)
+    assert title_max_line_chars_for("ko") == int(max_line_chars_for("ko") // TITLE_FONT_SCALE)
+    assert title_max_line_chars_for("en") == int(max_line_chars_for("en") // TITLE_FONT_SCALE)
     # 로케일 여유가 나눗셈에 딸려온다 — 안전폭에서 직접 나누면 en이 6px 넘친다
     assert title_max_line_chars_for("en") < TEXT_WIDTH / (
         TITLE_FONT_SIZE * glyph_width_ratio_for("en")
