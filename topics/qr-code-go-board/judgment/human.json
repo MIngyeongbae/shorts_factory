@@ -1,0 +1,7 @@
+{
+  "judge": "human",
+  "decision": "go",
+  "video_line": "art",
+  "notes": "사람 지시(2026-08-27, \"qr 코드를 순서대로 쭉 쇼츠로 만들어봐 ... go art 루트로 해서 계속 진행해\"). 영상 라인은 art — 일반 씬은 MJ CLEAN을 first로 잇고 info 씬은 H3 텍스트→영상(ADR-0070·0075). 축별 점수는 매기지 않았다 — 사전 일괄 go라 scores·confidence를 비운다.",
+  "judged_at": "2026-08-27T14:45:00+09:00"
+}

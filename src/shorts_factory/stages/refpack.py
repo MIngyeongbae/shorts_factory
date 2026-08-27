@@ -87,9 +87,14 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 #: 상대 서버의 한도가 우리 벽시계보다 비싸다.
 DOWNLOAD_INTERVAL = 1.5
 
-#: 내려받기 신원. 위키미디어는 무엇이 왜 받아 가는지 밝히는 UA를 요구한다.
+#: 내려받기 신원. 위키미디어는 무엇이 왜 받아 가는지 밝히는 UA를 요구하고,
+#: **연락처(URL 또는 메일)가 없으면 429로 끊는다** (실측 2026-08-27 — QR 편 `[4]`가
+#: 사진 17장을 전부 429로 잃었다. 같은 순간 같은 파일이 연락처를 단 UA에는 200으로 왔다).
+#: 설명만으로는 통과하지 못하므로 프로젝트 저장소 주소를 붙인다 — **사람의 메일 주소를
+#: 쓰지 않는다.** 요청 헤더는 외부로 나가는 자리다.
 USER_AGENT = (
-    "shorts-factory/0.1 (knowledge-shorts pipeline; reference photos for image prompts)"
+    "shorts-factory/0.1 (knowledge-shorts pipeline; reference photos for image prompts; "
+    "+https://github.com/MIngyeongbae/shorts_factory)"
 )
 
 #: 주소에서 확장자를 못 읽었을 때. 참조 사진은 대부분 JPEG다.

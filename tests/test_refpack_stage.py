@@ -399,3 +399,17 @@ def test_the_attachable_licences_come_from_the_contract_file(paths):
     assert attachable_licenses() == tuple(
         vocab.load("refs.schema.json")["meta"]["attachable_licenses"]
     )
+
+
+def test_the_user_agent_carries_a_contact():
+    """위키미디어는 연락처가 없는 UA를 429로 끊는다 (실측 2026-08-27).
+
+    QR 편 `[4]`가 사진 24장 중 17장을 이 이유로 잃었다 — 같은 순간 같은 파일이
+    연락처를 단 UA에는 200으로 왔다. 설명만 담은 UA는 통과하지 못하므로 연락처를
+    계약으로 못 박는다. **사람의 메일 주소는 쓰지 않는다** — 요청 헤더는 외부로
+    나가는 자리라 저장소 주소를 쓴다.
+    """
+    from shorts_factory.stages.refpack import USER_AGENT
+
+    assert "http" in USER_AGENT, f"UA에 연락처 URL이 없다: {USER_AGENT!r}"
+    assert "@" not in USER_AGENT, f"UA에 메일 주소가 들어갔다: {USER_AGENT!r}"
