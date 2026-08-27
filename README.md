@@ -97,10 +97,13 @@ python run.py assemble --slug hubeodaem-konkeuriteu-naenggak --lang ja
 `[8]`은 `[4] refpack`이 내려받아 둔 사진만 쓴다 — 새로 수집하지 않는다. `[4]`를 안
 돌린 편에서는 조용히 엔딩 없이 끝난다 (선택적 입력의 부재는 경고가 아니다).
 
-`[3]`은 `.env`의 `ELEVENLABS_API_KEY`와 **언어별** `ELEVEN_VOICE_ID`·`ELEVEN_VOICE_ID_JA`·
-`ELEVEN_VOICE_ID_EN`을 쓴다 (ADR-0004·0056). 대본 파일이 있는 언어의 id가 비어 있으면
-**어느 언어도 부르기 전에** 멈춘다. 키 없이 경로만 확인하려면 `--provider fake`를 준다 —
-**무음 wav가 나오므로 기본값이 아니다.**
+`[3]`의 **엔진은 `--provider`가 고르고 기본은 타입캐스트다** (ADR-0081). 쓰는 것은
+`.env`의 그 제공자 키와 **언어별** voice_id다 — 타입캐스트는 `TYPECAST_API_KEY` +
+`TYPECAST_VOICE_ID_KO`·`_JA`·`_EN`, ElevenLabs(`--provider elevenlabs`)는
+`ELEVENLABS_API_KEY` + `ELEVEN_VOICE_ID_KO`·`_JA`·`_EN`이다 (ADR-0004·0056·0081).
+**ko는 접미사 없는 옛 이름(`TYPECAST_VOICE_ID`·`ELEVEN_VOICE_ID`)으로도 떨어진다.**
+대본 파일이 있는 언어의 id가 비어 있으면 **어느 언어도 부르기 전에** 멈춘다. 키 없이
+경로만 확인하려면 `--provider fake`를 준다 — **무음 wav가 나오므로 기본값이 아니다.**
 
 `[7]`의 로컬 라인은 `.env`의 `COMFY_URL`(기본 `http://127.0.0.1:8188`)·`COMFY_H3_MEGAPIXELS`
 (비우면 템플릿의 0.4)를, 유료 라인은 `GEMINI_API_KEY`(Omni Flash, 유료 티어)를 쓴다. 로컬 라인은
@@ -134,7 +137,7 @@ PATH에 `tesseract`가 있을 때만 돌고, 없으면 건너뛰고 `clip_review
 | 8 | `[7]` 단계 실패 — 입력 부재, 클립을 만들지 못한 씬 |
 | 9 | `[3]` TTS 호출·계약 실패 (ja·en 줄 수 불일치 포함 — 호출 전에 막힌다) |
 | 10 | `[3]` 어느 언어의 총 길이 상한 초과 — 그 언어의 대본 축약이 필요하다 (1부 소관, ADR-0017) |
-| 11 | `[3]` 키·언어별 `ELEVEN_VOICE_ID*`·플랜 미비. **호출 전에 막히므로 과금이 없다** |
+| 11 | `[3]` 키·언어별 voice_id(`TYPECAST_VOICE_ID*` / `ELEVEN_VOICE_ID*`)·플랜 미비. **호출 전에 막히므로 과금이 없다** |
 | 13 | `[4]` refpack 실패 — 입력 부재·계약 위반. 세션도 내려받기도 무료라 다시 돌리면 된다 |
 | 15 | `[3s]` 연출표 실패 — 계약 위반이면 `scenes.json`을 쓰지 않는다 (ADR-0044) |
 | 16 | `[8]` 엔딩 단계 실패 (판정 세션 출력이 JSON이 아님 등). **쓸 사진이 없는 것은 실패가 아니다** — 0으로 끝난다 |

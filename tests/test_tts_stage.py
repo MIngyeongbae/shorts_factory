@@ -9,6 +9,7 @@
 - 줄 수 불일치·빈 voice_id는 **호출 전에** 막는다 (ADR-0056 결정 5·7)
 """
 
+import base64
 import json
 
 import pytest
@@ -21,7 +22,7 @@ from shorts_factory.stages.tts import (
     TTSStageError,
     run_tts_stage,
 )
-from shorts_factory.tts.base import Alignment, Narration, TTSError
+from shorts_factory.tts.base import Alignment, Narration, TTSError, TTSNotConfigured
 from shorts_factory.schemas.script_rules import TOTAL_SECONDS, core_chars
 from shorts_factory.tts.fake import (
     DEFAULT_RAW_SPEED,
@@ -31,8 +32,12 @@ from shorts_factory.tts.fake import (
     fake_alignment,
     fake_narration,
 )
+from shorts_factory.tts.audio import DEFAULT_TEMPO, pcm_to_wav
 from shorts_factory.tts.speech import spoken_lines
 from shorts_factory.tts.sync import narration_text
+from shorts_factory.tts.typecast import API_KEY_ENV as TYPECAST_KEY_ENV
+from shorts_factory.tts.typecast import VOICE_ID_ENVS as TYPECAST_VOICE_ENVS
+from shorts_factory.tts.typecast import TypecastClient
 
 RUN_ID = "20260821-tts-fixture"
 
@@ -198,9 +203,11 @@ def test_timing_json_is_a_record_not_a_scene_contract(pisa):
 
     assert "cues" not in timing
     assert set(timing) == {
-        "run_id", "topic", "lang", "engine", "tempo",
+        "run_id", "topic", "lang", "engine", "tempo", "engine_tempo",
         "raw_duration", "total_duration", "audio", "warnings", "spoken",
     }
+    # 페이크는 배속을 못 건다 — 요청분 전체가 FFmpeg 몫이다 (ADR-0081 결정 6 개정).
+    assert timing["engine_tempo"] == 1.0
     assert timing["lang"] == "ko"
 
 
@@ -628,3 +635,134 @@ def test_each_language_carries_its_own_title(paths):
     jp = json.loads((run_dir / "scenes.timed.ja.json").read_text(encoding="utf-8"))
     assert ko["title"] == "픽스처 대본"
     assert jp["title"] == "フィクスチャ台本"
+
+
+# --- 제공자 교체 (ADR-0081) ---------------------------------------------------
+#
+# 단계 코드는 어느 엔진인지 모른다. 그 말이 참인지 보려면 페이크 클라이언트가 아니라
+# **실물 어댑터**를 꽂고 HTTP만 대역으로 세워야 한다 — 아래가 그것이다.
+
+TYPECAST_SAMPLE_RATE = 44100
+
+
+def typecast_transport(sample_rate: int = TYPECAST_SAMPLE_RATE):
+    """보낸 텍스트를 그대로 되읽는 타입캐스트 응답. 실측한 응답 모양이다 (ADR-0081)."""
+
+    def transport(url, headers, body, timeout):
+        request = json.loads(body)
+        text = request["text"]
+        # 실측 거동: audio_tempo를 주면 **오디오와 정렬이 같이 당겨진다** (ADR-0081).
+        applied = float(request["output"].get("audio_tempo", 1.0))
+        alignment = fake_alignment(text, speed=DEFAULT_RAW_SPEED * applied)
+        pcm = bytes(2 * int(alignment.duration * sample_rate))  # 16bit 무음
+        payload = {
+            "audio": base64.b64encode(
+                pcm_to_wav(pcm, sample_rate=sample_rate)
+            ).decode("ascii"),
+            "audio_format": "wav",
+            "audio_duration": alignment.duration,
+            "characters": [
+                {"text": char, "start": start, "end": end}
+                for char, start, end in zip(
+                    alignment.characters, alignment.starts, alignment.ends
+                )
+            ],
+        }
+        return 200, json.dumps(payload).encode("utf-8")
+
+    return transport
+
+
+@pytest.fixture
+def typecast_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(TYPECAST_KEY_ENV, "typecast-test-key")
+    monkeypatch.setenv(TYPECAST_VOICE_ENVS["ko"], "tc_test")
+
+
+def test_the_stage_runs_on_the_typecast_adapter(pisa, typecast_env):
+    """어댑터를 갈아도 단계는 그대로다 — 산출물 3종과 씬 계약이 같은 자리에 선다.
+
+    발화형(ADR-0063) → 정렬 대조 → 씬 경계 → atempo 보정까지 전부 실물 경로다.
+    정렬이 보낸 텍스트와 어긋나면 `character_spans`가 여기서 실패한다.
+    """
+    result = run(
+        pisa, tts=lambda lang: TypecastClient(lang=lang, transport=typecast_transport())
+    )
+
+    assert result.passed
+    ko = result.languages["ko"]
+    assert ko.scene_count == len(script_lines())
+    for path in (ko.narration_path, ko.timing_path, ko.scenes_path):
+        assert path.exists() and path.parent == pisa.run_dir(RUN_ID)
+
+    timed = json.loads(ko.scenes_path.read_text(encoding="utf-8"))
+    assert validate_line_timed_scenes(timed)[0] == []
+    assert timed["scenes"][0]["start"] == 0.0
+
+    timing = json.loads(ko.timing_path.read_text(encoding="utf-8"))
+    assert timing["engine"]["provider"] == "typecast"
+    assert timing["engine"]["voice_id"] == "tc_test"
+    assert timing["engine"]["tempo"] == DEFAULT_TEMPO
+    # 타입캐스트에는 `normalized_alignment` 대응물이 없다 — 그 창은 닫혀 있다.
+    assert "engine_normalized" not in timing.get("spoken", {})
+
+
+def test_typecast_stops_before_the_call_when_the_voice_is_missing(pisa, monkeypatch):
+    """빈 voice_id는 제공자가 바뀌어도 호출 전에 막힌다 (스펙 05 `[3]`)."""
+    monkeypatch.setenv(TYPECAST_KEY_ENV, "typecast-test-key")
+    monkeypatch.delenv(TYPECAST_VOICE_ENVS["ko"], raising=False)
+    called: list[str] = []
+
+    def transport(url, headers, body, timeout):  # pragma: no cover - 불려선 안 된다
+        called.append(url)
+        raise AssertionError("과금 호출이 나갔다")
+
+    with pytest.raises(TTSNotConfigured):
+        run(pisa, tts=lambda lang: TypecastClient(lang=lang, transport=transport))
+    assert called == []
+
+
+def test_typecast_applies_the_tempo_itself_and_ffmpeg_stays_out(pisa, typecast_env):
+    """배속이 겹치면 1.21배가 된다 — 엔진이 건 몫은 후처리에서 빠져야 한다.
+
+    실측(ADR-0081 결정 6 개정): `audio_tempo`를 주면 오디오와 **정렬이 같이** 당겨진다.
+    그래서 `[3]`은 스케일 보정도 FFmpeg atempo도 하지 않는다.
+    """
+    ffmpeg = FakeFFmpeg()
+    result = run(
+        pisa,
+        tts=lambda lang: TypecastClient(lang=lang, transport=typecast_transport()),
+        ffmpeg=ffmpeg,
+        tempo=DEFAULT_TEMPO,
+    )
+
+    ko = result.languages["ko"]
+    assert (ko.tempo, ko.engine_tempo) == (DEFAULT_TEMPO, DEFAULT_TEMPO)
+    assert ffmpeg.calls == []  # 남은 몫이 1.0이라 아예 부르지 않는다
+
+    timing = json.loads(ko.timing_path.read_text(encoding="utf-8"))
+    assert timing["tempo"] == timing["engine_tempo"] == DEFAULT_TEMPO
+    # 정렬이 이미 배속 시간축이므로 총 길이는 그것을 그대로 쓴다 (1/tempo를 또 곱하지 않는다).
+    assert timing["total_duration"] == pytest.approx(timing["raw_duration"], abs=0.01)
+    assert ko.audio_duration == pytest.approx(ko.total_duration, abs=0.01)
+
+
+def test_the_engine_and_ffmpeg_split_a_tempo_the_engine_cannot_fully_apply(
+    pisa, typecast_env
+):
+    """엔진이 1.1만 걸었는데 요청이 1.2면 남은 1.0909를 FFmpeg가 건다."""
+    ffmpeg = FakeFFmpeg()
+    result = run(
+        pisa,
+        tts=lambda lang: TypecastClient(
+            lang=lang, tempo=1.1, transport=typecast_transport()
+        ),
+        ffmpeg=ffmpeg,
+        tempo=1.2,
+    )
+
+    ko = result.languages["ko"]
+    assert (ko.tempo, ko.engine_tempo) == (1.2, 1.1)
+    assert len(ffmpeg.calls) == 1
+    assert f"atempo={1.2 / 1.1}" in " ".join(ffmpeg.calls[0])
+    assert ko.audio_duration == pytest.approx(ko.total_duration, abs=0.05)

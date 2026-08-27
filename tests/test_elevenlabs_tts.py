@@ -29,11 +29,13 @@ from shorts_factory.tts.elevenlabs import (
     DEFAULT_OUTPUT_FORMAT,
     MODEL_ID,
     VOICE_ID_ENV,
+    VOICE_ID_ENVS,
     ElevenLabsClient,
     build_body,
     build_url,
     parse_response,
     sample_rate_of,
+    voice_envs_for,
 )
 
 TEXT = "그래서 발상을 뒤집습니다."
@@ -84,6 +86,8 @@ def _credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     """conftest가 지운 키를 이 파일에서만 가짜 값으로 되돌린다 (호출은 페이크로 간다)."""
     monkeypatch.setenv(API_KEY_ENV, "sk_test")
     monkeypatch.setenv(VOICE_ID_ENV, "voice-test")
+    # ko의 정식 이름은 `_KO`다 (ADR-0081). 실환경 값이 새어 들어오지 않게 지운다.
+    monkeypatch.delenv(VOICE_ID_ENVS["ko"], raising=False)
 
 
 # --- URL·본문 ---------------------------------------------------------------
@@ -249,6 +253,18 @@ def test_voice_id는_환경변수에서_읽는다(monkeypatch: pytest.MonkeyPatc
     ElevenLabsClient(transport=transport).synthesize(TEXT)
 
     assert "/text-to-speech/voice-pvc/" in transport.calls[0]["url"]
+
+
+def test_ko는_옛_이름으로도_떨어진다(monkeypatch: pytest.MonkeyPatch):
+    """ADR-0081이 제공자별로 이름을 갈랐어도 옛 `.env`가 그대로 돌아야 한다."""
+    assert voice_envs_for("ko") == (VOICE_ID_ENVS["ko"], VOICE_ID_ENV)
+    assert voice_envs_for("ja") == (VOICE_ID_ENVS["ja"],)
+
+    # 옛 이름만 있으면 그것이 쓰이고 (fixture가 이미 그 상태다),
+    assert ElevenLabsClient(lang="ko").voice_id == "voice-test"
+    # 새 이름이 있으면 그쪽이 이긴다.
+    monkeypatch.setenv(VOICE_ID_ENVS["ko"], "voice-ko")
+    assert ElevenLabsClient(lang="ko").voice_id == "voice-ko"
 
 
 def test_키가_없어도_생성은_된다(monkeypatch: pytest.MonkeyPatch):

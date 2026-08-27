@@ -1,13 +1,18 @@
 """ElevenLabs `with-timestamps` 어댑터 — 대본 한 편을 단일 호출로 읽는다 (ADR-0004).
 
+**기본 제공자가 아니다** (ADR-0081이 타입캐스트로 옮겼다). `--provider elevenlabs`로
+부르는 대안 경로이고, 목소리 비교와 되돌릴 길로 남아 있다.
+
 ADR-0004가 엔진과 호출 방식을, `base.py`가 정렬 계약을 정했다. 여기는 그 둘을 HTTP로
 옮긴 것뿐이다.
 
 - 엔드포인트 `POST /v1/text-to-speech/{voice_id}/with-timestamps`, 헤더 `xi-api-key`
 - 모델 `eleven_multilingual_v2` (세 언어 공통 + 클로닝 품질, ADR-0004·0056)
-- `voice_id`는 **언어별 환경변수**다 (specs/04, ADR-0056 결정 7): ko `ELEVEN_VOICE_ID`
-  (ADR-0004 — IVC→PVC 교체 시 코드 무변경), ja `ELEVEN_VOICE_ID_JA`, en `ELEVEN_VOICE_ID_EN`.
-  어댑터는 `lang`으로 만들고, 비어 있으면 `check_configured()`가 호출 전에 거절한다
+- `voice_id`는 **언어별 환경변수**다 (specs/04, ADR-0056 결정 7 · ADR-0081 결정 5):
+  ko `ELEVEN_VOICE_ID_KO`(옛 이름 `ELEVEN_VOICE_ID`로도 떨어진다 — ADR-0004의
+  "IVC→PVC 교체 시 코드 무변경"이 그 이름을 쓰고 있었다), ja `ELEVEN_VOICE_ID_JA`,
+  en `ELEVEN_VOICE_ID_EN`. 어댑터는 `lang`으로 만들고, 비어 있으면
+  `check_configured()`가 호출 전에 거절한다
 - 오디오는 원시 PCM으로 받는다. 이유는 `audio.py` 독스트링 참고
 
 SDK(`elevenlabs`)를 쓰지 않는다 (ADR-0021과 같은 판단) — 엔드포인트가 하나고 현재
@@ -26,7 +31,7 @@ SDK(`elevenlabs`)를 쓰지 않는다 (ADR-0021과 같은 판단) — 엔드포�
 
 ## 목소리가 다르게 들리면 `voice_id`를 의심하지 말 것 (2026-08-13)
 
-`ELEVEN_VOICE_ID`는 맞다. **다르게 들리는 이유는 속도다** — ADR-0004가 "원속 생성 후
+`ELEVEN_VOICE_ID*`는 맞다. **다르게 들리는 이유는 속도다** — ADR-0004가 "원속 생성 후
 FFmpeg atempo 1.1 후처리"를 기본으로 정했고(specs/04는 1.1~1.2배속), 그래서 원속 출력만
 들어 보면 기억보다 느리다. 클론을 다시 만들거나 `voice_id`를 바꾸는 것으로 답이 나오지
 않는다. 배속 값 자체의 확정은 별도 ADR로 남아 있다.
@@ -64,25 +69,38 @@ MODEL_ID = "eleven_multilingual_v2"
 ENDPOINT_TEMPLATE = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
 
 API_KEY_ENV = "ELEVENLABS_API_KEY"
+
+#: 접미사 없는 옛 이름 (ADR-0004). ko의 하위 호환 자리다 — ADR-0081이 제공자별로 이름을
+#: 가르면서 ko에도 `_KO`가 생겼지만, 이 이름으로 적힌 `.env`가 그대로 돌아야 한다.
 VOICE_ID_ENV = "ELEVEN_VOICE_ID"
 
-#: 언어별 voice_id 환경변수 (ADR-0056 결정 7, `.env.example`). ko는 ADR-0004의 목소리다.
+#: 언어별 voice_id 환경변수 (ADR-0056 결정 7 · ADR-0081 결정 5, `.env.example`).
 VOICE_ID_ENVS: dict[str, str] = {
-    "ko": VOICE_ID_ENV,
+    "ko": "ELEVEN_VOICE_ID_KO",
     "ja": "ELEVEN_VOICE_ID_JA",
     "en": "ELEVEN_VOICE_ID_EN",
 }
+
+#: 그 언어의 id가 비어 있을 때 물러날 옛 이름. ko에만 있다.
+VOICE_ID_FALLBACKS: dict[str, str] = {"ko": VOICE_ID_ENV}
+
 DEFAULT_LANG = "ko"
 
 
-def voice_env_for(lang: str) -> str:
-    """언어 코드 → voice_id 환경변수 이름. 모르는 언어는 설정 오류다."""
+def voice_envs_for(lang: str) -> tuple[str, ...]:
+    """언어 코드 → 볼 voice_id 환경변수 이름들. 앞의 것이 이긴다.
+
+    모르는 언어는 설정 오류다. ko는 `ELEVEN_VOICE_ID_KO` → `ELEVEN_VOICE_ID` 순이다.
+    """
     try:
-        return VOICE_ID_ENVS[lang]
+        primary = VOICE_ID_ENVS[lang]
     except KeyError as exc:
         raise TTSNotConfigured(
             f"언어 '{lang}'의 voice_id 환경변수가 정해져 있지 않다 (있는 언어: {', '.join(VOICE_ID_ENVS)})"
         ) from exc
+    fallback = VOICE_ID_FALLBACKS.get(lang)
+    return (primary, fallback) if fallback else (primary,)
+
 
 #: 모듈 독스트링 2번 — Starter에서 되는 가장 높은 PCM 레이트.
 DEFAULT_OUTPUT_FORMAT = "pcm_24000"
@@ -161,6 +179,7 @@ def parse_response(
     model_id: str,
     output_format: str,
     request_id: str | None = None,
+    provider: str = "elevenlabs",
 ) -> Narration:
     """응답 → `Narration`. 오디오나 정렬이 없으면 응답 모양을 담아 실패한다."""
     encoded = payload.get("audio_base64")
@@ -194,6 +213,7 @@ def parse_response(
         request_id=request_id,
         voice_id=voice_id,
         model_id=model_id,
+        provider=provider,
         raw=raw,
     )
 
@@ -275,19 +295,19 @@ class ElevenLabsClient(TTSClient):
         """
         if self._api_key:
             return self._api_key
-        self._api_key = self._require(API_KEY_ENV, "ElevenLabs TTS 호출")
+        self._api_key = self._require((API_KEY_ENV,), "ElevenLabs TTS 호출")
         return self._api_key
 
     @property
     def voice_id(self) -> str:
-        """이 언어의 목소리 (`VOICE_ID_ENVS[lang]`). 비어 있으면 `TTSNotConfigured`."""
+        """이 언어의 목소리 (`voice_envs_for(lang)`). 비어 있으면 `TTSNotConfigured`."""
         if self._voice_id:
             return self._voice_id
         purpose = (
             "클로닝한 본인 목소리 (ADR-0004)" if self.lang == DEFAULT_LANG
             else f"{self.lang} 목소리 (ADR-0056 결정 7)"
         )
-        self._voice_id = self._require(voice_env_for(self.lang), purpose)
+        self._voice_id = self._require(voice_envs_for(self.lang), purpose)
         return self._voice_id
 
     def check_configured(self) -> None:
@@ -296,15 +316,31 @@ class ElevenLabsClient(TTSClient):
         self.voice_id
 
     @staticmethod
-    def _require(name: str, purpose: str) -> str:
-        try:
-            return require_env(name, purpose=purpose)
-        except MissingCredential as exc:
-            raise TTSNotConfigured(str(exc)) from exc
+    def _require(names: tuple[str, ...], purpose: str) -> str:
+        """앞의 이름이 이긴다. 다 비어 있으면 **첫 이름**을 사유에 적어 실패한다."""
+        first: MissingCredential | None = None
+        for name in names:
+            try:
+                return require_env(name, purpose=purpose)
+            except MissingCredential as exc:
+                first = first or exc
+        assert first is not None  # names는 비어 있지 않다 (voice_envs_for)
+        raise TTSNotConfigured(str(first))
 
     def synthesize(
-        self, text: str, *, timeout: int | None = None, label: str = ""
+        self,
+        text: str,
+        *,
+        timeout: int | None = None,
+        label: str = "",
+        tempo: float = 1.0,
     ) -> Narration:
+        """`tempo`는 **쓰지 않는다** — 원속으로 받고 `[3]`이 FFmpeg atempo로 건다.
+
+        ADR-0004가 정한 "원속 생성 후 후처리"다. 엔진의 speed 파라미터와의 A/B는
+        그때 미뤄졌고, 이 어댑터가 대안 경로가 된 지금(ADR-0081) 다시 열 이유가 없다.
+        `Narration.tempo`가 1.0으로 남으므로 `[3]`이 요청분 전체를 후처리한다.
+        """
         body = json.dumps(
             build_body(text, model_id=self.model_id, voice_settings=self.voice_settings),
             ensure_ascii=False,
@@ -336,6 +372,7 @@ class ElevenLabsClient(TTSClient):
             model_id=self.model_id,
             output_format=self.output_format,
             request_id=_header(response_headers, REQUEST_ID_HEADER),
+            provider=self.name,
         )
 
 

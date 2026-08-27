@@ -92,6 +92,7 @@ from .imagegen.midjourney import MidjourneyClient
 from .tts.audio import DEFAULT_TEMPO
 from .tts.base import TTSClient, TTSError, TTSNotConfigured
 from .tts.elevenlabs import ElevenLabsClient
+from .tts.typecast import TypecastClient
 from .tts.fake import FakeTTSClient
 from .videogen.base import VideoClient
 from .videogen.fake import FakeVideoClient
@@ -238,11 +239,16 @@ def _cmd_localize(args, paths: Paths) -> int:
 
 #: `--provider` 값 → 어댑터 팩토리(언어 → 클라이언트). 기본값이 실물인 이유: 페이크가
 #: 기본이면 **무음 wav**를 만들어 놓고 나레이션이 생겼다고 착각한 채 다음 단계로 간다.
-#: 페이크는 명시적으로 골라야 한다. 목소리는 언어별이다 (ADR-0056 결정 7).
+#: 페이크는 명시적으로 골라야 한다. 목소리는 제공자별·언어별이다 (ADR-0056 결정 7,
+#: ADR-0081 결정 5) — 두 벤더의 voice_id는 서로 다른 네임스페이스라 섞을 수 없다.
 TTS_PROVIDERS = {
+    "typecast": lambda lang: TypecastClient(lang=lang),
     "elevenlabs": lambda lang: ElevenLabsClient(lang=lang),
     "fake": lambda lang: FakeTTSClient(),
 }
+
+#: 실물 기본 제공자 (ADR-0081). 되돌리는 것은 이 한 줄이다.
+DEFAULT_TTS_PROVIDER = "typecast"
 
 
 def _make_tts_factory(args):
@@ -751,8 +757,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tts.add_argument("--slug", required=True)
     p_tts.add_argument(
-        "--provider", choices=sorted(TTS_PROVIDERS), default="elevenlabs",
-        help="TTS 어댑터 (기본: elevenlabs. 개발·테스트는 fake)",
+        "--provider", choices=sorted(TTS_PROVIDERS), default=DEFAULT_TTS_PROVIDER,
+        help=f"TTS 어댑터 (기본: {DEFAULT_TTS_PROVIDER} — ADR-0081. "
+             "대안은 elevenlabs, 개발·테스트는 fake)",
     )
     p_tts.add_argument(
         "--tempo", type=float, default=DEFAULT_TEMPO,

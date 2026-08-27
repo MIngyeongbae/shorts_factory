@@ -155,9 +155,12 @@ def test_tts_takes_no_run_id():
 
 
 def test_tts_defaults_to_the_paid_provider():
-    """페이크가 기본이면 무음 wav를 만들어 놓고 성공했다고 착각한다."""
+    """페이크가 기본이면 무음 wav를 만들어 놓고 성공했다고 착각한다.
+
+    실물 기본은 타입캐스트다 (ADR-0081) — ElevenLabs는 살아 있는 대안이다.
+    """
     args = parse(["tts", "--slug", "abc"])
-    assert args.provider == "elevenlabs"
+    assert args.provider == "typecast"
     assert args.tempo == DEFAULT_TEMPO
     assert args.ffmpeg == "ffmpeg"
 
@@ -165,6 +168,16 @@ def test_tts_defaults_to_the_paid_provider():
 def test_tts_provider_and_tempo_are_overridable():
     args = parse(["tts", "--slug", "abc", "--provider", "fake", "--tempo", "1.2"])
     assert args.provider == "fake" and args.tempo == 1.2
+    assert parse(["tts", "--slug", "abc", "--provider", "elevenlabs"]).provider == "elevenlabs"
+
+
+def test_tts_providers_build_a_client_per_language():
+    """단계는 `TTSClient`만 본다 — 어느 어댑터인지는 이 표가 정한다 (ADR-0081)."""
+    from shorts_factory.cli import TTS_PROVIDERS
+
+    assert sorted(TTS_PROVIDERS) == ["elevenlabs", "fake", "typecast"]
+    assert TTS_PROVIDERS["typecast"]("ja").lang == "ja"
+    assert TTS_PROVIDERS["elevenlabs"]("en").lang == "en"
 
 
 def test_tts_rejects_unknown_provider():

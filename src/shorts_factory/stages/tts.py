@@ -2,9 +2,10 @@
 
 specs/05-pipeline.md:
     [3. tts+sync] → narration.{lang}.wav + timing.{lang}.json + scenes.timed.{lang}.json
-                    (언어당 1회 — ko 필수, ja·en은 대본 파일이 있으면. ElevenLabs
-                     with-timestamps 문자 정렬 → 문장 경계 실측, ADR-0004. 목소리는
-                     언어별 ELEVEN_VOICE_ID[_JA|_EN], ADR-0056 결정 7)
+                    (언어당 1회 — ko 필수, ja·en은 대본 파일이 있으면. with-timestamps
+                     문자 정렬 → 문장 경계 실측, ADR-0004·0013. 엔진은 --provider가
+                     고르고 기본은 타입캐스트다 — ADR-0081. 목소리는 제공자별·언어별
+                     {TYPECAST,ELEVEN}_VOICE_ID[_KO|_JA|_EN], ADR-0056 결정 7)
 
     "대본 파일이 있는데 그 언어의 id가 비어 있으면 진입 전에 멈춘다 — 비싼 호출 전의
      설정 오류다. … ja·en의 씬 수가 ko와 다르면 멈춘다 — [2l]의 줄 정렬이 깨진 것이다.
@@ -50,6 +51,19 @@ TTS로 나가는 것은 대본 줄이 아니라 **발화형**이다 — 숫자·
 **절이 없거나 줄 수가 대본과 어긋나면 통째로 버리고 대본 줄을 보낸다** — 없을 때의 동작이
 ADR-0063 이전과 같아서 이 계약도 한 방향으로만 움직인다. `scenes.timed`로 가는 `text`는
 어느 경우에도 `## 대본`의 원문이다.
+
+## 배속은 엔진이 걸 수도 있다 (ADR-0081 결정 6 개정)
+
+`--tempo`는 이 편에 걸릴 **총 배속**이고, 그것을 누가 거는지는 어댑터가 정한다. 단계는
+요청 배속을 `synthesize(tempo=…)`로 넘기고, 어댑터가 `Narration.tempo`로 "이만큼 걸었다"를
+돌려준다. 남은 몫(`tempo / narration.tempo`)만 FFmpeg atempo가 걸고, **정렬 스케일 보정도
+그 남은 몫으로만 한다** — 엔진이 건 배속은 정렬에 이미 실려 있기 때문이다.
+
+- 타입캐스트: `output.audio_tempo`로 **전부 엔진이 건다** → 남은 몫 1.0, FFmpeg 미호출.
+  시간 늘이기가 아니라 그 속도로 다시 읽은 것이라 운율이 낫다
+- ElevenLabs·페이크: 원속으로 내주므로 **전부 FFmpeg가 건다** (ADR-0004 그대로)
+
+어느 쪽이든 최종 오디오와 `scenes.timed`의 시각은 같은 시간축이다.
 
 ## 이 단계가 하지 않는 것
 
@@ -136,6 +150,8 @@ def outputs_for(run_dir: Path, lang: str) -> tuple[Path, Path, Path]:
 class LanguageResult:
     lang: str
     tempo: float = DEFAULT_TEMPO
+    #: 그중 엔진이 직접 건 몫. 나머지는 FFmpeg atempo다 (ADR-0081 결정 6 개정).
+    engine_tempo: float = 1.0
     scene_count: int = 0
     raw_duration: float = 0.0
     total_duration: float = 0.0
@@ -154,9 +170,12 @@ class LanguageResult:
 
     @property
     def line(self) -> str:
+        by = "엔진" if self.engine_tempo != 1.0 else "atempo"
+        if self.engine_tempo not in (1.0, self.tempo):
+            by = f"엔진 {self.engine_tempo}+atempo"
         head = (
-            f"{self.lang} {self.scene_count}씬 / {self.raw_duration:.1f}초 원속 → "
-            f"atempo {self.tempo} → {self.total_duration:.1f}초"
+            f"{self.lang} {self.scene_count}씬 / {self.raw_duration:.1f}초 → "
+            f"{by} {self.tempo} → {self.total_duration:.1f}초"
         )
         if self.over_length:
             return f"{head} → 상한 {self.max_seconds:.0f}초 초과, 중단 (대본 축약은 1부 소관)"
@@ -253,6 +272,7 @@ def build_timing(
     audio_duration: float,
     warnings: list[str],
     spoken: dict[str, Any] | None = None,
+    engine_tempo: float = 1.0,
 ) -> dict[str, Any]:
     """timing.{lang}.json 문서 — **이 단계의 실행 기록이다** (ADR-0020).
 
@@ -260,6 +280,10 @@ def build_timing(
     `scenes.timed.{lang}.json` 하나뿐이고, 여기 남는 것은 (1) 엔진 메타, (2) 배속과 원속
     길이 — 계산을 재현할 근거, (3) 경고, (4) 총 길이 — **길이 초과로 멈춰 실측 파일을 쓰지
     않는 경우에도** 무엇이 얼마나 넘쳤는지 남기기 위한 것이다. 호출은 언어당 과금이다.
+
+    `tempo`는 이 편에 걸린 **총 배속**이고 `engine_tempo`는 그중 엔진이 직접 건 몫이다
+    (ADR-0081 결정 6 개정). 둘이 같으면 FFmpeg는 불리지 않았고, `raw_duration`에는 이미
+    그 배속이 실려 있다 — 계산을 재현하려면 두 값이 다 필요하다.
 
     (5) `spoken` — 발화형으로 편 줄과, 엔진이 그 위에 무엇을 더 읽었는지
     (`normalized_alignment`). ADR-0063 되돌릴 조건 1의 관측 수단이다: 오디오를 다시 듣지
@@ -271,6 +295,7 @@ def build_timing(
         "lang": lang,
         "engine": narration_meta,
         "tempo": tempo,
+        "engine_tempo": engine_tempo,
         "raw_duration": round(raw_duration, 3),
         "total_duration": boundaries[-1][1] if boundaries else 0.0,
         "audio": {
@@ -396,6 +421,7 @@ def run_tts_stage(
             timing = json.loads(timing_path.read_text(encoding="utf-8"))
             result.languages[lang] = LanguageResult(
                 lang=lang, tempo=timing.get("tempo", _tempo_for(tempo, lang)),
+                engine_tempo=timing.get("engine_tempo", 1.0),
                 scene_count=ko_count, raw_duration=timing.get("raw_duration", 0.0),
                 total_duration=timing.get("total_duration", 0.0),
                 audio_duration=timing.get("audio", {}).get("duration", 0.0),
@@ -508,7 +534,14 @@ def _run_language(
         len(texts), "읽기 줄에서" if reading else "대본 줄에서", speech.changed_count,
     )
 
-    narration = client.synthesize(text, timeout=TIMEOUT, label=f"{STAGE}:{lang}")
+    # 요청 배속을 어댑터에 넘긴다. **걸 수 있으면 어댑터가 걸고**(타입캐스트는 정렬까지
+    # 같이 당겨 준다 — ADR-0081 결정 6 개정), 못 걸면 1.0을 그대로 둔다.
+    narration = client.synthesize(
+        text, timeout=TIMEOUT, label=f"{STAGE}:{lang}", tempo=tempo
+    )
+    engine_tempo = float(getattr(narration, "tempo", 1.0) or 1.0)
+    # 남은 몫만 FFmpeg가 건다. 엔진이 전부 걸었으면 1.0이라 아예 부르지 않는다.
+    post_tempo = tempo / engine_tempo
 
     def fail(message: str) -> TTSStageError:
         lang_state["status"] = "failed"
@@ -525,14 +558,15 @@ def _run_language(
         raise fail(str(exc)) from exc
     warnings = [*speech.warnings, *sync_warnings]
 
-    # specs/05 — atempo 적용 후 타임스탬프도 1/tempo 스케일 보정
-    boundaries = scale(raw_boundaries, 1.0 / tempo)
+    # specs/05 — atempo 적용 후 타임스탬프도 1/tempo 스케일 보정. **엔진이 건 몫은
+    # 정렬에 이미 반영돼 있으므로 보정 대상이 아니다** (ADR-0081 결정 6 개정).
+    boundaries = scale(raw_boundaries, 1.0 / post_tempo)
     raw_duration = narration.raw_duration
     total_duration = boundaries[-1][1]
 
     try:
         audio_duration = write_narration(
-            narration, narration_path, tempo=tempo, executable=ffmpeg, runner=runner
+            narration, narration_path, tempo=post_tempo, executable=ffmpeg, runner=runner
         )
     except AudioError as exc:
         raise fail(str(exc)) from exc
@@ -554,6 +588,7 @@ def _run_language(
         boundaries=boundaries, narration_meta=narration.meta,
         tempo=tempo, raw_duration=raw_duration, audio_duration=audio_duration,
         warnings=warnings, spoken=_spoken_record(speech, narration, texts),
+        engine_tempo=engine_tempo,
     )
     write_text(timing_path, dump_json(timing))
 
@@ -562,7 +597,8 @@ def _run_language(
 
     bound = max_total_seconds(lang)
     result = LanguageResult(
-        lang=lang, tempo=tempo, scene_count=len(texts), raw_duration=raw_duration,
+        lang=lang, tempo=tempo, engine_tempo=engine_tempo,
+        scene_count=len(texts), raw_duration=raw_duration,
         total_duration=total_duration, audio_duration=audio_duration,
         narration_path=narration_path, timing_path=timing_path, warnings=warnings,
         max_seconds=bound,
@@ -571,6 +607,7 @@ def _run_language(
     lang_state.update({
         "scene_count": len(texts),
         "tempo": tempo,
+        "engine_tempo": engine_tempo,
         "raw_duration": round(raw_duration, 3),
         "total_duration": total_duration,
         "audio_duration": round(audio_duration, 3),

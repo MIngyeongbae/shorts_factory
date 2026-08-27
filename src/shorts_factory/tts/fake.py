@@ -115,9 +115,21 @@ class FakeTTSClient(TTSClient):
         self.calls: list[dict[str, Any]] = []
 
     def synthesize(
-        self, text: str, *, timeout: int | None = None, label: str = ""
+        self,
+        text: str,
+        *,
+        timeout: int | None = None,
+        label: str = "",
+        tempo: float = 1.0,
     ) -> Narration:
-        self.calls.append({"text": text, "timeout": timeout, "label": label})
+        """`tempo`는 기록만 하고 걸지 않는다 — 페이크는 원속을 흉내 낸다.
+
+        `Narration.tempo`가 1.0으로 남으므로 `[3]`이 요청분 전체를 FFmpeg로 건다.
+        배속 계산을 검증하는 테스트가 그 경로 위에서 돈다 (`FakeFFmpeg`).
+        """
+        self.calls.append(
+            {"text": text, "timeout": timeout, "label": label, "tempo": tempo}
+        )
 
         if self._responses is None:
             return fake_narration(
