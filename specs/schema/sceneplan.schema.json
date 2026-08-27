@@ -53,6 +53,9 @@
         "subject": {
           "$ref": "scene.schema.json#/$defs/scene/properties/subject"
         },
+        "action": {
+          "$ref": "scene.schema.json#/$defs/scene/properties/action"
+        },
         "subject_anchor": {
           "$ref": "scene.schema.json#/$defs/scene/properties/subject_anchor"
         },

@@ -293,12 +293,16 @@ def build_jobs(
                 "subject": str(scene.get("subject") or ""),
                 "subject_anchor": list(scene.get("subject_anchor") or []),
                 "visual_goal": str(scene.get("visual_goal") or ""),
+                # 사건 (ADR-0076) — 검수가 "그 변화가 실제로 일어나는가"를 볼 자리이고,
+                # 고쳐쓰기의 교차 검사가 `action_prompt`의 자격을 재는 근거이기도 하다.
+                "action": str(scene.get("action") or ""),
                 "info": info,
             },
             parts={
                 key: str(entry[key])
                 for key in (
                     promptplan.SUBJECT_FIELD,
+                    promptplan.ACTION_FIELD,
                     promptplan.CAMERA_TARGET_FIELD,
                     promptplan.RED_FIELD,
                 )
@@ -472,12 +476,18 @@ def render_fix_prompt(
             f"- **계측 표시(info)**: `{info.get('annotation', '')}` — "
             f"**{info.get('target', '')}**를 재고, 라벨은 {labels} 이다"
         )
+    # 사건 (ADR-0076) — 씬 계약이 사건을 걸었으면 그것도 바꿀 수 없는 것 쪽에 보여 준다.
+    if fields.get("action"):
+        lines.append(f"- **action (이 클립 동안 일어나는 일)**: {fields['action']}")
     red = parts.get(promptplan.RED_FIELD) or ""
     red_block = f"\nRED (계측 표시 기하):\n{red}\n" if red else "\n"
+    action = parts.get(promptplan.ACTION_FIELD) or ""
+    action_block = f"\nACTION (무엇이 변하는가):\n{action}\n" if action else "\n"
     return load_prompt(FIX_PROMPT).safe_substitute(
         topic=topic, scene_id=scene_id,
         contract="\n".join(lines),
         subject_prompt=parts.get(promptplan.SUBJECT_FIELD) or "(없음)",
+        action_block=action_block,
         camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD) or "(없음)",
         red_block=red_block,
         reasons="\n".join(f"- {r}" for r in reasons) or "- (사유 없음)",
@@ -821,6 +831,12 @@ class _Runner:
             value = str(payload.get(key) or "").strip()
             if value:
                 revised[key] = value
+        # 사건 단락은 **있던 씬만** 고친다 (ADR-0076) — 없던 씬에 동작을 지어내면 씬 계약에
+        # 없는 사건이 화면에 뜬다. RED와 같은 규칙이다.
+        if promptplan.ACTION_FIELD in parts:
+            action = str(payload.get(promptplan.ACTION_FIELD) or "").strip()
+            if action:
+                revised[promptplan.ACTION_FIELD] = action
         if promptplan.RED_FIELD in parts:
             red = str(payload.get(promptplan.RED_FIELD) or "").strip()
             if red:
@@ -846,6 +862,10 @@ class _Runner:
         scene: dict[str, Any] = {
             "scene_id": job.scene_id,
             "info": job.review_fields.get("info") or None,
+            # 사건·무대를 실어야 ADR-0076의 교차 검사(`action_prompt` 자격, STAGING 복창)가
+            # 고쳐쓰기 산출에도 같은 기준으로 걸린다.
+            "action": job.review_fields.get("action") or "",
+            "staging": job.staging,
         }
         return promptplan.cross_errors({"scenes": [entry]}, {"scenes": [scene]})
 
@@ -857,6 +877,7 @@ class _Runner:
                 staging=job.staging,
                 camera=job.camera,
                 camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD, ""),
+                action_prompt=parts.get(promptplan.ACTION_FIELD),
                 red_prompt=parts.get(promptplan.RED_FIELD),
                 frames=job.takes_frames,
                 style="" if job.takes_frames else job.style,

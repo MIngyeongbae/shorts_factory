@@ -161,8 +161,16 @@ MJ에 보내는 것은 **한 줄**이고 형식이 다르다 — 값은 `vocab.j
 ```
 FORMAT    A vertical 9:16 shot, {N} seconds long, {스타일 문자열}.       ← N은 [7]이 채운다
 STAGING   {staging 문구}                                                  ← vocab staging.{value}.phrase
-SUBJECT   {subject_prompt}                                                ← 세션: 설명의 무대, 영어 단락
+SUBJECT   {subject_prompt}                                                ← 세션: 씬의 **시작 상태**, 영어 단락
+ACTION    {action_prompt}                                                 ← 세션: 무엇이 변하는가. `action`이 있는 씬만 (ADR-0076)
 CAMERA    {camera 문구}, {camera_target}.                                 ← vocab camera.{value}.video_prompt + 세션의 착지
+- **사건은 영상 엔진만 받는다** (ADR-0076). `ACTION` 절은 **골격 전체를 받는 씬에만** 붙는다 —
+  프레임을 받는 씬의 소비자는 MJ `endImage`이고, 정지 이미지 계열이라 동작 서술이
+  모션블러로 나오며 긴 본문은 MJ가 다시 써서 프록시가 결과를 못 묶는다 (ADR-0069·0071 —
+  358단어에 10분 타임아웃). `mj_image_prompt`도 `action_prompt`를 쓰지 않는다
+- **세션은 골격의 절을 다시 쓰지 않는다.** 특히 `subject_prompt`가 `STAGING` 문구를 되풀이하면
+  기계 검사가 반려한다 — 한 프롬프트에 같은 무대가 두 번 들어가 예산을 먹고 studio 씬이 전부
+  같은 그림으로 수렴한다 (ADR-0076 맥락 8: 실측 `zipper` 12/12·`us-penny-halt` 8/8)
 RED       {red_prompt} + {annotation._closing}                            ← 세션: 보조선 기하 + 라벨 따옴표째. info 씬만
 NEGATIVE  {style.negatives} + (info 없는 씬) "No text, no letters, no numbers, no labels."
           + "No background music."

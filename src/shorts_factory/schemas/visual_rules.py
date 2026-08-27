@@ -15,7 +15,8 @@
 
     FORMAT    A {composition} shot, {seconds} seconds long, {style.base_style}.   ← 초 수는 [7]이 채운다
     STAGING   {staging.*.phrase}
-    SUBJECT   {세션의 subject_prompt — 영어 단락, 설명의 무대}
+    SUBJECT   {세션의 subject_prompt — 영어 단락, 씬의 시작 상태}
+    ACTION    {세션의 action_prompt — 그 상태가 어떻게 변하는가}   ← action이 있는 씬만 (ADR-0076)
     CAMERA    {camera.*.video_prompt}, {세션의 camera_target}.
     RED       {세션의 red_prompt — 기하 + 라벨 따옴표째} + {annotation._closing}   ← info 씬만
     NEGATIVE  No {negatives.always…}. (info 없는 씬) No {negatives.no_text…}. {negatives.audio}
@@ -84,7 +85,15 @@ CAMERA_PROMPTS: dict[str, str] = {
 SECONDS_PLACEHOLDER = "{seconds}"
 
 #: 골격의 절 이름 — 이 순서로 프롬프트에 박힌다 (스펙 03 「프롬프트 골격」).
-SECTIONS: tuple[str, ...] = ("FORMAT", "STAGING", "SUBJECT", "CAMERA", "RED", "NEGATIVE")
+SECTIONS: tuple[str, ...] = (
+    "FORMAT",
+    "STAGING",
+    "SUBJECT",
+    "ACTION",
+    "CAMERA",
+    "RED",
+    "NEGATIVE",
+)
 
 #: 구도가 씬 계약에서 왔는지 기본값으로 떨어졌는지 (ADR-0033 되돌릴 조건의 관측 수단).
 FROM_SCENE = "scene"
@@ -299,6 +308,7 @@ def build_video_prompt(
     staging: str,
     camera: str,
     camera_target: str = "",
+    action_prompt: str | None = None,
     red_prompt: str | None = None,
     frames: bool = False,
     style: str | None = None,
@@ -324,6 +334,12 @@ def build_video_prompt(
     중간 프레임이 무너진다"는 **프레임이 그림을 지는 경우**의 실측이라 여기 적용되지
     않는다 — 지킬 프레임이 없다. ADR-0072 결정 4의 정지 문구도 함께 폐기됐다: 그 약은 MJ
     `endImage`가 그림을 못 잡는 병 때문이었고 텍스트→영상에는 그 병이 없다.
+
+    **`action_prompt`는 `frames=True`에 실리지 않는다** (ADR-0076 결정, 대안 D). 그 경로의
+    소비자는 `mj-endimage` — **MJ다.** 정지 이미지 계열이라 동작 서술이 모션블러·잔상으로
+    나오고, 긴 본문을 MJ가 다시 써서 프록시가 결과를 못 묶는 실측이 이미 있다
+    (ADR-0069·0071 — 358단어에 10분 타임아웃). 사건을 받는 것은 전체 골격 경로뿐이고 그
+    소비자는 H3 텍스트→영상(`local`·`art`의 `info` 씬)과 Omni(`api`)다.
     """
     if staging not in STAGINGS:
         raise ValueError(
@@ -347,8 +363,10 @@ def build_video_prompt(
         _section("FORMAT", format_line(style=style)),
         _section("STAGING", STAGINGS[staging]),
         _section("SUBJECT", _sentence(subject_prompt)),
-        _section("CAMERA", camera_line(camera, camera_target)),
     ]
+    if action_prompt and action_prompt.strip():
+        lines.append(_section("ACTION", _sentence(action_prompt)))
+    lines.append(_section("CAMERA", camera_line(camera, camera_target)))
     if has_info:
         lines.append(_section("RED", f"{_sentence(red_prompt or '')} {ANNOTATION_CLOSING}"))
     lines.append(_section("NEGATIVE", negative_line(has_info=has_info)))
@@ -434,6 +452,9 @@ PROMPT_SCENE_SCHEMA: dict[str, Any] = {
         # 계약의 정본은 promptplan.schema.json이고 여기는 그것을 나른다.
         # `red_prompt`는 info 씬에만, `subject_prompt_shot2`는 2샷 씬에만 있다.
         "subject_prompt": {"type": "string", "minLength": 1},
+        # ADR-0076 — 사건 단락. 씬 계약에 `action`이 있는 씬에만 있다. `[7]`의 고쳐쓰기가
+        # 이것도 고칠 수 있어야 하므로 다른 단락과 같이 실린다. **MJ 조립은 쓰지 않는다.**
+        "action_prompt": {"type": "string", "minLength": 1},
         "camera_target": {"type": "string"},
         "red_prompt": {"type": "string", "minLength": 1},
         "subject_prompt_shot2": {"type": "string", "minLength": 1},

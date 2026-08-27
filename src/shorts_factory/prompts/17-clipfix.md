@@ -12,7 +12,7 @@ ${contract}
 
 SUBJECT:
 ${subject_prompt}
-
+${action_block}
 CAMERA 착지:
 ${camera_target}
 ${red_block}
@@ -35,6 +35,7 @@ ${reasons}
 - **`subject_prompt`에 빨강·화살표·라벨·글자를 언급하지 않는다.** 계측 표시는 `red_prompt`에만 쓴다.
 - **`red_prompt`가 있으면 라벨 문자열을 따옴표째 그대로** 옮긴다 — 계약이 정한 글자다. 한 글자도 바꾸지 않는다.
 - **피사체를 바꾸지 않는다.** 씬 계약의 `subject`가 무엇을 그릴지 정했다. 당신은 **그것이 어떻게 보이는지**만 다시 쓴다.
+- **`action_prompt`가 있으면 진행 중인 동작으로 쓴다.** 완료형(`has failed`, `has skewed`)은 이미 끝난 정물이라 영상이 되지 않는다. 그리고 **카메라를 지시하지 않는다** — 움직이는 것은 피사체다.
 
 # 출력 스키마
 
@@ -42,11 +43,13 @@ ${reasons}
 
 {
   "subject_prompt": "...",
+  "action_prompt": "...",
   "camera_target": "...",
   "red_prompt": "..."
 }
 
 - `subject_prompt`·`camera_target`은 **반드시** 채운다
+- `action_prompt`는 위에 ACTION이 주어졌을 때만 넣는다. 없었으면 **키를 넣지 않는다** — 없던 씬에 사건을 지어내면 씬 계약에 없는 동작이 화면에 뜬다
 - `red_prompt`는 위에 RED가 주어졌을 때만 넣는다. 없었으면 **키를 넣지 않는다**
 - `changed`에 무엇을 왜 바꿨는지 한 문장으로 적는다 (선택)
 

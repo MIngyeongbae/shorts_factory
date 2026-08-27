@@ -191,9 +191,13 @@ def scene_brief(scene: dict[str, Any]) -> dict[str, Any]:
         "subject_anchor": list(scene.get("subject_anchor") or []),
         "subject_scale": scene.get("subject_scale"),
         "staging": {"value": staging, "phrase": STAGINGS[staging], "source": staging_source},
+        # 사건 (ADR-0076). 선택이라 없으면 아래에서 싣지 않는다 — 그때는 정물 씬이다.
         "framing": {"value": token, "shot": FRAMINGS[token].shot, "source": framing_source},
         "camera": {"value": scene["camera"], "phrase": CAMERA_PROMPTS[scene["camera"]]},
     }
+    action = str(scene.get("action") or "").strip()
+    if action:
+        brief["action"] = action
     info = scene.get("info") or None
     if info:
         brief["info"] = {
@@ -261,9 +265,11 @@ def format_refs(refs: dict[str, Any] | None, contract: dict[str, Any]) -> tuple[
 
 #: `mj_subject` 절의 본문. 단어 수만 치환한다 — 예산은 어휘에서 계산해 넣는다
 #: (`mj_subject_budget`, ADR-0034: 숫자를 프롬프트에 적어 넣지 않는다).
-MJ_BLOCK = """## `mj_subject` — CLEAN 정지 이미지용 한 줄 (영어, **{low}~{high}단어**, 모든 씬)
+MJ_BLOCK = """## `mj_subject` — CLEAN 정지 이미지용 한 줄 (영어, **{low}~{high}단어**, **`info`가 없는 씬만**)
 
 이 라인은 씬마다 **정지 이미지를 먼저 그리고** 영상 모델이 그 사이를 잇는다 (ADR-0070·0071). 그 이미지를 사는 프롬프트의 **소재부**를 쓴다.
+
+- **`info` 씬에는 이 필드를 내지 마라.** 그 씬은 텍스트→영상으로 가서 MJ를 타지 않으므로 정지 이미지가 없다 (ADR-0075 결정 1). 있으면 기계 검사가 반려한다
 
 - **서술 문장이 아니라 명사구 나열이다.** `subject_prompt`를 줄이는 것이 아니라 같은 씬을 다른 문법으로 쓰는 것이다: 무엇이, 어떤 재질로, 어떻게 놓였는지를 쉼표로 잇는다
 - **콜론·세미콜론·줄바꿈을 쓰지 마라** — 그 문자를 구분자로 읽지 않는 모델이라 라벨이 화면 지시로 섞인다
@@ -299,6 +305,7 @@ def build_session_prompt(
     subject_min, subject_max = promptplan.length_limits(promptplan.SUBJECT_FIELD)
     target_min, target_max = promptplan.length_limits(promptplan.CAMERA_TARGET_FIELD)
     red_min, red_max = promptplan.length_limits(promptplan.RED_FIELD)
+    action_min, action_max = promptplan.length_limits(promptplan.ACTION_FIELD)
     prompt = load_prompt(PROMPT_FILE).substitute(
         topic=topic,
         script=script_text.strip(),
@@ -309,6 +316,7 @@ def build_session_prompt(
         subject_min=subject_min, subject_max=subject_max,
         target_min=target_min, target_max=target_max,
         red_min=red_min, red_max=red_max,
+        action_min=action_min, action_max=action_max,
         mj_block=format_mj_block(line),
     )
     return prompt, described
@@ -361,6 +369,7 @@ def build_prompts(
                 staging=staging,
                 camera=scene["camera"],
                 camera_target=str(entry.get(promptplan.CAMERA_TARGET_FIELD, "")),
+                action_prompt=str(entry.get(promptplan.ACTION_FIELD, "") or ""),
                 red_prompt=str(entry[promptplan.RED_FIELD]) if info else None,
                 frames=scene_frames,
                 style="" if scene_frames else video_look,
@@ -386,6 +395,10 @@ def build_prompts(
                 entry.get(promptplan.CAMERA_TARGET_FIELD, "")
             ),
         }
+        # 사건 단락 (ADR-0076) — 씬 계약에 `action`이 있는 씬만. MJ 조립(`mj_image_prompt`)은
+        # 이 값을 쓰지 않는다: 정지 이미지라 동작 서술이 모션블러로 나온다.
+        if entry.get(promptplan.ACTION_FIELD):
+            record[promptplan.ACTION_FIELD] = str(entry[promptplan.ACTION_FIELD])
         if info:
             record[promptplan.RED_FIELD] = str(entry[promptplan.RED_FIELD])
             # 정보를 지는 구도 장치 (ADR-0075 결정 5) — 씬 계약의 값을 그대로 나른다.

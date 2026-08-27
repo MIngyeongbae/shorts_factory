@@ -54,6 +54,7 @@ def scene(**overrides):
 
 SUBJECT = "a concrete dam seen whole in its canyon, every spillway modeled"
 RED = 'one pure red dimension line spanning the full height of the dam with a small red label box beside it with white text that reads exactly "221 m"'
+ACTION = "water surges out of the spillway and slams into the riverbed below, throwing spray up the face"
 
 
 def prompt_of(**overrides) -> str:
@@ -217,12 +218,42 @@ def test_the_overlay_vocabulary_is_gone():
 # --- 골격: 순서 (스펙 03 「프롬프트 골격」) ----------------------------------
 
 
+#: 씬이 값을 줬을 때만 나오는 절 — RED는 `info` 씬, ACTION은 `action`이 있는 씬 (ADR-0076).
+OPTIONAL_SECTIONS = ("RED", "ACTION")
+
+
 def test_sections_come_in_the_spec_order_for_a_plain_scene():
-    assert sections(prompt_of()) == [s for s in SECTIONS if s != "RED"]
+    assert sections(prompt_of()) == [s for s in SECTIONS if s not in OPTIONAL_SECTIONS]
 
 
 def test_sections_come_in_the_spec_order_for_an_info_scene():
-    assert sections(prompt_of(info=INFO)) == list(SECTIONS)
+    assert sections(prompt_of(info=INFO)) == [s for s in SECTIONS if s != "ACTION"]
+
+
+def test_action_sits_between_subject_and_camera_when_the_scene_has_one():
+    """사건 절은 시작 상태 뒤·카메라 앞이다 (ADR-0076) — 골격 순서는 스펙 03의 것이다."""
+    got = sections(prompt_of(action_prompt=ACTION, info=INFO))
+    assert got == list(SECTIONS)
+    assert got.index("ACTION") == got.index("SUBJECT") + 1
+    assert got.index("CAMERA") == got.index("ACTION") + 1
+
+
+def test_a_scene_without_an_action_gets_no_action_clause():
+    """사건이 없으면 절이 없다 — 정물이 맞는 씬에 동작을 지어내지 않는다 (ADR-0076)."""
+    assert "ACTION:" not in prompt_of()
+    assert "ACTION:" not in prompt_of(action_prompt="")
+
+
+def test_frames_scenes_never_carry_the_action_clause():
+    """프레임 경로의 소비자는 `mj-endimage` — **MJ다** (ADR-0076 대안 D).
+
+    정지 이미지 계열이라 동작 서술이 모션블러로 나오고, 긴 본문은 MJ가 다시 써서 프록시가
+    결과를 못 묶는다 (ADR-0069·0071 — 358단어에 10분 타임아웃). 사건은 전체 골격 경로의
+    H3·Omni만 받는다.
+    """
+    prompt = prompt_of(action_prompt=ACTION, frames=True)
+    assert "ACTION:" not in prompt
+    assert ACTION not in prompt
 
 
 def test_red_appears_exactly_once_and_only_on_info_scenes():

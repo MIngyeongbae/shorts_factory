@@ -27,6 +27,8 @@ _VALIDATOR = Draft202012Validator(PROMPTPLAN_SCHEMA, registry=vocab.REGISTRY)
 
 SUBJECT_FIELD = "subject_prompt"
 CAMERA_TARGET_FIELD = "camera_target"
+#: 씬 계약에 `action`이 있는 씬만 쓰는 필드 (ADR-0076) — 그 상태가 어떻게 변하는가.
+ACTION_FIELD = "action_prompt"
 RED_FIELD = "red_prompt"
 SHOT2_FIELD = "subject_prompt_shot2"
 #: 프레임을 입력으로 받는 라인만 쓰는 필드 (ADR-0071) — CLEAN 정지 이미지용 MJ 한 줄의 소재부.
@@ -63,6 +65,35 @@ def _words_in(text: str, words: tuple[str, ...]) -> list[str]:
 
 def _forbidden_camera_words(text: str) -> list[str]:
     return _words_in(text, vocab.camera_target_forbidden_words())
+
+
+#: 무대 문구에서 이만큼 이어지는 낱말이 세션 단락에 그대로 있으면 복창으로 본다 (ADR-0076).
+#: 값은 계약이 아니라 검사 강도라 여기 둔다 — 문구 자체는 `vocab.phrase`가 읽는다 (ADR-0034).
+_STAGING_ECHO_WORDS = 5
+
+
+def _staging_echo(text: str, staging: str) -> str:
+    """세션 단락이 골격의 STAGING 절 문구를 다시 쓴 자리 (없으면 빈 문자열).
+
+    코드가 이미 `STAGING:` 절로 넣는 문장을 세션이 `SUBJECT:` 안에 또 쓰면 한 프롬프트에
+    같은 무대가 두 번 들어간다 — 예산을 먹고(실측 +약 200자) studio 씬이 전부 같은 그림으로
+    수렴한다 (ADR-0076 맥락 8: `zipper` 12/12·`us-penny-halt` 8/8·`rai-stones` 7/7 복창,
+    복창이 없던 `japan-5060hz`는 평균 704자). `05-prompt.md`가 이미 금지했지만 검사가 없어
+    세션 운에 맡겨져 있었다.
+
+    문구는 어휘에서 읽는다 — 손으로 옮겨 적지 않는다 (ADR-0034).
+    """
+    try:
+        phrase = vocab.phrase("staging", staging)
+    except Exception:
+        return ""
+    haystack = " ".join(text.lower().split())
+    words = [w for w in re.findall(r"[a-z-]+", phrase.lower()) if w]
+    for start in range(len(words) - _STAGING_ECHO_WORDS + 1):
+        run = " ".join(words[start : start + _STAGING_ECHO_WORDS])
+        if run in haystack:
+            return run
+    return ""
 
 
 def _red_words_outside_red(text: str) -> list[str]:
@@ -159,13 +190,46 @@ def cross_errors(
                         f"scenes/{sid}: {RED_FIELD}에 라벨 \"{label}\"이 따옴표째 정확히 들어 있지 않다 — "
                         "화면 글자는 계약의 문자열 그대로다"
                     )
+        action = str(scene.get("action") or "").strip()
+        action_prompt = str(entry.get(ACTION_FIELD) or "").strip()
+        if action and not action_prompt:
+            errors.append(
+                f"scenes/{sid}: 씬 계약에 action이 있는데 {ACTION_FIELD}가 없다 — "
+                "이 클립 동안 무엇이 어떻게 변하는지 적어라 (ADR-0076)"
+            )
+        if action_prompt and not action:
+            errors.append(
+                f"scenes/{sid}: 씬 계약에 action이 없는데 {ACTION_FIELD}가 있다 — "
+                "사건은 [3s]가 고른다. 정물 씬에 동작을 지어내지 않는다 (ADR-0076)"
+            )
+        if action_prompt:
+            bad = _forbidden_camera_words(action_prompt)
+            if bad:
+                errors.append(
+                    f"scenes/{sid}: {ACTION_FIELD}가 카메라 워크를 지시한다 ({', '.join(bad)}) — "
+                    "움직이는 것은 피사체이고 카메라는 씬 계약의 camera 어휘가 정한다 (ADR-0033 §3)"
+                )
+
+        echoed = _staging_echo(str(entry.get(SUBJECT_FIELD, "") or ""), str(scene.get("staging") or ""))
+        if echoed:
+            errors.append(
+                f"scenes/{sid}: {SUBJECT_FIELD}가 골격의 STAGING 절을 다시 쓴다 (\"{echoed}…\") — "
+                "무대 문구는 코드가 어휘에서 넣는다. 세션은 그 절을 쓰지 않는다 (ADR-0076)"
+            )
+
         shot2 = scene.get("shot2") or None
         shot2_prompt = entry.get(SHOT2_FIELD)
         if shot2 and not shot2_prompt:
             errors.append(f"scenes/{sid}: shot2 씬인데 {SHOT2_FIELD}가 없다")
         if shot2_prompt and not shot2:
             errors.append(f"scenes/{sid}: shot2가 없는 씬에 {SHOT2_FIELD}가 있다")
-        for field in (SUBJECT_FIELD, CAMERA_TARGET_FIELD, SHOT2_FIELD, MJ_SUBJECT_FIELD):
+        for field in (
+            SUBJECT_FIELD,
+            ACTION_FIELD,
+            CAMERA_TARGET_FIELD,
+            SHOT2_FIELD,
+            MJ_SUBJECT_FIELD,
+        ):
             leaked = _red_words_outside_red(str(entry.get(field, "") or ""))
             if leaked:
                 errors.append(

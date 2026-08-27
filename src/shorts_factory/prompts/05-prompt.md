@@ -30,7 +30,9 @@ ${refs}
 
 원카랩 참조 프롬프트(아래)의 SUBJECT처럼 쓴다. 지켜야 할 것:
 
-1. **설명의 무대를 쓴다.** `visual_goal`이 말하는 것을 *보이게* 하는 배치를 적는다 — 비교면 두 모델을 나란히 놓고 **무엇이 같고 무엇이 다른지**를 문장으로; 단면이면 절단면에 무엇이 보이는지(층·빈 공간·재질·얼음 더미·짚 층); 흐름이면 어디서 들어와 어디로 나가는지; 규모면 무엇 옆에 있어 크기가 읽히는지. 대사가 말하지 않는 것을 그림이 받는다.
+1. **설명의 무대를 쓰되, 그것은 이 씬의 *시작 상태*다.** `visual_goal`이 말하는 것을 *보이게* 하는 배치를 적는다 — 비교면 두 모델을 나란히 놓고 **무엇이 같고 무엇이 다른지**를 문장으로; 단면이면 절단면에 무엇이 보이는지(층·빈 공간·재질·얼음 더미·짚 층); 흐름이면 어디서 들어와 어디로 나가는지; 규모면 무엇 옆에 있어 크기가 읽히는지. 대사가 말하지 않는 것을 그림이 받는다. **씬 계약에 `action`이 있으면 변화는 여기 쓰지 않는다** — 그것은 `action_prompt`의 몫이고, 여기는 그 변화가 시작되기 직전의 화면이다.
+
+   **골격의 절을 다시 쓰지 마라.** 무대 문구(`STAGING:`)·화면비·스타일은 코드가 이미 넣는다. `subject_prompt`에 "on a flat neutral pale gray studio ground", "seen from a low three-quarter angle" 같은 무대 문구를 되풀이하면 **기계 검사가 반려한다** — 한 프롬프트에 같은 무대가 두 번 들어가 예산을 먹고 씬이 전부 같은 그림으로 수렴한다.
 2. **고유명사에 기대지 않는다.** 모델은 이름을 모른다. 로마자 이름을 적되 바로 뒤에 **형태·재질·배치**로 풀어라: "the Gyeongju Seokbinggo, an 18th-century Korean stone ice storehouse: a long low grass-covered earthen mound like a burial mound, with a plain rectangular granite doorway cut into its front end…". 형태는 팩트체크·대본 머리의 서술에서 가져온다.
 3. **반복 피사체는 매 씬 전체 서술을 다시 싣는다.** 클립은 씬마다 독립 생성이라 앞 씬을 기억하지 않는다. "the same chamber as before"는 쓸 수 없다 — 빙실이 다섯 씬에 나오면 다섯 번 같은 문장으로 쓴다. 씬 간 일관성은 **같은 문장을 반복하는 것**으로 만든다.
 4. **씬 계약의 연출을 바꾸지 않는다.** `staging`(studio/location)·`framing`·`camera`·`subject`·`info`는 정해진 값이다. `framing`의 구도 문구(아래 씬 계약에 적혀 있다)가 말하는 구도로 서술하고, `subject`가 말하는 피사체를 쓴다. 구도·카메라를 새로 지시하지 마라 — 그건 CAMERA 절의 몫이다.
@@ -38,9 +40,22 @@ ${refs}
 6. **숫자·치수는 팩트체크의 것만.** 팩트체크에 없는 수치·연도를 SUBJECT에 넣지 마라. 단, 숫자는 글자로 렌더되면 안 되니 SUBJECT에서는 수치를 *형태*로 옮긴다 ("a 5-degree slope" 대신 "a floor that tilts gently toward the door").
 7. 인물(`cast`)이 있는 씬은 `characters`의 외형 서술을 그대로 싣는다. 얼굴 클로즈업은 쓰지 않는다.
 
+## `action_prompt` — ACTION 절, **무엇이 변하는가** (영어, ${action_min}~${action_max}자, **씬 계약에 `action`이 있는 씬만**)
+
+씬 계약의 `action`이 이 클립 동안 피사체에게 일어나는 일이다. 그것을 영어로 구현한다. **이 절이 없으면 그 씬은 정물 사진이 된다.**
+
+- **진행 중인 동작으로 쓴다.** 완료형(`has failed`, `has skewed`, `has forced`)은 **이미 끝난 상태**라 영상이 되지 않는다 — "고장 나는 순간"이 "이미 고장 난 물건"이 된다. 현재형·진행형으로 쓴다: `the hook twists sideways off its bar and the row tears open at that point`
+- **시작 → 끝이 있어야 한다.** `subject_prompt`가 그린 화면에서 출발해 무엇이 어떤 상태로 끝나는지. 흐름이면 **시작점·방향·부딪히는 경계·결과**를 적는다 — 어디서 나와서, 어디로 가고, 무엇에 막히고, 그래서 무엇이 되는가
+- **사람·환경도 사건이다.** 외면·통과·붐빔·멈춤처럼 사람이 하는 일도 여기 쓴다: `shoppers stream past the case without slowing, none turning toward it`
+- **카메라를 지시하지 마라.** 움직이는 것은 피사체다. 카메라 워크 단어(pan, tilt, zoom, dolly, orbit, track, push, pull, rush, fly, sweep, spin, rotate…)를 쓰면 기계 검사가 반려한다 — 워크는 씬 계약의 `camera`에서 온다
+- **빨강·화살표·라벨을 쓰지 마라.** 계측 표시가 움직이는 것은 `red_prompt`가 쓴다
+- **없는 사건을 지어내지 마라.** 씬 계약에 `action`이 없으면 이 필드를 쓰지 않는다 — 정물이 맞는 씬이 있고, 대본에 없는 동작이 화면에 뜨면 그것이 곧 대본과 겉도는 영상이다
+
 ## `camera_target` — 카메라가 닿는 곳 (영어 한 구절, ${target_min}~${target_max}자)
 
-CAMERA 절은 "워크 문구, 착지 구절." 꼴로 조립된다. 당신은 **착지**만 쓴다 — 워크가 끝나는 순간 프레임 한가운데 무엇이 있는가: "arriving on the dark rectangular doorway at the foot of the mound", "holding on the vent shaft at the crown of the arch where the warm air leaves". **카메라 워크 단어(pan, tilt, zoom, dolly, orbit, track, push, pull, rush…)를 쓰지 마라** — 쓰면 기계 검사가 반려한다. 워크는 씬 계약의 `camera`에서 온다.
+CAMERA 절은 "워크 문구, 착지 구절." 꼴로 조립된다. 당신은 **착지**만 쓴다 — 워크가 끝나는 순간 프레임 한가운데 무엇이 있는가: "arriving on the dark rectangular doorway at the foot of the mound", "holding on the vent shaft at the crown of the arch where the warm air leaves". **카메라 워크 단어(pan, tilt, zoom, dolly, orbit, track, push, pull, rush, fly, sweep, spin, rotate…)를 쓰지 마라** — 쓰면 기계 검사가 반려한다. 워크는 씬 계약의 `camera`에서 온다.
+
+이 규칙은 **품사를 안 가린다.** 소재의 일부 이름이 이 목록의 단어와 우연히 같으면(예: 지퍼의 "fly"는 카메라 동사가 아니라 바지 앞섶이라는 명사다) 그래도 반려된다. 착지를 그 이름으로 부르지 말고 **생김새·재질·부위로 풀어서** 써라: "arriving on the fly" 대신 "arriving on the row of interlocked teeth where the two panels meet"처럼.
 
 ## `info` 씬은 **구도가 정보를 진다** (ADR-0075)
 
@@ -84,6 +99,7 @@ JSON 객체 하나만. 설명·마크다운·코드펜스 없이.
     {
       "scene_id": 1,
       "subject_prompt": "…",
+      "action_prompt": "…"          ← 씬 계약에 action이 있는 씬만
       "camera_target": "…",
       "red_prompt": "…"            ← info 씬만
       "mj_subject": "…"            ← 위 절이 있을 때만
@@ -94,4 +110,4 @@ JSON 객체 하나만. 설명·마크다운·코드펜스 없이.
 ```
 
 - 씬 계약의 **모든 씬**이 한 번씩, 같은 `scene_id`로 들어간다
-- 쓰기 전에 충돌을 점검한다: 무대(studio인데 풍경을 쓰지 않았는가), 구도(클로즈업인데 전경을 쓰지 않았는가), 라벨(따옴표째 들어갔는가), 한국어(한 글자도 없는가)
+- 쓰기 전에 충돌을 점검한다: 무대(studio인데 풍경을 쓰지 않았는가, **골격의 무대 문구를 되풀이하지 않았는가**), 구도(클로즈업인데 전경을 쓰지 않았는가), 사건(`action`이 있는 씬에 `action_prompt`를 썼는가, **완료형이 아니라 진행형인가**, 없는 씬에 지어내지 않았는가), 라벨(따옴표째 들어갔는가), 한국어(한 글자도 없는가)

@@ -98,6 +98,13 @@ def semantic_warnings(data: dict[str, Any]) -> list[str]:
                 "고르지 않은 것이고 ADR-0033의 되돌릴 조건이다"
             )
 
+    # 사건 (ADR-0076). 빈 씬 하나하나는 정상이다 — 정물이 맞는 씬이 있다. 전멸만 경고한다.
+    if all(not str(s.get("action") or "").strip() for s in scenes):
+        warnings.append(
+            f"action이 전 씬({len(scenes)}개)에서 비었다 — 편 전체가 정물 사진으로 간다. "
+            "대본 줄이 상황·행위를 말하는데도 비었다면 ADR-0076의 되돌릴 조건이다"
+        )
+
     missing_anchor = [s.get("scene_id") for s in scenes if not s.get("subject_anchor")]
     if len(missing_anchor) == len(scenes):
         warnings.append(
@@ -121,6 +128,9 @@ def direction_summary(data: dict[str, Any]) -> dict[str, Any]:
         summary[field] = dict(counts.most_common())
     summary["info"] = sum(1 for s in scenes if s.get("info"))
     summary["cast"] = sum(1 for s in scenes if s.get("cast"))
+    # 사건이 있는 씬 수 (ADR-0076). 전 씬이 비면 `[5]`가 편 전체를 정물로 주문한 것이고,
+    # 그것이 ADR-0076을 되돌릴 조건이다 — `transition`과 같은 관측 장치다.
+    summary["action"] = sum(1 for s in scenes if str(s.get("action") or "").strip())
     return summary
 
 

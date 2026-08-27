@@ -133,8 +133,11 @@ def test_skeleton_order_and_sources(paths, install):
 
     info_scene = next(s for s in result.prompts["scenes"] if s["scene_id"] == 1)
     plain_scene = next(s for s in result.prompts["scenes"] if s["scene_id"] == 2)
-    assert section_names(info_scene["video_prompt"]) == list(SECTIONS)
-    assert section_names(plain_scene["video_prompt"]) == [s for s in SECTIONS if s != "RED"]
+    # 이 픽스처의 씬에는 `action`이 없다 — 사건 절은 씬 계약이 걸었을 때만 나온다 (ADR-0076).
+    assert section_names(info_scene["video_prompt"]) == [s for s in SECTIONS if s != "ACTION"]
+    assert section_names(plain_scene["video_prompt"]) == [
+        s for s in SECTIONS if s not in ("RED", "ACTION")
+    ]
     assert SECONDS_PLACEHOLDER in line_of(info_scene["video_prompt"], "FORMAT")
     assert line_of(info_scene["video_prompt"], "RED").endswith(vocab.annotation_closing())
     assert '"221 m"' in line_of(info_scene["video_prompt"], "RED")
