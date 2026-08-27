@@ -115,6 +115,12 @@ MJ에 보내는 것은 **한 줄**이고 형식이 다르다 — 값은 `vocab.j
 - **`::` 멀티프롬프트를 쓰지 않는다** (MJ v8.2가 거절한다)
 - 스타일 문자열과 배제 목록을 **줄이지 않는다.** 실측에서 그 축약이 백지 위 제도 스케치를 불렀다
   — 사실성·배경 절과 종이 배제 항목(ADR-0038)이 그 룩을 지탱한다
+- **실물 참조는 `--oref`로 꼬리에 붙는다** (ADR-0077). `[4]`가 `reference_ok`로 고른 사진을 `[6]`이
+  올려 얻은 주소이고, **라이선스가 아니라 적합성**이 고른 값이다 — `attachable`은 `[8]`의 재현
+  경로를 계속 지킨다. 문법은 `vocab`이 아니라 어댑터가 든다 (`--oref … --ow 25 --v 7`,
+  ADR-0051 G3·G4의 실측값). **`--sref`는 여전히 쓰지 않는다** — `base_style`을 이겨 마감을
+  망가뜨렸다 (ADR-0025 G3). `--oref`는 형태를 참조하는 다른 축이지만, 도면류가 흑백 선각 질감을
+  끌고 들어오면 같은 실패가 재발하는 것이므로 `--ow`를 내리고 그래도 남으면 참조에서 뺀다
 
 ## ~~INFO 이미지 — 계측 표시를 얹는 것은 편집이다~~ (ADR-0071 — ADR-0075가 폐기했다)
 
@@ -157,13 +163,6 @@ MJ에 보내는 것은 **한 줄**이고 형식이 다르다 — 값은 `vocab.j
   때문이다 (ADR-0067). 조립은 코드가 어휘에서 로드해 한다 (ADR-0034)
 - **검사가 각각 붙는다** — `mj_image_prompt`는 MJ 방언·예산, `video_prompt`는 골격·ASCII·라벨
   포함·착지 금지어다. 예산을 `mj_subject` 하나에만 걸면 **최종 전송 문자열은 아무도 안 잰다**
-
-```
-FORMAT    A vertical 9:16 shot, {N} seconds long, {스타일 문자열}.       ← N은 [7]이 채운다
-STAGING   {staging 문구}                                                  ← vocab staging.{value}.phrase
-SUBJECT   {subject_prompt}                                                ← 세션: 씬의 **시작 상태**, 영어 단락
-ACTION    {action_prompt}                                                 ← 세션: 무엇이 변하는가. `action`이 있는 씬만 (ADR-0076)
-CAMERA    {camera 문구}, {camera_target}.                                 ← vocab camera.{value}.video_prompt + 세션의 착지
 - **사건은 영상 엔진만 받는다** (ADR-0076). `ACTION` 절은 **골격 전체를 받는 씬에만** 붙는다 —
   프레임을 받는 씬의 소비자는 MJ `endImage`이고, 정지 이미지 계열이라 동작 서술이
   모션블러로 나오며 긴 본문은 MJ가 다시 써서 프록시가 결과를 못 묶는다 (ADR-0069·0071 —
@@ -171,6 +170,13 @@ CAMERA    {camera 문구}, {camera_target}.                                 ← 
 - **세션은 골격의 절을 다시 쓰지 않는다.** 특히 `subject_prompt`가 `STAGING` 문구를 되풀이하면
   기계 검사가 반려한다 — 한 프롬프트에 같은 무대가 두 번 들어가 예산을 먹고 studio 씬이 전부
   같은 그림으로 수렴한다 (ADR-0076 맥락 8: 실측 `zipper` 12/12·`us-penny-halt` 8/8)
+
+```
+FORMAT    A vertical 9:16 shot, {N} seconds long, {스타일 문자열}.       ← N은 [7]이 채운다
+STAGING   {staging 문구}                                                  ← vocab staging.{value}.phrase
+SUBJECT   {subject_prompt}                                                ← 세션: 씬의 **시작 상태**, 영어 단락
+ACTION    {action_prompt}                                                 ← 세션: 무엇이 변하는가. `action`이 있는 씬만 (ADR-0076)
+CAMERA    {camera 문구}, {camera_target}.                                 ← vocab camera.{value}.video_prompt + 세션의 착지
 RED       {red_prompt} + {annotation._closing}                            ← 세션: 보조선 기하 + 라벨 따옴표째. info 씬만
 NEGATIVE  {style.negatives} + (info 없는 씬) "No text, no letters, no numbers, no labels."
           + "No background music."

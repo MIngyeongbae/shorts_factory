@@ -246,6 +246,13 @@ def _apply_license(image: dict[str, Any]) -> dict[str, Any]:
         value = str(image.get(key) or "").strip()
         if value:
             entry[key] = value
+    # 참조 적합성은 **세션이 판정한다** (ADR-0077) — 라이선스와 달리 대조할 목록이 없고
+    # 사진을 봐야 아는 값이다. `attachable`과 축이 다르므로 여기서 덮어쓰지 않는다.
+    if image.get("reference_ok") is not None:
+        entry["reference_ok"] = bool(image.get("reference_ok"))
+        note = str(image.get("reference_note") or "").strip()
+        if note:
+            entry["reference_note"] = note
     return entry
 
 
@@ -258,19 +265,24 @@ def download_images(
     warnings: list[str],
     interval: float = DOWNLOAD_INTERVAL,
 ) -> list[dict[str, Any]]:
-    """첨부 가능한 사진만 내려받아 `file`을 채운다.
+    """**쓰일 사진만** 내려받아 `file`을 채운다 — 재현용(`attachable`)이거나 참조용(`reference_ok`).
 
-    **실패는 강등이지 중단이 아니다** (specs/05 D-5). 못 받은 사진은 `attachable`이
-    내려가고 서술 경로만 남는다 — 그 사진을 보고 쓴 `description`은 그대로 살아 있다.
+    ADR-0077 전에는 `attachable`만 받았다. 참조는 라이선스가 아니라 적합성이 고르므로
+    (재현과 축이 다르다) PD가 아닌 사진도 참조로 쓰이면 실물이 있어야 한다.
+
+    **실패는 강등이지 중단이 아니다** (specs/05 D-5). 못 받은 사진은 `attachable`·
+    `reference_ok`가 함께 내려가고 서술 경로만 남는다 — 그 사진을 보고 쓴 `description`은
+    그대로 살아 있다.
     """
     kept: list[dict[str, Any]] = []
     index = 0
     for entry in entries:
-        if not entry["attachable"]:
+        if not (entry["attachable"] or entry.get("reference_ok")):
             kept.append(entry)
             continue
         if not entry["source_url"]:
             entry["attachable"] = False
+            entry["reference_ok"] = False
             warnings.append(f"씬 {scene_id}: 주소가 비어 첨부하지 못했다")
             kept.append(entry)
             continue
@@ -289,6 +301,8 @@ def download_images(
                 raise RefpackStageError(f"{MAX_IMAGE_BYTES}바이트를 넘는다")
         except (RefpackStageError, OSError, urllib.error.URLError, ValueError) as exc:
             entry["attachable"] = False
+            # 실물이 없으면 참조도 못 붙인다 (ADR-0077) — `[6]`이 파일을 올려야 주소가 생긴다.
+            entry["reference_ok"] = False
             warnings.append(
                 f"씬 {scene_id}: {entry['source_url']}을 내려받지 못해 서술만 쓴다 — {exc}"
             )

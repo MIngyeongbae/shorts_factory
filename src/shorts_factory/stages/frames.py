@@ -55,7 +55,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
-from ..config import Paths, write_text
+from ..config import MissingCredential, Paths, write_text
 from ..imagegen.base import (
     ImageGenError,
     ImageRequest,
@@ -64,7 +64,8 @@ from ..imagegen.base import (
 from ..jsonio import JSONExtractionError, dump_json, extract_json_object
 from ..llm.base import LLMClient, LLMError
 from ..runstate import RunState
-from ..schemas import promptplan, vocab
+from ..schemas import promptplan, refs as refs_schema, vocab
+from ..storage import r2 as objectstore
 from ..schemas.visual_rules import (
     ASPECT_RATIO,
     RESOLUTION,
@@ -91,6 +92,8 @@ GRID_ROUNDS = 2
 
 #: 이 단계의 산출 — 계약 파일 하나와 이미지 디렉터리 하나 (specs/05 계약 표).
 RECORD_FILE = "frames.json"
+#: `[4]`의 산출 — 실물 참조 사진의 목록 (ADR-0077). 계약 이름은 refs 스키마의 것이다.
+REFS_FILE = refs_schema.RECORD_FILE
 FRAMES_DIR = "frames"
 
 #: `[5]`가 완성해 실어 주는 MJ 한 줄 (`prompts.json`의 필드 — `visual_rules.PROMPT_SCENE_SCHEMA`).
@@ -169,10 +172,34 @@ class FrameJob:
     #: "400 km 열린 바다"가 안 보이는 씬이 `[6]`을 통과하고 `[7]`에서 기각됐다.
     subject: str = ""
     visual_goal: str = ""
+    #: ADR-0077 — 이 씬의 실물 참조 사진 (run 디렉터리 기준 경로). `[4]`가 `reference_ok`로
+    #: 고른 것이고, 없으면 참조 없이 그린다. 라이선스가 아니라 **적합성**이 고른 값이다.
+    reference_file: str = ""
+
+
+def pick_reference(scene_refs: dict[str, Any] | None) -> str:
+    """씬의 참조 후보 중 **쓸 만하다고 판정됐고 실물이 내려받아진** 첫 장 (ADR-0077).
+
+    `attachable`을 보지 않는다 — 그 필드가 지키는 것은 `[8]`이 사진을 **그대로 싣는**
+    경로이고 여기는 MJ가 형태만 참조하는 자리라 축이 다르다 (ADR-0077 맥락 5).
+    """
+    if not scene_refs:
+        return ""
+    for image in scene_refs.get("images") or []:
+        if not isinstance(image, dict) or not image.get("reference_ok"):
+            continue
+        path = str(image.get("file") or "").strip()
+        if path:
+            return path
+    return ""
 
 
 def build_jobs(
-    contract: dict[str, Any], prompts: dict[str, Any], *, line: str
+    contract: dict[str, Any],
+    prompts: dict[str, Any],
+    *,
+    line: str,
+    refs: dict[str, Any] | None = None,
 ) -> tuple[list[FrameJob], list[str]]:
     """씬 계약 + `[5]` 산출 → 씬별 작업. **`info`가 없는 씬만 나온다** (ADR-0075 결정 1·2).
 
@@ -185,6 +212,11 @@ def build_jobs(
     warnings: list[str] = []
     by_id = {
         int(scene["scene_id"]): scene for scene in prompts.get("scenes", [])
+    }
+    refs_by_id: dict[int, dict[str, Any]] = {
+        int(entry["scene_id"]): entry
+        for entry in ((refs or {}).get("scenes") or [])
+        if isinstance(entry, dict) and entry.get("scene_id") is not None
     }
     jobs: list[FrameJob] = []
     skipped = 0
@@ -216,6 +248,7 @@ def build_jobs(
                 mj_subject=str(planned.get(promptplan.MJ_SUBJECT_FIELD) or ""),
                 subject=str(scene.get("subject") or ""),
                 visual_goal=str(scene.get("visual_goal") or ""),
+                reference_file=pick_reference(refs_by_id.get(scene_id)),
             )
         )
     if skipped:
@@ -340,8 +373,56 @@ class _Runner:
         self.on_scene_done = on_scene_done
         self.refusal: str | None = None
         self.stop = threading.Event()
+        #: ADR-0077 — 참조 사진은 여러 씬이 같은 파일을 가리킬 수 있어 한 번만 올린다.
+        #: 값은 `(주소, 키)`이고, 실패도 `("", "")`로 캐시해 매 씬 재시도하지 않는다.
+        self._reference_cache: dict[str, tuple[str, str]] = {}
+        self._reference_warned: set[str] = set()
+        self.warnings: list[str] = []
 
     # --- MJ CLEAN ---------------------------------------------------------
+
+    def _reference(self, job: FrameJob) -> tuple[str, str]:
+        """참조 사진 → `(공개 주소, 안정 키)`. **실패해도 그림은 산다** (ADR-0077).
+
+        참조는 그림을 좋게 하는 수단이지 조건이 아니다 — 스토리지가 없거나 업로드가
+        깨지면 경고만 남기고 참조 없이 그린다 (specs/05 D-3의 태도).
+
+        키는 **파일 내용 해시**다. 주소가 돌아도 지문이 같아 다시 사지 않고, 참조 없이 산
+        씬은 참조가 살아나면 지문이 달라져 다시 산다 (ADR-0051이 `reference_key`를 둔 이유).
+        """
+        if not job.reference_file:
+            return "", ""
+        path = self.run_dir / job.reference_file
+        cached = self._reference_cache.get(job.reference_file)
+        if cached is not None:
+            return cached
+        if not objectstore.configured():
+            self._warn_once(
+                "R2 키가 없어 실물 참조를 붙이지 않는다 — 그림은 참조 없이 그린다 "
+                f"({', '.join(objectstore.ENV_KEYS)} 중 빈 값이 있다, ADR-0077)"
+            )
+            self._reference_cache[job.reference_file] = ("", "")
+            return "", ""
+        try:
+            url = objectstore.put_file(path, timeout=self.image_timeout or 60)
+        except (objectstore.ObjectStoreError, MissingCredential) as exc:
+            self._warn_once(f"씬 {job.scene_id}: 참조 사진을 올리지 못해 참조 없이 그린다 — {exc}")
+            self._reference_cache[job.reference_file] = ("", "")
+            return "", ""
+        key = objectstore.content_key(path.read_bytes(), path.suffix)
+        log.info(
+            "[%s] 씬 %d: 실물 참조를 붙인다 (%s) — 이 씬만 v7으로 돈다 (ADR-0077)",
+            STAGE, job.scene_id, job.reference_file,
+        )
+        self._reference_cache[job.reference_file] = (url, key)
+        return url, key
+
+    def _warn_once(self, message: str) -> None:
+        if message in self._reference_warned:
+            return
+        self._reference_warned.add(message)
+        self.warnings.append(message)
+        log.warning("[%s] %s", STAGE, message)
 
     def _grid(self, job: FrameJob, prompt: str | None = None) -> str:
         """imagine 잡 하나 → 그리드 태스크 id.
@@ -350,10 +431,12 @@ class _Runner:
         같은 그리드에서 과금 0으로 뽑으므로 먼저 소진하고, 넷이 다 걸리면 그때 소재 단락을
         고쳐 새 그리드를 산다 — 같은 프롬프트를 다시 사면 같은 결함이 나온다 (ADR-0067의 태도).
         """
+        reference_url, reference_key = self._reference(job)
         request = ImageRequest(
             scene_id=job.scene_id, prompt=prompt or job.mj_prompt, negative_prompt="",
             aspect_ratio=ASPECT_RATIO, resolution=RESOLUTION,
             label=f"{STAGE}:{job.scene_id}",
+            reference_url=reference_url, reference_key=reference_key,
         )
         image = self.client.generate(request, timeout=self.image_timeout)
         task_id = image.request_id
@@ -686,7 +769,22 @@ def run_frames_stage(
             "(vocab.json meta.video_line.{line}.style_in_frames). [7]을 바로 돌려라"
         )
 
-    all_jobs, warnings = build_jobs(contract, prompts, line=resolved_line)
+    # 실물 참조 (ADR-0077). `[4]`를 안 돌렸거나 파일이 없으면 참조 없이 도는 것이 정상이다.
+    refs_path = run_dir / REFS_FILE
+    refs = None
+    if refs_path.is_file():
+        try:
+            refs = json.loads(refs_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("[%s] %s를 읽지 못해 참조 없이 간다 — %s", STAGE, REFS_FILE, exc)
+
+    all_jobs, warnings = build_jobs(contract, prompts, line=resolved_line, refs=refs)
+    with_reference = sum(1 for job in all_jobs if job.reference_file)
+    if with_reference:
+        log.info(
+            "[%s] 실물 참조를 붙일 씬 %d/%d개 — 그 씬만 v7으로 돈다 (ADR-0077)",
+            STAGE, with_reference, len(all_jobs),
+        )
     #: 만들지 **않은** 씬 수. 지표로 남기지만 강등이 아니다 (ADR-0075 결정 2).
     skipped_info = sum(1 for scene in contract.get("scenes", []) if scene.get("info"))
     done_before = _existing(run_dir, force)
@@ -764,6 +862,9 @@ def run_frames_stage(
     with write_lock:
         write_record()
 
+    # 참조 경로가 남긴 경고(스토리지 없음·업로드 실패)를 단계 경고로 올린다 (ADR-0077).
+    warnings.extend(runner.warnings)
+
     result = FramesResult(
         run_id=run_id, run_dir=run_dir, topic=topic, line=resolved_line,
         provider=getattr(client, "name", ""),
@@ -782,6 +883,8 @@ def run_frames_stage(
         "unreviewed": result.unreviewed,
         "quadrant_swaps": result.quadrant_swaps,
         "reused_from_previous_run": len(done_before),
+        # 실물 참조가 붙은 씬 수 = v7으로 돈 씬 수 (ADR-0077 되돌릴 조건의 관측 수단).
+        "with_reference": with_reference,
         "line": resolved_line,
         "provider": result.provider,
         "warnings": warnings,
