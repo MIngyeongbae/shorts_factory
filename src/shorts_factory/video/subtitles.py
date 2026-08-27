@@ -201,28 +201,33 @@ def wrap_text(
     if len(collapsed) <= limit or max_lines == 1:
         return [collapsed]
 
-    candidates = [m.start() for m in re.finditer(r"\s+", collapsed)]
-    if not candidates:
-        candidates = [len(collapsed) // 2]
+    # 1) 상한으로 채워 **가장 적은 줄 수**를 얻는다. `fill_text`는 상한을 넘는 줄을
+    #    내지 않으므로 여기서 나온 줄 수가 이 큐에 필요한 최소값이다.
+    base = fill_text(collapsed, limit=limit)
+    if len(base) > max_lines:
+        # 늘어난 줄 수로도 안 들어간다 — 판정은 `check_overflow`가 한다.
+        return base
 
-    def cost(index: int) -> tuple[int, int]:
-        head, tail = _split_at(collapsed, index)
-        return max(len(head), len(tail)), abs(len(head) - len(tail))
-
-    head, tail = _split_at(collapsed, min(candidates, key=cost))
-    if not head or not tail:  # 맨 앞/뒤 공백뿐이라 나뉘지 않았다
-        return [collapsed]
-    return [head] + wrap_text(tail, limit=limit, max_lines=max_lines - 1)
+    # 2) 같은 줄 수를 유지하면서 **가장 좁은 폭**으로 다시 채운다 = 균형.
+    #    자막은 큐마다 줄 길이가 고른 편이 보기 좋다 (제목과 다른 점).
+    for width in range(-(-len(collapsed) // len(base)), limit):
+        candidate = fill_text(collapsed, limit=width)
+        if len(candidate) <= len(base):
+            return candidate
+    return base
 
 
 def check_overflow(
     scene_id: int, lines: Sequence[str], *, limit: int = MAX_LINE_CHARS, lang: str = "",
 ) -> None:
-    """`limit`자를 넘긴 줄이 있으면 실패시킨다.
+    """`limit`자 × `MAX_LINES`줄에 안 들어가는 큐를 실패시킨다.
 
-    **폰트를 줄여 삼키지 않는다.** 상한 × 2줄에 안 들어가는 큐는 그 언어 대본이 줄당
-    상한을 넘겼다는 뜻이고, 그건 1부에서 고칠 문제다. 자막 단계가 글자를 작게 만들어
-    넘기면 상류 위반이 화면에서만 티가 나고 기록에는 안 남는다.
+    **줄 수가 판정 기준이다** (ADR-0078). `wrap_text`가 상한을 넘는 줄을 내지 않으므로
+    (채워쓰기), 안 들어가는 큐는 **줄 수가 넘치는** 모양으로 나타난다.
+
+    **폰트를 줄여 삼키지 않는다.** 대본이 길면 줄을 늘려 받되(ADR-0078 — 대본이 상위고
+    자막이 맞춘다) 글자 크기는 건드리지 않는다. 자막 단계가 글자를 작게 만들면 상류의
+    길이가 화면에서만 티가 나고 기록에는 안 남는다.
 
     상한은 로케일의 것이다 (ADR-0062) — `lang`은 어느 언어의 대본을 가리킬지 정한다.
 
@@ -231,13 +236,13 @@ def check_overflow(
     석빙고 실측). 단위를 섞으면 어느 쪽을 고쳐야 할지 흐려진다 — ADR-0062 되돌릴 조건 5.
     """
     longest = max(len(line) for line in lines)
-    if longest <= limit:
+    if longest <= limit and len(lines) <= MAX_LINES:
         return
     where = f"{lang} 대본" if lang else "대본"
     raise SubtitleError(
-        f"scenes/{scene_id}: 자막을 {len(lines)}줄로 나눠도 가장 긴 줄이 {longest}자다 "
-        f"({lang or 'ko'} 자막 폭은 줄당 {limit}자 × {MAX_LINES}줄). 그 줄이 {where}에서 "
-        f"너무 길다는 뜻이다 — 1부에서 고쳐야 한다"
+        f"scenes/{scene_id}: 자막이 {len(lines)}줄(가장 긴 줄 {longest}자)이라 "
+        f"{lang or 'ko'} 자막 폭 줄당 {limit}자 × {MAX_LINES}줄에 안 들어간다. "
+        f"그 줄이 {where}에서 너무 길다는 뜻이다 — 1부에서 고쳐야 한다"
     )
 
 

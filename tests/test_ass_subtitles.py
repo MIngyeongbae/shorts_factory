@@ -154,7 +154,10 @@ def test_english_cue_that_overflowed_before_now_fits():
         check_overflow(1, wrap_text(line, limit=MAX_LINE_CHARS), limit=MAX_LINE_CHARS, lang="en")
     limit = max_line_chars_for("en")
     lines = wrap_text(line, limit=limit)
-    assert len(lines) == MAX_LINES
+    # 줄 수는 **필요한 만큼만** 쓴다 (ADR-0078) — 73자는 42자 2줄에 들어가므로 3줄을
+    # 허용해도 2줄이 정답이다. 늘어난 상한은 여유이지 목표가 아니다.
+    assert len(lines) <= MAX_LINES
+    assert max(len(x) for x in lines) <= limit
     check_overflow(1, lines, limit=limit, lang="en")
 
 
