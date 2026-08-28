@@ -1,7 +1,8 @@
 """나레이션 오디오 후처리 — PCM → wav 컨테이너 → atempo. ADR-0004.
 
-specs/05 `[3. tts+sync]`: "atempo 1.1 적용 후 타임스탬프도 1/1.1 스케일 보정."
-ADR-0004: "원속 생성 후 FFmpeg atempo 1.1 후처리를 기본값으로."
+specs/05 `[3. tts+sync]`: "남은 몫만 FFmpeg atempo가 걸고 타임스탬프도 그 몫으로 보정."
+ADR-0004: "원속 생성 후 FFmpeg atempo 1.1 후처리를 기본값으로." — **ADR-0082가 그
+기본값을 1.0으로 내렸다.** 후처리는 사라지지 않고 옵션으로 남는다 (`--tempo`).
 
 ## 왜 PCM만 받는가
 
@@ -32,8 +33,11 @@ from .base import PCM_S16LE, Narration
 
 log = logging.getLogger(__name__)
 
-#: ADR-0004 — 원속 생성 후 후처리 배속 기본값
-DEFAULT_TEMPO = 1.1
+#: 한 편에 걸릴 **총 배속**의 기본값 (ADR-0082가 ADR-0004의 1.1에서 내렸다).
+#: **1.0은 "배속을 안 건다"와 같다** — 타입캐스트는 `audio_tempo`를 아예 안 보내고
+#: FFmpeg atempo도 안 불린다(아래 `write_narration`). 1.1은 사라진 ElevenLabs 클론
+#: 목소리의 실측값이었고, 타입캐스트 목소리로 다시 재니 하한 밖(48.8초 < 50초)이었다.
+DEFAULT_TEMPO = 1.0
 
 #: FFmpeg `atempo` 필터 1개가 커버하는 범위. 밖으로 나가면 필터를 체인해야 하는데,
 #: 그건 배속을 스펙 밖으로 끌고 가는 결정이라 여기서 임의로 하지 않는다.

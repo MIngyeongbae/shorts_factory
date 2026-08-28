@@ -763,7 +763,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tts.add_argument(
         "--tempo", type=float, default=DEFAULT_TEMPO,
-        help=f"원속 생성 후 적용할 atempo 배속 (기본: {DEFAULT_TEMPO}. specs/04는 1.1~1.2)",
+        help=f"이 편에 걸릴 총 배속 — 누가 거는지는 어댑터가 정한다 "
+             f"(기본: {DEFAULT_TEMPO} = 안 건다, ADR-0082. specs/04는 1.0~1.2)",
     )
     p_tts.add_argument(
         "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",

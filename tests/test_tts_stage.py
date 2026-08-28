@@ -384,8 +384,10 @@ def test_alignment_that_does_not_match_the_script_fails_loudly(pisa):
 
 
 def test_ffmpeg_failure_fails_the_stage(pisa):
+    """배속을 명시로 걸어야 FFmpeg가 불린다 — 기본값 1.0에서는 안 부르기 때문이다
+    (ADR-0082). 페이크는 배속을 못 걸어 남은 몫이 그대로 atempo로 간다."""
     with pytest.raises(TTSStageError, match="FFmpeg 실패"):
-        run(pisa, ffmpeg=FakeFFmpeg(returncode=1, stderr="no such filter"))
+        run(pisa, ffmpeg=FakeFFmpeg(returncode=1, stderr="no such filter"), tempo=1.1)
 
     assert state_of(pisa, RUN_ID)["status"] == "failed"
     assert (pisa.run_dir(RUN_ID) / "narration.ko.raw.wav").exists()
@@ -411,9 +413,13 @@ def test_line_without_sentence_punctuation_is_reported_as_a_warning(paths):
 # --- 페이크 자체 --------------------------------------------------------------
 
 
-def test_fake_default_speed_lands_on_the_nominal_rate_after_atempo():
-    """페이크의 원속은 atempo 1.1을 거치면 1부의 명목 5.85자/초가 된다."""
-    assert DEFAULT_RAW_SPEED * 1.1 == pytest.approx(5.85)
+def test_fake_default_speed_lands_on_the_nominal_rate_after_tempo():
+    """페이크의 원속은 기본 배속을 거치면 1부의 명목 5.85자/초가 된다.
+
+    배속 값을 손으로 적지 않는다 (ADR-0034) — `DEFAULT_TEMPO`가 움직여도 이 관계는
+    유지돼야 하고, 실제로 ADR-0082가 1.1에서 1.0으로 움직였다.
+    """
+    assert DEFAULT_RAW_SPEED * DEFAULT_TEMPO == pytest.approx(5.85)
 
 
 def test_fake_alignment_covers_the_text_exactly():
