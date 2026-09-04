@@ -33,7 +33,7 @@ AI 파이프라인으로 지식 쇼츠(9:16, 60초 안팎 — ADR-0057)를 자�
 ## 기술 스택 (확정분)
 
 - Python 3.11+, FFmpeg (조립/자막 번인)
-- 대본·팩트체크·씬 분할·프롬프트 생성: Claude Code 헤드리스, 구독 플랜 (ADR-0008)
+- LLM 단계: **구독 헤드리스 2종** (ADR-0008 → ADR-0097). **대본을 쓰는 `[1] draft`·`[2l] localize`는 codex(ChatGPT 플랜)**, 팩트체크·씬 분할·프롬프트 생성·검수는 Claude Code다. `--engine {claude,codex}`가 단계 기본값을 이긴다. 두 구독 다 한계비용 0이고 **한도 풀이 다르다** — `.env`에 `OPENAI_API_KEY`를 두지 않는다 (두면 codex가 종량제로 샌다)
 - TTS: ElevenLabs 본인 목소리 클로닝 (ADR-0004)
 - 시각: **씬당 영상 클립 1개.** **어댑터는 사람이 판정 게이트(`judgment/human.json`
   `video_line`)에서 고른 영상 라인이 정한다** (ADR-0059) — 로컬 GPU(ComfyUI + MiniMax H3,

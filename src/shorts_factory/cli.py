@@ -13,8 +13,11 @@
     python run.py videogen  --slug SLUG           # [2부] [7] 씬당 텍스트→영상 클립 + 검수 (어댑터는 video_line — ADR-0059)
     python run.py ending    --slug SLUG           # [2부] 실사 참조 → 엔딩 실사 컷 (ADR-0055)
     python run.py assemble  --slug SLUG [--lang ko,ja,en]  # [2부] 클립+언어별 실측 → timeline.{lang}.mp4
+    python run.py upload    --slug SLUG [--lang ko,ja,en]  # [2부] [10] 타임라인 → 구글 드라이브 (ADR-0084)
 
-ADR-0008에 따라 LLM 단계는 claude 헤드리스 서브프로세스로 실행된다.
+LLM 단계는 구독 헤드리스 서브프로세스로 실행된다 (ADR-0008). **엔진은 단계마다 다르다**
+— 대본을 쓰는 `[1]`·`[2l]`은 codex(ChatGPT 플랜), 나머지는 claude이고 `--engine`이 이긴다
+(ADR-0097).
 `prompt`는 2부 단계이고 LLM도 네트워크도 쓰지 않는다 (순수 변환, ADR-0033 §3).
 `imagegen`·`imagereview`·`info`·`motion`은 ADR-0056이 단계째 지웠다 — 이미지 단계가 없다.
 """
@@ -28,11 +31,21 @@ from pathlib import Path
 from typing import Callable
 
 from .config import DEFAULT_BACKOFF_BASE, DEFAULT_MAX_RETRIES, Paths, load_dotenv
+from .llm.base import LLMClient
 from .llm.claude_code import ClaudeCodeClient
+from .llm.codex_cli import CodexClient
 from .stages.assemble import (
     AssembleStageError,
     resolve_run_id,
     run_assemble_stage,
+)
+from .stages.thumbnail import (
+    ThumbnailStageError,
+    run_thumbnail_stage,
+)
+from .stages.upload import (
+    UploadStageError,
+    run_upload_stage,
 )
 from .stages.ending import (
     TIMEOUT as ENDING_TIMEOUT,
@@ -53,7 +66,7 @@ from .stages.refpack import (
     urllib_fetch,
 )
 from .runstate import RunNotFound, find_run_for_slug
-from .stages.draft import DraftStageError, run_draft_stage
+from .stages.draft import STAGE as DRAFT_STAGE, DraftStageError, run_draft_stage
 from .stages.seedfetch import SeedfetchStageError, run_seedfetch_stage
 from .stages.scenetable import (
     TIMEOUT as SCENETABLE_TIMEOUT,
@@ -61,15 +74,21 @@ from .stages.scenetable import (
     resolve_run_id as resolve_scenetable_run_id,
     run_scenetable_stage,
 )
-from .stages.factcheck import FactcheckStageError, run_factcheck_stage
+from .stages.factcheck import (
+    STAGE as FACTCHECK_STAGE,
+    FactcheckStageError,
+    run_factcheck_stage,
+)
 from .stages.frames import (
     FramesStageError,
     ProviderRefused as FramesProviderRefused,
     SESSION_TIMEOUT as FRAMES_SESSION_TIMEOUT,
+    resolve_line as resolve_frames_line,
     resolve_run_id as resolve_frames_run_id,
     run_frames_stage,
 )
 from .stages.localize import (
+    STAGE as LOCALIZE_STAGE,
     TARGET_LANGUAGES,
     LocalizeStageError,
     run_localize_stage,
@@ -88,6 +107,7 @@ from .stages.videogen import (
 )
 from .schemas import vocab
 from .schemas.timed_scenes import LANGUAGES
+from .imagegen.comfy_sdxl import ComfySDXLClient
 from .imagegen.midjourney import MidjourneyClient
 from .tts.audio import DEFAULT_TEMPO
 from .tts.base import TTSClient, TTSError, TTSNotConfigured
@@ -96,7 +116,7 @@ from .tts.typecast import TypecastClient
 from .tts.fake import FakeTTSClient
 from .videogen.base import VideoClient
 from .videogen.fake import FakeVideoClient
-from .videogen.comfy_h3 import ComfyH3Client, ComfyH3FirstLastClient
+from .videogen.comfy_h3 import ComfyH3Client, ComfyH3FirstClient, ComfyH3FirstLastClient
 from .videogen.midjourney import MidjourneyEndImageClient
 from .videogen.omni import OmniClient
 from .judgment import JudgmentError, read_video_line, slug_from_run_id
@@ -133,14 +153,36 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
-def _make_client(args, log_dir: Path | None) -> ClaudeCodeClient:
-    return ClaudeCodeClient(
-        executable=args.claude_bin,
+#: 엔진 기본값이 claude가 아닌 단계 (ADR-0097). **대본을 쓰는 두 단계만이다** —
+#: `[1]`은 한국어 정본, `[2l]`은 ja·en 번안이다. `[2] factcheck`는 웹 검증이 핵심인데
+#: codex에는 도구 이름 단위 제어가 없어(웹 on/off뿐) 그대로 claude에 둔다.
+#: 근거는 9편 대조 실측이고 판단은 사람이 했다 (ADR-0097 맥락).
+STAGE_ENGINES = {
+    DRAFT_STAGE: "codex",
+    LOCALIZE_STAGE: "codex",
+}
+
+DEFAULT_ENGINE = "claude"
+
+
+def _engine_for(args, stage: str) -> str:
+    """`--engine`이 이기고, 없으면 단계 기본값, 그것도 없으면 claude다."""
+    override = getattr(args, "engine", None)
+    return override or STAGE_ENGINES.get(stage, DEFAULT_ENGINE)
+
+
+def _make_client(args, log_dir: Path | None, stage: str = "") -> LLMClient:
+    engine = _engine_for(args, stage)
+    common = dict(
         model=args.model,
         max_retries=args.max_retries,
         backoff_base=args.backoff_base,
         log_dir=log_dir,
     )
+    if engine == "codex":
+        # 인증은 ChatGPT 플랜뿐이다 (ADR-0097) — `.env`에 OPENAI_API_KEY를 두지 않는다.
+        return CodexClient(executable=args.codex_bin, **common)
+    return ClaudeCodeClient(executable=args.claude_bin, **common)
 
 
 def _cmd_topic(args, paths: Paths) -> int:
@@ -185,12 +227,13 @@ def _report(result, failure_code: int = ENVELOPE_FAILURE) -> int:
 
 
 def _run_script_stage(
-    args, paths: Paths, runner, *, failure_code: int = ENVELOPE_FAILURE, **extra
+    args, paths: Paths, runner, *, stage: str = "",
+    failure_code: int = ENVELOPE_FAILURE, **extra
 ) -> int:
     run_id = args.run_id
     if not run_id:
         run_id, _ = find_run_for_slug(paths, args.slug)
-    client = _make_client(args, paths.run_dir(run_id) / "logs")
+    client = _make_client(args, paths.run_dir(run_id) / "logs", stage)
     return _report(
         runner(args.slug, llm=client, paths=paths, run_id=run_id, force=args.force,
                **extra),
@@ -217,12 +260,12 @@ def _cmd_seedfetch(args, paths: Paths) -> int:
 
 def _cmd_draft(args, paths: Paths) -> int:
     """[1] 시드 기사 → 통짜 대본 script.md (ADR-0049)."""
-    return _run_script_stage(args, paths, run_draft_stage)
+    return _run_script_stage(args, paths, run_draft_stage, stage=DRAFT_STAGE)
 
 
 def _cmd_factcheck(args, paths: Paths) -> int:
     """[2] 대본이 쓴 주장만 검증·정정 → factcheck.md (ADR-0049)."""
-    return _run_script_stage(args, paths, run_factcheck_stage)
+    return _run_script_stage(args, paths, run_factcheck_stage, stage=FACTCHECK_STAGE)
 
 
 def _cmd_localize(args, paths: Paths) -> int:
@@ -232,7 +275,7 @@ def _cmd_localize(args, paths: Paths) -> int:
     돌린다. 검사 실패는 5로 나가고 실패한 언어의 파일은 쓰지 않는다.
     """
     return _run_script_stage(
-        args, paths, run_localize_stage,
+        args, paths, run_localize_stage, stage=LOCALIZE_STAGE,
         failure_code=LOCALIZE_FAILURE, langs=_parse_langs(args.lang),
     )
 
@@ -416,6 +459,9 @@ VIDEO_PROVIDERS: dict[str, Callable[[], VideoClient]] = {
     # `art` 라인의 `info` 씬 전용 (ADR-0072 결정 5 → ADR-0075 결정 1) — 프레임 없이
     # **텍스트→영상**으로 그린다. 정보는 구도가 지고 표시는 그 위의 주석이다.
     "comfy-h3-fl2v": ComfyH3FirstLastClient,
+    # `local` 라인의 `info` 없는 씬 (ADR-0087 결정 6) — `[6]`이 로컬 SDXL + IP-Adapter로
+    # 그린 first frame **한 장**을 잇는다. 끝 그림이 없어 `fl2v`를 쓸 수 없다.
+    "comfy-h3-f2v": ComfyH3FirstClient,
     "fake": lambda: FakeVideoClient(synth=True),
 }
 
@@ -483,9 +529,15 @@ def _cmd_frames(args, paths: Paths) -> int:
         llm = (
             _make_client(args, paths.run_dir(run_id) / "logs") if args.review else None
         )
+        # 어댑터는 라인이 정한다 (ADR-0087). 스타일이 프레임에 있는 라인은 MJ가 그리고,
+        # 실물 고증이 프레임에 있는 라인은 같은 기계의 SDXL + IP-Adapter가 그린다.
+        frames_line = resolve_frames_line(paths, run_id, slug=args.slug, line=args.line)
+        frames_client = (
+            ComfySDXLClient() if vocab.reference_frames(frames_line) else MidjourneyClient()
+        )
         result = run_frames_stage(
             run_id,
-            client=MidjourneyClient(),
+            client=frames_client,
             paths=paths,
             llm=llm,
             line=args.line,
@@ -617,6 +669,41 @@ def _cmd_assemble(args, paths: Paths) -> int:
     return 0
 
 
+def _cmd_thumbnail(args, paths: Paths) -> int:
+    """[9t] 씬 1 첫 프레임 + 막 + 제목 → thumbnail.{lang}.png (ADR-0091).
+
+    판은 `clips/1.mp4`이고 세 언어가 같은 판을 쓴다. 제목이 없는 언어는 굽지 않고
+    경고한다 — 이 산출물이 하는 일 전부가 제목이라서다.
+    """
+    run_id = resolve_run_id(paths, run_id=args.run_id, slug=args.slug)
+    result = run_thumbnail_stage(
+        run_id, paths=paths, langs=_parse_langs(args.lang),
+        force=args.force, ffmpeg=args.ffmpeg,
+    )
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
+def _cmd_upload(args, paths: Paths) -> int:
+    """[10] 조립된 타임라인 → 구글 드라이브 (ADR-0084) — 파이프라인의 마지막 단계.
+
+    폴더는 `{올리는 날} {한국어 제목}`, 파일명은 그 언어 대본의 제목이다. 제목은
+    `scenes.timed.{lang}.json`의 `title`에서 읽는다 (ADR-0065). 같은 편을 다시 돌리면
+    `upload.json`의 파일 id를 갱신하고 새로 만들지 않는다 — `--force`는 내용이 그대로여도
+    다시 올린다.
+    """
+    run_id = resolve_run_id(paths, run_id=args.run_id, slug=args.slug)
+    result = run_upload_stage(
+        run_id, paths=paths, langs=_parse_langs(args.lang), force=args.force,
+    )
+    print(result.summary)
+    for warning in result.warnings:
+        print(f"  경고: {warning}")
+    return 0
+
+
 def _cmd_part1(args, paths: Paths) -> int:
     """[0]+[0f]+[1]+[2]+[2l] 연속 실행 (ADR-0049·0056·0061) — 토픽당 LLM 세션 3회.
 
@@ -642,9 +729,10 @@ def _cmd_part1(args, paths: Paths) -> int:
     except SeedfetchStageError as exc:
         print(f"[0f] 건너뛴다 — {exc}")
 
-    client = _make_client(args, topic_result.run_dir / "logs")
+    # 단계마다 엔진이 다를 수 있으므로 클라이언트를 하나로 돌려쓰지 않는다 (ADR-0097).
+    logs_dir = topic_result.run_dir / "logs"
     draft_result = run_draft_stage(
-        topic_result.slug, llm=client, paths=paths,
+        topic_result.slug, llm=_make_client(args, logs_dir, DRAFT_STAGE), paths=paths,
         run_id=topic_result.run_id, force=args.force,
     )
     code = _report(draft_result)
@@ -652,7 +740,7 @@ def _cmd_part1(args, paths: Paths) -> int:
         return 3 if draft_result.unfit else code
 
     factcheck_result = run_factcheck_stage(
-        topic_result.slug, llm=client, paths=paths,
+        topic_result.slug, llm=_make_client(args, logs_dir, FACTCHECK_STAGE), paths=paths,
         run_id=topic_result.run_id, force=args.force,
     )
     code = _report(factcheck_result)
@@ -660,7 +748,7 @@ def _cmd_part1(args, paths: Paths) -> int:
         return code
 
     localize_result = run_localize_stage(
-        topic_result.slug, llm=client, paths=paths,
+        topic_result.slug, llm=_make_client(args, logs_dir, LOCALIZE_STAGE), paths=paths,
         run_id=topic_result.run_id, force=args.force,
     )
     code = _report(localize_result, LOCALIZE_FAILURE)
@@ -689,6 +777,9 @@ def _common_options() -> argparse.ArgumentParser:
     common.add_argument("--force", action="store_true", default=argparse.SUPPRESS,
                         help="완료된 단계도 다시 실행")
     common.add_argument("--claude-bin", default=argparse.SUPPRESS, help="claude 실행 파일")
+    common.add_argument("--codex-bin", default=argparse.SUPPRESS, help="codex 실행 파일")
+    common.add_argument("--engine", default=argparse.SUPPRESS, choices=("claude", "codex"),
+                        help="LLM 엔진을 강제한다. 기본은 단계마다 다르다 — 대본([1]·[2l])은 codex, 나머지는 claude (ADR-0097)")
     common.add_argument("--model", default=argparse.SUPPRESS,
                         help="헤드리스 세션 모델 (예: sonnet, opus)")
     common.add_argument("--max-retries", type=int, default=argparse.SUPPRESS)
@@ -919,6 +1010,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_assemble.set_defaults(func=_cmd_assemble)
 
+    p_thumb = sub.add_parser(
+        "thumbnail", parents=[common],
+        help="[9t] 씬 1 첫 프레임 → thumbnail.{lang}.png (채널 그리드용, ADR-0091)",
+    )
+    p_thumb.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
+    p_thumb.add_argument("--run-id", default=None)
+    p_thumb.add_argument(
+        "--lang", default=None,
+        help="구울 언어, 쉼표 구분 (기본: 실측 파일이 있는 언어 전부)",
+    )
+    p_thumb.add_argument(
+        "--ffmpeg", default="ffmpeg", help="FFmpeg 실행 파일 (기본: PATH의 ffmpeg)",
+    )
+    p_thumb.set_defaults(func=_cmd_thumbnail)
+
+    p_upload = sub.add_parser(
+        "upload", parents=[common],
+        help="[10] timeline.{lang}.mp4 → 구글 드라이브 (2부 마지막 단계, ADR-0084)",
+    )
+    p_upload.add_argument("--slug", default=None, help="run_id를 씬 계약에서 읽는다")
+    p_upload.add_argument("--run-id", default=None)
+    p_upload.add_argument(
+        "--lang", default=None,
+        help="올릴 언어, 쉼표 구분 (기본: timeline이 있는 언어 전부)",
+    )
+    p_upload.set_defaults(func=_cmd_upload)
+
     p_part1 = sub.add_parser("part1", parents=[common],
                              help="[0]+[0f]+[1]+[2]+[2l] 연속 실행 — 토픽당 LLM 세션 3회 (ADR-0049·0056·0061)")
     p_part1.add_argument("--topic", default=None)
@@ -937,6 +1055,8 @@ COMMON_DEFAULTS = {
     "root": None,
     "force": False,
     "claude_bin": "claude",
+    "codex_bin": "codex",
+    "engine": None,   # None = 단계 기본값을 따른다 (STAGE_ENGINES)
     "model": None,
     "max_retries": DEFAULT_MAX_RETRIES,
     "backoff_base": DEFAULT_BACKOFF_BASE,
@@ -965,7 +1085,8 @@ def main(argv: list[str] | None = None) -> int:
     except (
         TopicStageError, SeedfetchStageError, DraftStageError, FactcheckStageError,
         LocalizeStageError,
-        RunNotFound, PromptStageError, AssembleStageError,
+        RunNotFound, PromptStageError, AssembleStageError, ThumbnailStageError,
+        UploadStageError,
     ) as exc:
         print(f"오류: {exc}", file=sys.stderr)
         return 1
