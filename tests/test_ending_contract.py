@@ -12,6 +12,7 @@ import pytest
 from shorts_factory.schemas import ending as ending_schema
 from shorts_factory.schemas import refs as refs_schema
 from shorts_factory.schemas import vocab
+from shorts_factory.schemas.timed_scenes import LANGUAGES
 
 
 def photo(index=1, license_name="public-domain", **overrides):
@@ -93,12 +94,55 @@ def test_index_must_match_the_position():
     assert any("표시 순서와 어긋난다" in e for e in errors)
 
 
-def test_more_photos_than_the_cap_is_a_violation():
-    over = [photo(i) for i in range(1, ending_schema.max_photos() + 2)]
+def test_more_photos_than_the_pool_cap_is_a_violation():
+    """상한은 **풀 크기**다 (ADR-0092) — 한 언어의 장수가 아니다."""
+    over = [photo(i) for i in range(1, ending_schema.pool_size() + 2)]
 
     errors = ending_schema.validate_ending(document(*over))
 
-    assert any("상한" in e for e in errors)
+    assert any("풀 상한" in e for e in errors)
+
+
+def test_the_pool_holds_one_slot_per_language():
+    """풀이 이만큼 차면 세 언어가 **겹치는 사진 없이** 갈라 쓴다 (ADR-0092)."""
+    size = ending_schema.pool_size()
+    assert size == ending_schema.max_photos() * len(LANGUAGES)
+
+    windows = [ending_schema.language_window(size, lang) for lang in LANGUAGES]
+    picked = [index for window in windows for index in window]
+
+    assert sorted(picked) == list(range(size))
+    #: 한 언어가 세우는 장수는 여전히 `max_photos`다 — 풀이 커져도 엔딩은 안 길어진다.
+    assert all(len(window) == ending_schema.max_photos() for window in windows)
+
+
+def test_a_pool_of_one_gives_every_language_the_same_photo():
+    """**못 고치는 자리다** — 부르는 쪽이 경고를 남기고 오류로 만들지 않는다 (D-3)."""
+    assert {
+        tuple(ending_schema.language_window(1, lang)) for lang in LANGUAGES
+    } == {(0,)}
+
+
+def test_a_pool_that_is_a_multiple_of_the_cap_still_splits():
+    """보폭을 늘 `max_photos`로 두면 **여기서 세 언어가 똑같아진다** (ADR-0092 부록).
+
+    `i*m mod N`이 `N`을 `m`의 배수로 두는 순간 시작점을 0으로 되돌린다. 지금까지 상한이
+    `max_photos`였던 탓에 **기존 28편 중 19편의 풀이 정확히 3장**이라 이 함정이 실데이터의
+    대부분이었다. 보폭이 깊이를 따라 갈리는 근거가 이 케이스다.
+    """
+    size = ending_schema.max_photos()
+    windows = {tuple(ending_schema.language_window(size, l)) for l in LANGUAGES}
+
+    assert len(windows) == len(LANGUAGES), f"세 언어가 같은 순서다: {windows}"
+
+
+def test_a_shallow_pool_overlaps_but_never_repeats_within_one_language():
+    """사진은 겹치되 한 언어 안에서 같은 장이 두 번 서지는 않는다."""
+    for size in range(2, ending_schema.pool_size() + 1):
+        for lang in LANGUAGES:
+            window = ending_schema.language_window(size, lang)
+            assert len(set(window)) == len(window), (size, lang, window)
+            assert all(0 <= index < size for index in window)
 
 
 def test_the_cap_itself_passes():

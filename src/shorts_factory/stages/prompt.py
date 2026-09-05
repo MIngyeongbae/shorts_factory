@@ -39,10 +39,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..gate import strip_gate_block
 from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..llm.base import LLMClient
@@ -77,6 +80,8 @@ log = logging.getLogger(__name__)
 
 STAGE = "5-prompt"
 PROMPT_FILE = "05-prompt.md"
+#: 고쳐쓰기 세션 프롬프트 (ADR-0098). 사다리는 1칸이고 루프가 아니다 (ADR-0044).
+FIX_PROMPT_FILE = "18-promptfix.md"
 PROMPTS_FILE = "prompts.json"
 REFS_FILE = refs_schema.RECORD_FILE
 SCRIPT_FILE = "script.md"
@@ -107,6 +112,9 @@ class PromptResult:
     described_scenes: int = 0
     #: 세션 실행 메타 (session_id·turns·시간).
     meta: dict[str, Any] = field(default_factory=dict)
+    #: 고쳐쓰기 사다리를 태웠으면 그 기록 (ADR-0098) — 바뀐 씬과 근거가 된 위반 문장.
+    #: 없으면 `None`이고 그것이 정상이다 (위반이 없었다는 뜻).
+    revision: dict[str, Any] | None = None
 
     @property
     def passed(self) -> bool:
@@ -318,8 +326,179 @@ def build_session_prompt(
         red_min=red_min, red_max=red_max,
         action_min=action_min, action_max=action_max,
         mj_block=format_mj_block(line),
+        forbidden_words=promptplan.forbidden_words_text(),
     )
     return prompt, described
+
+
+# --- 고쳐쓰기 사다리 1칸 (ADR-0098) ---------------------------------------------
+
+#: 위반 문장이 씬을 가리키는 **두 꼴 — 번호 체계가 다르다** (ADR-0098 개정 1).
+#:
+#: - `cross_errors`는 `f"scenes/{scene_id}: …"` — **씬 번호**다
+#: - `schema_errors`는 JSON 경로라 `f"scenes/{배열 인덱스}/{필드}: …"` — **인덱스**다
+#:
+#: 씬 id가 1부터 시작하므로 **인덱스 13이 씬 14**이고 늘 하나씩 어긋난다 (실측 2026-09-05,
+#: tokyo-tower-tanks의 `scenes/13/red_prompt` 길이 초과). 하나로 뭉쳐 읽으면 사다리가
+#: 엉뚱한 씬을 조용히 고쳐 써서 **검사만 통과하고 화면이 틀린다** — 가장 늦게 발견되는 실패다.
+_CROSS_SCENE_RE = re.compile(r"^scenes/(\d+):")
+_SCHEMA_SCENE_RE = re.compile(r"^scenes/(\d+)/")
+
+#: 고쳐쓰기 세션이 다시 쓸 수 있는 필드 — 세션이 쓴 단락뿐이다. 연출·무대·라벨은 씬 계약의
+#: 것이고 골격은 코드가 붙인다 (ADR-0033 §3).
+_REWRITABLE: tuple[str, ...] = (
+    promptplan.SUBJECT_FIELD,
+    promptplan.ACTION_FIELD,
+    promptplan.CAMERA_TARGET_FIELD,
+    promptplan.RED_FIELD,
+    promptplan.SHOT2_FIELD,
+    promptplan.MJ_SUBJECT_FIELD,
+)
+
+
+def _scene_id_at(plan: Any, index: int) -> int | None:
+    """`plan["scenes"][index]`의 `scene_id` — 스키마 위반 문장의 번호는 **배열 인덱스**다.
+
+    옮길 수 없으면(범위 밖·`scene_id` 없음·모양이 아님) `None`이다. **추측하지 않는다** —
+    잘못 옮긴 번호는 엉뚱한 씬을 고쳐 쓰게 만든다 (ADR-0098 개정 1 결정 2).
+    """
+    scenes = plan.get("scenes") if isinstance(plan, dict) else None
+    if not isinstance(scenes, list) or not 0 <= index < len(scenes):
+        return None
+    entry = scenes[index]
+    if not isinstance(entry, dict) or "scene_id" not in entry:
+        return None
+    try:
+        return int(entry["scene_id"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _scene_of(error: str, plan: Any) -> int | None:
+    """그 위반 문장이 가리키는 **씬 번호**. 씬에 안 걸리면 `None`.
+
+    두 꼴을 **각각의 번호 체계로** 읽는다 (`_CROSS_SCENE_RE`·`_SCHEMA_SCENE_RE`의 주석).
+    """
+    match = _CROSS_SCENE_RE.match(error)
+    if match:
+        return int(match.group(1))
+    match = _SCHEMA_SCENE_RE.match(error)
+    if match:
+        return _scene_id_at(plan, int(match.group(1)))
+    return None
+
+
+def violating_scenes(errors: Sequence[str], plan: Any = None) -> list[int] | None:
+    """전부 씬에 걸리는 위반이면 그 **씬 번호**들, 하나라도 아니면 `None` (ADR-0098).
+
+    `None`이면 **사다리를 태우지 않는다** — 구조가 깨졌거나(`scenes`가 없다·타입이 틀리다)
+    씬이 통째로 빠진 것이라 고칠 자리를 특정할 수 없다. **씬 항목의 필드에 걸리는 스키마
+    위반(길이·ASCII·패턴)은 태운다** — 재작성이 정확히 그 일이다 (개정 1).
+    """
+    ids: list[int] = []
+    for error in errors:
+        sid = _scene_of(error, plan)
+        if sid is None:
+            return None
+        ids.append(sid)
+    return sorted(set(ids))
+
+
+def _errors_for(errors: Sequence[str], scene_id: int, plan: Any = None) -> list[str]:
+    return [e for e in errors if _scene_of(e, plan) == scene_id]
+
+
+def build_fix_prompt(
+    *,
+    topic: str,
+    contract: dict[str, Any],
+    plan: dict[str, Any],
+    scene_ids: Sequence[int],
+    errors: Sequence[str],
+) -> str:
+    """고쳐쓰기 세션 프롬프트 (ADR-0098). **위반한 씬만** 싣는다.
+
+    통과한 씬을 같이 보내면 멀쩡한 단락이 바뀐다 — 사다리는 걸린 자리만 건드린다.
+    """
+    planned = {
+        int(e["scene_id"]): e
+        for e in (plan.get("scenes") or [])
+        if isinstance(e, dict) and "scene_id" in e
+    }
+    contract_scenes = {int(s["scene_id"]): s for s in contract.get("scenes", [])}
+
+    blocks: list[str] = []
+    for sid in scene_ids:
+        scene = contract_scenes.get(sid)
+        entry = planned.get(sid) or {}
+        parts = [f"{f}:\n{entry[f]}" for f in _REWRITABLE if entry.get(f)]
+        blocks.append(
+            f"## 씬 {sid}\n\n"
+            "### 씬 계약 (바꿀 수 없다)\n\n"
+            + (json.dumps(scene_brief(scene), ensure_ascii=False) if scene else "(계약에 없는 씬)")
+            + "\n\n### 지금 서술 (이걸 고친다)\n\n"
+            + ("\n\n".join(parts) if parts else "(없음)")
+            + "\n\n### 검사기가 반려한 이유\n\n"
+            + "\n".join(f"- {r}" for r in _errors_for(errors, sid, plan))
+        )
+
+    subject_min, subject_max = promptplan.length_limits(promptplan.SUBJECT_FIELD)
+    target_min, target_max = promptplan.length_limits(promptplan.CAMERA_TARGET_FIELD)
+    red_min, red_max = promptplan.length_limits(promptplan.RED_FIELD)
+    action_min, action_max = promptplan.length_limits(promptplan.ACTION_FIELD)
+    return load_prompt(FIX_PROMPT_FILE).substitute(
+        topic=topic,
+        scenes="\n\n".join(blocks),
+        forbidden_words=promptplan.forbidden_words_text(),
+        subject_min=subject_min, subject_max=subject_max,
+        target_min=target_min, target_max=target_max,
+        red_min=red_min, red_max=red_max,
+        action_min=action_min, action_max=action_max,
+    )
+
+
+def merge_fix(
+    plan: dict[str, Any], fixed: Any, scene_ids: Sequence[int]
+) -> tuple[dict[str, Any], list[int]]:
+    """고친 단락을 **씬 단위로 덮어쓴** plan과 실제로 바뀐 씬 번호 (ADR-0098).
+
+    고쳐쓰기가 낸 씬만, 그 씬의 **고쳐쓰기 필드만** 바꾼다 — 없는 키는 지운다. 지우는 것이
+    맞는 이유는, 「없어야 할 단락이 있다」도 위반의 한 종류라 세션이 키를 빼는 것으로 고치기
+    때문이다. 원본을 살려 두면 그 위반이 그대로 남는다.
+
+    돌려받은 것이 계약을 지키는지는 **여기서 보지 않는다** — 병합한 plan을
+    `validate_promptplan`에 다시 넣는 것이 사다리의 두 번째 칸이다.
+    """
+    wanted = set(int(s) for s in scene_ids)
+    returned = {}
+    if isinstance(fixed, dict):
+        for entry in fixed.get("scenes") or []:
+            if not isinstance(entry, dict) or "scene_id" not in entry:
+                continue
+            try:
+                sid = int(entry["scene_id"])
+            except (TypeError, ValueError):
+                continue
+            if sid in wanted:
+                returned[sid] = entry
+
+    merged = json.loads(json.dumps(plan))  # 원본을 건드리지 않는다
+    changed: list[int] = []
+    for entry in merged.get("scenes") or []:
+        if not isinstance(entry, dict) or "scene_id" not in entry:
+            continue
+        sid = int(entry["scene_id"])
+        patch = returned.get(sid)
+        if patch is None:
+            continue
+        for f in _REWRITABLE:
+            value = patch.get(f)
+            if isinstance(value, str) and value.strip():
+                entry[f] = value
+            else:
+                entry.pop(f, None)
+        changed.append(sid)
+    return merged, changed
 
 
 # --- 세션 산출 → prompts.json ---------------------------------------------------
@@ -359,9 +538,12 @@ def build_prompts(
         token, framing_source = resolve_framing(scene)
         staging, staging_source = resolve_staging(scene)
         info = scene.get("info") or None
-        # 이 씬이 프레임을 받는가 — 라인이 프레임 라인이고 `info`가 없을 때만이다.
-        scene_frames = bool(line) and vocab.scene_takes_frames(
-            str(line), has_info=info is not None
+        # 이 씬의 프롬프트가 **프레임의 규약**을 따르는가 — 카메라 구절 하나로 줄이고
+        # STYLE 절을 빼는 것은 **스타일을 프레임이 지는 라인**뿐이다 (ADR-0087).
+        # `reference_frames` 라인은 프레임을 받으면서도 골격 전체 + STYLE 절을 쓴다:
+        # 프레임이 지는 것이 실물의 형태·재질뿐이라 말로 시킬 것이 남아 있다.
+        scene_frames = (
+            bool(line) and vocab.style_in_frames(str(line)) and info is None
         )
         try:
             prompt_text, negative_text = build_video_prompt(
@@ -524,7 +706,7 @@ def run_prompt_stage(
     script_path = paths.topic_dir(slug) / SCRIPT_FILE
     if not script_path.exists():
         raise PromptStageError(f"대본이 없다: {script_path}")
-    script_text = script_path.read_text(encoding="utf-8")
+    script_text = strip_gate_block(script_path.read_text(encoding="utf-8"))
     factcheck_path = paths.topic_dir(slug) / FACTCHECK_FILE
     factcheck = factcheck_path.read_text(encoding="utf-8") if factcheck_path.exists() else None
 
@@ -549,13 +731,58 @@ def run_prompt_stage(
         raise PromptStageError(str(exc)) from exc
 
     plan_errors = promptplan.validate_promptplan(plan, contract, line=resolved_line)
+
+    # 고쳐쓰기 사다리 1칸 (ADR-0098) — 위반 사유를 실어 한 번 더 부르고 재검사한다.
+    # 루프가 아니다: 두 번째도 어기면 거기서 멈춘다 (ADR-0044).
+    revision: dict[str, Any] | None = None
+    if plan_errors:
+        for error in plan_errors:
+            log.warning("[%s] 계약 위반: %s", STAGE, error)
+        targets = violating_scenes(plan_errors, plan)
+        if targets is None:
+            log.error("[%s] 씬에 걸리지 않는 위반이라 고쳐쓰기를 태우지 않는다", STAGE)
+        else:
+            log.info("[%s] 고쳐쓰기 세션 1회 — 씬 %s", STAGE, ", ".join(str(s) for s in targets))
+            revision = {"scenes": targets, "errors": list(plan_errors)}
+            try:
+                fixed, fix_meta = ask_json(
+                    llm,
+                    build_fix_prompt(
+                        topic=topic, contract=contract, plan=plan,
+                        scene_ids=targets, errors=plan_errors,
+                    ),
+                    label=f"{STAGE}-fix", tools=(), timeout=timeout,
+                )
+            except ScriptSessionError as exc:
+                # 고쳐쓰기가 사다리를 막지 않는다 — 첫 위반으로 중단한다 (D-5와 같은 태도).
+                log.error("[%s] 고쳐쓰기 세션 실패: %s", STAGE, exc)
+                revision["session_error"] = str(exc)
+            else:
+                plan, changed = merge_fix(plan, fixed, targets)
+                revision["changed"] = changed
+                revision["meta"] = fix_meta
+                plan_errors = promptplan.validate_promptplan(plan, contract, line=resolved_line)
+                log.info(
+                    "[%s] 고쳐쓰기 뒤 재검사 — 위반 %d건 (씬 %s를 다시 썼다)",
+                    STAGE, len(plan_errors), ", ".join(str(s) for s in changed) or "없음",
+                )
+
     if plan_errors:
         for error in plan_errors:
             log.error("[%s] %s", STAGE, error)
-        state.mark_failed(STAGE, f"샷 서술 계약 위반 {len(plan_errors)}건", errors=plan_errors, **meta)
+        extra = {"revision": revision} if revision else {}
+        state.mark_failed(
+            STAGE, f"샷 서술 계약 위반 {len(plan_errors)}건", errors=plan_errors, **extra, **meta
+        )
         return PromptResult(
             topic=topic, slug=slug, run_id=run_id, errors=plan_errors, warnings=warnings, meta=meta,
             anchored_scenes=_anchored_scenes(contract), described_scenes=described,
+            revision=revision,
+        )
+    if revision:
+        warnings.append(
+            f"씬 {', '.join(str(s) for s in revision.get('changed', []))}의 샷 서술을 "
+            f"고쳐쓰기 1회로 살렸다 (ADR-0098) — 위반 {len(revision['errors'])}건"
         )
 
     try:
@@ -581,10 +808,13 @@ def run_prompt_stage(
         topic=topic, slug=slug, run_id=run_id,
         prompts_path=prompts_path, prompts=document, warnings=warnings, meta=meta,
         anchored_scenes=_anchored_scenes(contract), described_scenes=described,
+        revision=revision,
     )
     state.mark_done(
         STAGE,
         output=prompts_path.relative_to(paths.root).as_posix(),
+        # 사다리를 태웠으면 기록을 남긴다 (ADR-0098 결과 — 되돌릴 조건 3의 관측 수단).
+        **({"revision": revision} if revision else {}),
         source_script=document["source_script"],
         scenes=len(document["scenes"]),
         info_scenes=result.info_scenes,

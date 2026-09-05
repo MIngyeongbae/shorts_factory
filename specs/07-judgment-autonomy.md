@@ -3,33 +3,58 @@
 > **보류 (ADR-0049).** 판정은 사람이 `script.md`를 읽고 한다 — AI 심사관·자율성
 > 사다리·revise 루프는 구현하지 않는다 (LLM 채점 게이트는 실측으로 반증됐다:
 > 호르무즈 편 채점기는 병을 정확히 보고도 pass를 냈다). 이 문서에서 지금 유효한
-> 것은 **판정 스키마의 human.json**뿐이다 — `decision: go`가 2부 진입 게이트다
-> (스펙 05 경계). 나머지는 장래 재검토용 설계 기록으로 남긴다.
+> 것은 **판정 블록**(아래)과 `human.json`의 `video_line`뿐이다. 나머지는 장래 재검토용
+> 설계 기록으로 남긴다.
 
 go/no-go 판단을 사람에서 AI 심사관으로 단계적으로 이양하는 설계. 원칙: **자율성은 스위치가 아니라 다이얼이며, 이양의 전제는 판단의 데이터화다.**
 
-## 판정 스키마 (사람·AI 공용)
+## 판정 — `script.md` 맨 위 주석 블록 (ADR-0094)
 
-사람과 AI 심사관은 동일한 스키마로 판정을 기록한다. `topics/{slug}/judgment/` 아래에 `human.json`, `ai.json`으로 분리 저장.
+판정의 정본은 사람이 읽는 그 파일에 있다. `[1] draft`가 대본 앞에 **전부 주석인** 블록을
+붙이고, 사람은 **주석만 푼다**:
+
+```
+//reject
+[
+//ko,
+//ja,
+//en
+]
+# {소재 제목}
+…
+```
+
+| 사람이 한 일 | 뜻 | 파이프라인 |
+|---|---|---|
+| 아무것도 안 풀었다 | **보류** | `[3]`이 멈춘다. 2부 어느 단계도 안 돈다 |
+| `ko`·`ja`·`en` 중 일부를 풀었다 | **그 언어로 만든다** | `[3]`은 ko + 고른 언어를 실측하고(ko는 줄 경계·기본 풀의 입력이라 늘 든다), `[7]`은 고른 언어의 겹풀을 만들고(ADR-0095), `[9]`·`[9t]`·`[10]`은 고른 언어만 돈다. `[10]`은 고른 언어가 전부 올라가야 보관한다 |
+| `reject`를 풀었다 | **반려** | 언어 줄과 무관하게 이긴다. `tools/backlog_sync.py`가 표를 `반려`로 바꾸고 `topics/_archive/`로 옮긴다 (ADR-0088 기준 ②) |
+
+- **`script.md`(ko)에만 있다.** 번안 대본에는 없다 — 언어별 선택은 ko 파일 한 곳에서 한다
+- **`[2]`가 정정본을 쓸 때 보존하고, 세션에 대본을 실을 때는 뗀다** (`[2]`·`[2l]`·`[3s]`·`[5]`).
+  세션이 블록을 보면 산출에 베껴 쓴다
+- **`--lang`은 판정보다 세다** — 명시한 언어는 판정과 무관하게 돈다 (디버깅·재조립 자리)
+- **블록이 없는 옛 대본은 있는 언어 전부가 대상이다** — 그 편들은 이미 판정을 거쳤다
+- **`STATUS.md` 머리글은 이 블록의 투영이다** (`reject` → `no-go`, 언어 하나라도 → `go`,
+  아니면 `보류`). 판정을 `STATUS.md`에 적어도 파이프라인은 읽지 못한다
+
+## `judgment/human.json` — 라인과 메모 (선택)
+
+`topics/{slug}/judgment/human.json`. **없어도 된다** — 없으면 기본 라인이다. 옛 `decision`
+필드는 **폐기됐다** (ADR-0094 결정 6 — 정본은 위 블록이고 두 곳에 적지 않는다). 남는 것:
 
 ```json
 {
-  "judge": "human | ai",
-  "decision": "go | revise | no_go",
+  "judge": "human",
   "video_line": "vocab.json video_line 중 하나 — 비우면 기본 라인 (사람만 적는다, ADR-0059 결정 2)",
-  "confidence": 0.82,
-  "scores": {
-    "hook": 2, "narrative": 4, "grounding": 5, "freshness": 3, "retention_risk": 2
-  },
-  "reason_code": "hook_no_twist",
+  "reason_code": "반려 사유 enum — 선택. 반려를 기록하고 싶을 때만",
   "notes": "자유 서술 (보조)",
-  "fixable": true,
-  "fix_directives": [
-    {"target": "scene 1-2", "instruction": "팩트시트 f03 근거로 '~가 아니다' 반전 구조로 재작성"}
-  ],
   "judged_at": "2026-08-07T21:00:00+09:00"
 }
 ```
+
+AI 심사관(`ai.json`)의 스키마는 장래 재검토용으로 아래 원안을 남긴다 — `decision`·`confidence`·
+`scores`·`fixable`·`fix_directives`는 그쪽의 것이다.
 
 ### video_line — 영상 라인 (ADR-0059)
 
@@ -42,8 +67,15 @@ go/no-go 판단을 사람에서 AI 심사관으로 단계적으로 이양하는 
 ### reason_code enum (no_go / revise 시 필수)
 
 `hook_no_twist` | `hook_weak` | `dilemma_forced` | `numbers_thin` | `too_complex_for_90s` |
-`overlap_reference_channel` | `grounding_doubt` | `present_link_weak` | `boring_solution` | `other`
+`overlap_reference_channel` | `grounding_doubt` | `present_link_weak` | `boring_solution` |
+**`not_selected`** | `other`
 
+- **`not_selected`는 대본을 무는 사유가 아니다** (2026-09-03 추가). 사람이 만들 편을 골랐고
+  이 편이 거기 안 든 것뿐이라, 앞의 아홉 값이 가리키는 「대본·소재의 결함」이 하나도 없다.
+  그것을 `other`로 적으면 **집계에서 결함으로 읽힌다** — reason_code 분포는 대본 프롬프트·
+  루브릭의 보정 입력인데(아래 「데이터 축적과 보정」), 고르기의 결과가 그 입력에 섞이면
+  프롬프트를 엉뚱한 방향으로 민다. 값을 더한 근거는 실측이다: 2026-09-03 일괄 판정에서
+  `other` 22건이 한꺼번에 나왔고 전부 같은 사유였다
 - enum이어야 집계·보정이 가능하다. `other`는 반복 등장 시 enum 추가 검토 (스펙 수정)
 - scores 축은 5개 고정 (1~5점): hook(훅 강도), narrative(서사 완결성), grounding(사실 신뢰),
   freshness(레퍼런스 채널 대비 신선도), retention_risk(이탈 위험, 높을수록 안전)

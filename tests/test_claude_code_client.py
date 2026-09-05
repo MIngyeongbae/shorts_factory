@@ -112,6 +112,21 @@ def test_rate_limit_backs_off_then_succeeds(client, monkeypatch):
     assert len(client.slept) == 1  # 백오프가 한 번 걸렸다
 
 
+def test_the_session_limit_message_backs_off_too(client, monkeypatch):
+    """2026-09-04 실측 문구 — usage/reached/exceeded가 없어 한때 즉사했다."""
+    _stub_runs(
+        monkeypatch,
+        [
+            (_envelope("You've hit your session limit · resets 12am (Asia/Seoul)", is_error=True), 1),
+            (_envelope("본문"), 0),
+        ],
+    )
+    result = client.run("프롬프트", label="1-draft")
+
+    assert result.text == "본문"
+    assert len(client.slept) == 1
+
+
 def test_rate_limit_exhausts_retries(client, monkeypatch):
     client.max_retries = 2
     _stub_runs(

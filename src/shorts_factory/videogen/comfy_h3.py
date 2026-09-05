@@ -450,3 +450,62 @@ class ComfyH3FirstLastClient(ComfyH3Client):
             sleep=self._sleep, clock=self._clock,
         )
         return staged.generate(request, timeout=timeout)
+
+
+F2V_TEMPLATE_PATH = TEMPLATE_PATH.with_name("h3-f2v.api.json")
+
+
+class ComfyH3FirstClient(ComfyH3FirstLastClient):
+    """실물 참조 프레임을 **한 장만** 이어받는 씬 (ADR-0087 결정 6).
+
+    `local` 라인의 `info` 없는 씬이 여기로 온다. `[6]`이 로컬 SDXL + IP-Adapter로 그린
+    first frame이 있고 **끝 그림은 없다** — `comfy-h3-fl2v`는 둘 다 요구하며 멈추므로
+    (`_stage_frames`) 그 자리를 쓸 수 없다. 기존 `info` 씬 경로는 건드리지 않는다
+    (단계 독립 6원칙).
+
+    프레임 주소가 **로컬 경로**인 것도 다르다 (ADR-0087 결정 7) — 같은 기계의 ComfyUI가
+    읽으므로 R2에 올릴 이유가 없다. `_fetch_frame`이 https와 로컬 경로를 둘 다 받는다.
+    """
+
+    name = "comfy-h3-f2v"
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("template_path", F2V_TEMPLATE_PATH)
+        # `ComfyH3FirstLastClient.__init__`은 fl2v 템플릿을 기본으로 밀어 넣는다.
+        ComfyH3Client.__init__(self, **kwargs)
+
+    def _fetch_frame(self, url: str, *, what: str) -> bytes:
+        """프레임 주소 → 바이트. **로컬 경로면 파일에서 읽는다** (ADR-0087 결정 7)."""
+        if url.startswith(("http://", "https://")):
+            return super()._fetch_frame(url, what=what)
+        path = Path(url)
+        if not path.is_file():
+            raise VideoGenError(f"{what}: first 프레임 파일이 없다 ({url})")
+        return path.read_bytes()
+
+    def _stage_frames(self, request: VideoRequest, *, what: str) -> tuple[str, str]:
+        """CLEAN 한 장을 올려 `(first, "")`. **끝 그림은 없는 것이 정상이다.**"""
+        if not request.first_frame:
+            raise VideoGenError(
+                f"{what}: first 프레임이 없다 — 이 어댑터는 [6]이 그린 실물 참조 프레임을 "
+                "잇는 자리다 (ADR-0087). [6] frames를 먼저 돌려라"
+            )
+        data = self._fetch_frame(str(request.first_frame), what=what)
+        suffix = Path(str(request.first_frame).split("?")[0]).suffix or ".png"
+        name = self._upload_frame(data, f"sf-s{request.scene_id}-clean{suffix}", what=what)
+        return name, ""
+
+    def generate(
+        self, request: VideoRequest, *, timeout: int | None = None
+    ) -> GeneratedClip:
+        what = f"씬 {request.scene_id} ComfyUI H3 first-only"
+        first, _ = self._stage_frames(request, what=what)
+        template = json.loads(json.dumps(self.template))
+        template[find_node_by_title(template, TITLE_FIRST)]["inputs"]["image"] = first
+        staged = ComfyH3Client(
+            base_url=self.base_url, megapixels=self.megapixels, template=template,
+            transport=self.transport, poll_interval=self.poll_interval,
+            http_timeout=self.http_timeout, seed_fn=self._seed_fn,
+            sleep=self._sleep, clock=self._clock,
+        )
+        return staged.generate(request, timeout=timeout)

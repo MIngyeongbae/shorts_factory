@@ -67,6 +67,19 @@ def _forbidden_camera_words(text: str) -> list[str]:
     return _words_in(text, vocab.camera_target_forbidden_words())
 
 
+def forbidden_words_text() -> str:
+    """세션 프롬프트에 실을 금지어 목록 (ADR-0098).
+
+    **손으로 옮겨 적지 않는다** — 검사와 같은 출처(`vocab.json`)를 쓴다. 갈라져 있던 실측이
+    이 함수의 이유다 (2026-09-05): `05-prompt.md`가 13개, `17-clipfix.md`가 12개를 들고 있었고
+    어휘는 35개였다. 세션은 `crane`이 금지인 줄 모른 채 썼고 검사기는 그것으로 반려해,
+    `tokyo-tower-tanks`가 같은 자리에서 세 번 죽었다 (ADR-0034가 막는 손 복사가 프롬프트에서 났다).
+
+    굴절형까지 전부 싣는다 — 원형만 골라 실으면 **그 고르는 규칙이 새 손 복사**가 된다.
+    """
+    return ", ".join(vocab.camera_target_forbidden_words())
+
+
 #: 무대 문구에서 이만큼 이어지는 낱말이 세션 단락에 그대로 있으면 복창으로 본다 (ADR-0076).
 #: 값은 계약이 아니라 검사 강도라 여기 둔다 — 문구 자체는 `vocab.phrase`가 읽는다 (ADR-0034).
 _STAGING_ECHO_WORDS = 5
@@ -116,7 +129,9 @@ def _mj_errors(
 
     if line is None:
         return []
-    wanted = vocab.scene_takes_frames(line, has_info=has_info)
+    # **MJ가 그리는 씬만** 이 필드를 요구한다 (ADR-0087). `reference_frames` 라인은
+    # `[6]`이 `subject_prompt`로 그리므로 `mj_subject`가 없는 것이 정상이다.
+    wanted = vocab.style_in_frames(line) and not has_info
     text = str(entry.get(MJ_SUBJECT_FIELD) or "").strip()
     if wanted and not text:
         return [

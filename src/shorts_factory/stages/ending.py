@@ -22,6 +22,18 @@ specs/05-pipeline.md:
 | ② 판정 | 비전 세션 1회 | 실사인가, 대상이 보이는가, **인물이 있는가**, 사고가 없는가 |
 | ③ 렌더 | FFmpeg | 무수정 표시 + 크레딧 번인 |
 
+## 산출은 화면 순서가 아니라 **풀**이다 (ADR-0092)
+
+통과분을 `max_photos`가 아니라 **`pool_size()`(= `max_photos × 언어 수`)까지** 렌더하고,
+어느 사진이 어느 언어로 가는지는 **이미 언어별로 도는 `[9]`가 회전으로 정한다**. 이 단계는
+언어 파일을 하나도 읽지 않는다 — 언어를 모른 채 남는 것이 단계 독립이다.
+
+**풀 클립은 전부 꼬리를 달고 렌더한다** (`clip_lengths`) — 어느 장이 마지막인지가 언어마다
+다르기 때문이다.
+
+세 채널에 같은 화면이 올라가는 것을 줄이려는 결정이고, 근거와 되돌릴 조건은 ADR-0092에
+있다. **원인이 확인된 것은 아니다** — 변수 하나짜리 업로드 테스트가 따로 돈다.
+
 **①과 ②를 가른 이유는 `[4]`가 `attachable`을 세션에서 뺏어 온 것과 같다** — 저작권이
 걸린 축이라 편마다 기준이 흔들리면 안 된다. 반대로 **인물 판정은 세션 몫이다**:
 라이선스가 답할 수 없는 축이고(자유 라이선스 사진에도 초상권은 남는다) 파일을 봐야 안다.
@@ -125,9 +137,16 @@ class EndingResult:
                 f"(대조 기각 {self.rejected_by(ending_schema.BY_MACHINE)} · "
                 f"판정 기각 {self.rejected_by(ending_schema.BY_REVIEW)}, D-3){tail}"
             )
+        per_language = min(ending_schema.max_photos(), len(self.photos))
+        split = (
+            "언어별로 갈린다" if len(self.photos) >= 2 * ending_schema.max_photos()
+            else "풀이 얕아 언어끼리 겹친다" if len(self.photos) > 1
+            else "1장뿐이라 세 언어가 같다"
+        )
         return (
-            f"[8] {self.topic} — 엔딩 {len(self.photos)}컷 "
-            f"(크레딧 번인 {self.burned}/{len(self.photos)} · "
+            f"[8] {self.topic} — 엔딩 풀 {len(self.photos)}장 "
+            f"(언어당 {per_language}컷, {split} · "
+            f"크레딧 번인 {self.burned}/{len(self.photos)} · "
             f"기각 {len(self.rejected)}) → {RECORD_FILE}{tail}"
         )
 
@@ -388,14 +407,17 @@ def find_font(paths: Paths) -> Path | None:
 
 
 def clip_lengths(count: int, *, seconds: float, dissolve: float) -> list[float]:
-    """컷마다 렌더할 길이. **마지막만 꼬리가 없다** (video/timeline.py의 불변식).
+    """컷마다 렌더할 길이. **전부 꼬리를 단다** (ADR-0092).
 
-    꼬리는 다음 컷과 겹치는 디졸브 몫이고, `[9]`의 `trim`이 이 길이대로 잘라 쓴다.
+    꼬리는 다음 컷과 겹치는 디졸브 몫이고, `[9]`의 `trim`이 필요한 만큼만 잘라 쓴다.
+
+    **「마지막만 꼬리가 없다」던 옛 불변식은 여기서 놓는다** — `photos`가 화면 순서가
+    아니라 언어별로 갈라 쓸 풀이 되면서 **어느 장이 마지막인지가 언어마다 다르다.**
+    한 언어의 마지막 장이 다른 언어에서는 가운데라 꼬리가 필요하다. 남는 꼬리를 두는
+    비용은 파일 0.6초뿐이고, 계약은 `seconds`(표시 초)이지 파일 길이가 아니다
+    (`ending.schema.json` `photo.seconds`).
     """
-    return [
-        round(seconds + (dissolve if index < count - 1 else 0.0), 3)
-        for index in range(count)
-    ]
+    return [round(seconds + dissolve, 3) for _ in range(count)]
 
 
 def run_ending_stage(
@@ -497,8 +519,11 @@ def run_ending_stage(
         raise EndingStageError(message) from exc
 
     verdicts, warnings = parse_verdicts(payload, {c["source"] for c in candidates})
+    # 상한은 **한 언어의 장수가 아니라 풀 크기**다 (ADR-0092) — `[9]`가 여기서 언어별로
+    # 갈라 쓴다. 예전에는 넘긴 몫을 "상한을 넘어 잘렸다"로 버렸는데, 그게 언어를 가를
+    # 재고였다.
     chosen, review_rejected = select(
-        candidates, verdicts, limit=ending_schema.max_photos()
+        candidates, verdicts, limit=ending_schema.pool_size()
     )
     rejected = machine_rejected + review_rejected
     result.warnings = warnings

@@ -160,9 +160,16 @@ def test_art_line_sends_info_scenes_to_a_text_to_video_engine():
     meta = vocab.video_line_meta("art")
     assert meta["provider"] == "mj-endimage"
     assert meta["info_provider"] == "comfy-h3"
-    # 다른 라인은 갈리지 않는다 — 이 분기는 `art`의 것이다.
-    for line in ("local", "api"):
-        assert not vocab.video_line_meta(line).get("info_provider")
+    # **엔진이 갈리는 것은 프레임을 받는 라인뿐이다.** `local`은 ADR-0087로 잠깐 갈렸다가
+    # 2026-09-02에 되돌아왔다(H3가 프레임을 이어 그리지 않는다) — 그래서 라인 이름을 못박지
+    # 않고 스위치로 판정한다.
+    for line in vocab.values("video_line"):
+        if line == "art":
+            continue
+        if not vocab.style_in_frames(line) and not vocab.reference_frames(line):
+            assert not vocab.video_line_meta(line).get("info_provider"), (
+                f"{line}은 프레임을 안 받는데 엔진이 갈린다"
+            )
 
 
 def test_the_info_engine_is_text_to_video():

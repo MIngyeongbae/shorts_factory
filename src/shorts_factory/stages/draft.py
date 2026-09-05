@@ -31,6 +31,7 @@ from .scriptmd import (
     format_limits,
     load_prompt,
     parse_script_md,
+    render_gate_block,
     strip_code_fence,
 )
 from .seedfetch import SEED_BODY_FILE  # 파일명 계약이다 — 단계를 부르지 않는다 (D-1)
@@ -166,7 +167,8 @@ def run_draft_stage(
             raise DraftStageError(
                 f"세션 출력이 script.md 모양이 아니다 (첫 글자 {text[:20]!r})"
             )
-        write_text(script_path, text.rstrip() + "\n")
+        # 판정 블록을 전부 주석인 채로 앞에 붙인다 (ADR-0094) — 사람은 주석만 푼다.
+        write_text(script_path, render_gate_block() + text.rstrip() + "\n")
     except DraftStageError as exc:
         state.mark_failed(STAGE, str(exc))
         raise

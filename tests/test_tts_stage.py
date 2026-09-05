@@ -399,7 +399,15 @@ def test_engine_error_propagates(pisa):
         run(pisa, tts=FakeTTSClient([TTSError("사용 한도 초과")]))
 
 
-def test_line_without_sentence_punctuation_is_reported_as_a_warning(paths):
+def test_a_line_without_punctuation_is_closed_by_the_spoken_form(paths):
+    """부호 없는 대본 줄이 더는 경고를 내지 않는다 — 발화형이 닫는다 (ADR-0089).
+
+    옛 계약은 이 자리에서 *"줄이 문장부호로 끝나지 않아 마지막 문자를 줄 끝으로 썼다"*고
+    경고했다. 그 경고가 가리키던 문제(엔진이 줄 경계를 못 보고 한 박자 늦게 끊는다)를
+    ADR-0089가 원인에서 고쳤으므로, 이제는 경고가 **없는 것**이 정상이다.
+
+    **화면에 나가는 것은 안 바뀐다** — 자막이 쓰는 `text`는 대본 줄 그대로다.
+    """
     lines = script_lines()
     lines[0] = lines[0].rstrip(".")
     install_md(paths, lines=lines)
@@ -407,7 +415,12 @@ def test_line_without_sentence_punctuation_is_reported_as_a_warning(paths):
     result = run(paths)
 
     assert result.passed
-    assert any("문장부호로 끝나지 않아" in w for w in result.warnings)
+    assert not any("문장부호로 끝나지 않아" in w for w in result.warnings)
+    # 자막이 쓰는 문자열에는 부호가 붙지 않는다.
+    timed = json.loads(
+        (paths.run_dir(result.run_id) / "scenes.timed.ko.json").read_text(encoding="utf-8")
+    )
+    assert timed["scenes"][0]["text"] == lines[0]
 
 
 # --- 페이크 자체 --------------------------------------------------------------

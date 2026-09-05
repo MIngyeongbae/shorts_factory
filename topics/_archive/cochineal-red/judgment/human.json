@@ -1,0 +1,7 @@
+{
+  "judge": "human",
+  "decision": "go",
+  "video_line": "local",
+  "notes": "사람 지시(2026-08-31, \"2부 영상만드는거 기본은 local ai 라인으로 해줘\") — 2026-08-29의 art 일괄 지시를 거두고 기본 라인(vocab.json meta.video_line._default = local)으로 되돌린다. 이 편은 씬 3·11만 남아 있고 둘 다 info가 없는 location 씬이라 art에서는 MJ 프레임이 필요했는데 MJ 계정이 CF 인증에 걸려 있다. local은 프레임을 받지 않으므로 전체 골격 + STYLE 절로 간다 — 룩 문자열은 ADR-0083으로 art.ttv_style과 글자 그대로 같다. **이미 산 14클립은 art 그대로 두고 재구매하지 않는다** (사람 선택 2026-08-31). 사전 일괄 go라 축별 점수·confidence는 비운다.",
+  "judged_at": "2026-08-31T00:00:00+09:00"
+}

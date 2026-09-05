@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
+from ..schemas import speech_rules
 from .base import Alignment
 
 #: 씬 텍스트를 이어 붙일 때 쓰는 구분자. 줄마다 이미 문장부호로 끝나므로 문장부호를
@@ -36,7 +37,9 @@ from .base import Alignment
 LINE_JOINER = " "
 
 #: 문장 끝으로 인정하는 문자.
-SENTENCE_ENDINGS = (".", "?", "!", "…")
+#: 문장 끝으로 인정하는 부호. **계약에서 온다** (ADR-0089) — 로케일 부호(일본어 `。`)가
+#: 빠지면 그 언어의 모든 줄이 "문장부호로 끝나지 않는다"는 거짓 경고를 낸다.
+SENTENCE_ENDINGS = speech_rules.sentence_endings()
 
 #: 실측-추정 오차 경고 임계(초). specs/05 "실측-추정 오차 씬당 ±1.5초 초과 시 경고".
 DRIFT_TOLERANCE = 1.5

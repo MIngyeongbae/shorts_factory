@@ -64,7 +64,14 @@ def install(paths, *, langs=None, info_scenes=(), slug=PISA):
     return run_id, document
 
 
+#: 이 파일의 기본 라인. **프레임을 아예 안 받는 라인**이어야 한다 — 여기 대부분의 테스트가
+#: 재는 것이 텍스트→영상 경로다. ADR-0087 전에는 어휘의 기본값(`local`)이 그것이었는데,
+#: 이제 `local`은 실물 참조 프레임을 받으므로 라인을 명시한다.
+TEXT_TO_VIDEO_LINE = "api"
+
+
 def run(paths, run_id, *, client=None, review="none", ocr=None, llm=None, ffmpeg=None, **kwargs):
+    kwargs.setdefault("line", TEXT_TO_VIDEO_LINE)
     return run_videogen_stage(
         run_id,
         client=client or FakeVideoClient(),
@@ -662,7 +669,7 @@ def test_review_does_not_hold_a_generation_slot(paths):
     with mock.patch.object(_Runner, "_review_attempt", slow_review):
         result = run_videogen_stage(
             run_id, client=client, paths=paths, review="none", detect=lambda: None,
-            runner=FakeFFmpeg(), jobs=1, review_jobs=4,
+            runner=FakeFFmpeg(), jobs=1, review_jobs=4, line=TEXT_TO_VIDEO_LINE,
         )
 
     assert result.passed
@@ -679,6 +686,7 @@ def test_rate_limit_backs_off_and_retries_serially(pisa):
     result = run_videogen_stage(
         run_id, client=client, paths=paths, review="none", detect=lambda: None,
         runner=FakeFFmpeg(), sleep=slept.append, backoff=1.0, jobs=1,
+        line=TEXT_TO_VIDEO_LINE,
     )
 
     assert result.passed
@@ -720,7 +728,7 @@ def test_cli_runs_the_stage_with_the_fake_provider(paths, monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_videogen_stage", stub)
     code = cli.main([
         "videogen", "--slug", PISA, "--provider", "fake", "--review", "none",
-        "--root", str(paths.root),
+        "--line", TEXT_TO_VIDEO_LINE, "--root", str(paths.root),
     ])
 
     assert code == 0
@@ -780,7 +788,7 @@ def test_a_frame_line_ships_clean_as_first_and_never_a_last(paths):
 def test_a_text_to_video_line_ships_no_frames(paths):
     run_id, _document = install(paths)
     client = FakeVideoClient()
-    run(paths, run_id, client=client, line="local")
+    run(paths, run_id, client=client, line=TEXT_TO_VIDEO_LINE)
     assert all(
         call["first_frame"] is None and call["last_frame"] is None for call in client.calls
     )
@@ -808,7 +816,7 @@ def test_frames_from_another_line_are_refused(paths):
     run_id, _document = install(paths)
     _write_frames(paths, run_id, line="local", scenes=_all_scenes(paths, run_id))
     with pytest.raises(VideogenStageError) as exc:
-        run(paths, run_id, line="art")
+        run(paths, run_id, line="art")  # `local`도 프레임 라인이지만 그 라인의 것이 아니다
     assert "라인" in str(exc.value)
 
 
@@ -831,3 +839,45 @@ def test_an_adapter_that_ignores_the_frames_is_refused(paths):
     with pytest.raises(VideogenStageError) as exc:
         run(paths, run_id, client=TextOnly(), line="art")
     assert "안 받는다" in str(exc.value)
+
+
+# --- 프레임을 받으면서 골격을 유지하는 라인 (ADR-0087) -------------------------------
+
+
+def _local_frames(paths, run_id):
+    """`[6]`의 로컬 산출 — 주소가 **로컬 경로**다 (ADR-0087 결정 7)."""
+    scenes = _all_scenes(paths, run_id)
+    for scene in scenes:
+        scene["clean_url"] = str(
+            paths.run_dir(run_id) / "frames" / f"{scene['scene_id']}-clean.png"
+        )
+    return _write_frames(paths, run_id, line="local", scenes=scenes)
+
+
+@pytest.fixture
+def reference_line(monkeypatch):
+    """`reference_frames`를 켠 라인 (ADR-0087). 2026-09-02에 어휘에서 꺼졌으므로 여기서 켠다 —
+    기계는 코드에 남아 있고 다시 켤 엔진이 생기면 어휘 한 줄만 바꾸면 된다."""
+    from shorts_factory.schemas import vocab as _v
+    meta = dict(_v.VOCAB["meta"]["video_line"]["local"])
+    meta["reference_frames"] = True
+    monkeypatch.setitem(_v.VOCAB["meta"]["video_line"], "local", meta)
+    return "local"
+
+
+def test_the_reference_line_takes_frames_but_keeps_the_whole_skeleton(paths, reference_line):
+    """`reference_frames`는 실물만 프레임이 진다 — 프롬프트는 골격 전체 + STYLE 절이다.
+
+    `style_in_frames`(`art`)와 갈리는 지점이 정확히 여기다: 그쪽은 카메라 구절 하나다.
+    """
+    run_id, _document = install(paths)
+    _local_frames(paths, run_id)
+    client = FakeVideoClient()
+    run(paths, run_id, client=client, line=reference_line)
+
+    assert all(call["first_frame"] for call in client.calls), "프레임을 안 실었다"
+    assert all(call["last_frame"] is None for call in client.calls)
+    prompt = client.calls[0]["prompt"]
+    # 골격이 살아 있다 — FORMAT 절과 초 수가 채워져 있다.
+    assert "FORMAT" in prompt and "{seconds}" not in prompt
+    assert "SUBJECT" in prompt

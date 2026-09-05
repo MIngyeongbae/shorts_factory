@@ -13,7 +13,7 @@
       "slow_zoom_in"
     ],
     "transition": "dissolve",
-    "staging": "studio"
+    "staging": "location"
   },
   "multishot": {
     "_role": "2샷 씬(scene.shot2)의 컷 시각과 자격을 [7]이 정하는 값 (ADR-0058 결정 3). cut = 가장 짧은 언어의 씬 길이 × cut_ratio (소수 첫째 자리). 가장 짧은 언어의 씬 길이가 2 × min_shot_seconds 미만이면 1샷 프롬프트로 사고 shot2_dropped를 기록한다. 0.5는 프로브 5클립 중 3개의 비율, 1.5는 자막 1줄 실측 하한(0.8~0.9초)보다 넉넉한 값 — 둘 다 첫 실편에서 재조정 대상이다.",

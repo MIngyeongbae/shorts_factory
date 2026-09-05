@@ -423,13 +423,21 @@ def test_a_non_https_clean_address_is_refused(paths):
 
 
 def test_the_stage_refuses_lines_that_do_not_take_frames(paths):
+    """프레임을 받는 이유가 둘이 된 뒤에도(ADR-0087) **둘 다 거짓인 라인**은 거절한다."""
     _setup(paths, [_scene(1)])
-    with pytest.raises(FramesStageError) as exc:
-        run_frames_stage(
-            "20260825-probe", client=FakeImageClient(), paths=paths,
-            llm=FakeLLMClient([]), line="local", jobs=1,
-        )
-    assert "style_in_frames" in str(exc.value)
+    refused = [
+        line for line in vocab.values("video_line")
+        if not vocab.style_in_frames(line) and not vocab.reference_frames(line)
+    ]
+    assert refused, "프레임을 안 받는 라인이 하나도 없으면 이 게이트는 죽은 코드다"
+    for line in refused:
+        with pytest.raises(FramesStageError) as exc:
+            run_frames_stage(
+                "20260825-probe", client=FakeImageClient(), paths=paths,
+                llm=FakeLLMClient([]), line=line, jobs=1,
+            )
+        assert "style_in_frames" in str(exc.value)
+        assert "reference_frames" in str(exc.value)
 
 
 def test_a_second_run_does_not_buy_the_done_scenes_again(paths):
@@ -530,3 +538,210 @@ def test_a_fixed_subject_that_breaks_the_budget_is_rolled_back(paths):
     assert client.grids == 1, "예산을 어긴 단락으로 그리드를 사지 않는다"
     assert outcome.demoted_from == DEMOTED_UNREVIEWED
     assert any("예산을 어겨 되돌린다" in w for w in outcome.warnings)
+
+
+# --- `reference_frames` 라인 — 로컬 SDXL + IP-Adapter (ADR-0087) --------------------
+
+
+@pytest.fixture
+def reference_line(monkeypatch):
+    """`reference_frames`를 켠 라인 이름.
+
+    ADR-0087의 경로는 **코드에 남아 있고 어휘 플래그로만 꺼져 있다** (2026-09-02 사람 결정 —
+    H3가 프레임을 이어 그리지 않아 `local`에서 껐다). 이 픽스처가 그 플래그를 켜서 기계 자체를
+    계속 검증한다 — 다시 켤 엔진이 생기면 어휘 한 줄만 바꾸면 되고, 그때 이 테스트들이
+    이미 서 있다.
+    """
+    line = "local"
+    meta = dict(vocab.VOCAB["meta"]["video_line"][line])
+    meta["reference_frames"] = True
+    meta["provider"] = "comfy-h3-f2v"
+    meta["info_provider"] = "comfy-h3"
+    monkeypatch.setitem(vocab.VOCAB["meta"]["video_line"], line, meta)
+    return line
+
+
+class FakeSDXLClient:
+    """`imagegen/comfy_sdxl.ComfySDXLClient`의 호출 표면만 흉내 낸다."""
+
+    name = "comfy-sdxl-ipa"
+    output_suffix = ".png"
+
+    def __init__(self, *, fail: int = 0) -> None:
+        self.calls: list[dict] = []
+        self._fail = fail
+
+    def concurrency(self) -> int:
+        return 1
+
+    def generate_frame(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        if len(self.calls) <= self._fail:
+            raise ImageGenError("프로브 실패")
+        return PNG, {"seed": 1000 + len(self.calls), "reference": "ref.jpg"}
+
+
+def _write_refs(run_dir: Path, scene_id: int, name: str = "01.jpg") -> Path:
+    """`[4]`의 산출 — `reference_ok` 사진 한 장."""
+    photo = run_dir / "refs" / str(scene_id) / name
+    photo.parent.mkdir(parents=True, exist_ok=True)
+    photo.write_bytes(b"\xff\xd8\xff" + bytes(32))
+    (run_dir / frames_stage.REFS_FILE).write_text(
+        json.dumps({
+            "run_id": "20260825-probe",
+            "scenes": [{
+                "scene_id": scene_id,
+                "images": [{"file": f"refs/{scene_id}/{name}", "reference_ok": True}],
+            }],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return photo
+
+
+def test_the_local_line_draws_the_frame_with_the_still_style_not_the_clip_style(paths, reference_line):
+    """`[6]`은 `frame_style`을 쓴다 — `base_style`은 스틸에서 구조를 뭉갠다 (ADR-0087 결정 5)."""
+    run_dir = _setup(paths, [_scene(1)])
+    client = FakeSDXLClient()
+    result = run_frames_stage(
+        "20260825-probe", client=client, paths=paths,
+        llm=FakeLLMClient([_verdict()]), line=reference_line, jobs=1,
+    )
+    assert result.outcomes[0].status == DONE
+    prompt = client.calls[0]["prompt"]
+    assert vocab.style("frame_style") in prompt
+    assert vocab.style("base_style") not in prompt
+    # 스틸에서 구조를 죽인 그 한 절이 실제로 빠져 있다.
+    assert "real surface microdetail" not in prompt
+    # 반대로 전경을 세우는 절은 남아 있어야 한다 (그 절만 뺀 변종이 손을 잃었다).
+    assert "shallow depth of field on foreground detail" in prompt
+    assert (run_dir / "frames" / "1-clean.png").read_bytes() == PNG
+
+
+def test_the_scene_chooses_the_reference_knobs_from_the_vocabulary(paths, reference_line):
+    """노브 값은 어휘가 진다 — 코드가 상수를 선언하지 않는다 (ADR-0034·0087 결정 3·4)."""
+    run_dir = _setup(paths, [_scene(1), _scene(2)])
+    contract = _contract([_scene(1), _scene(2)])
+    contract["scenes"][1]["reference"] = "none"     # 씬 2는 참조를 안 붙인다
+    (run_dir / "scenes.json").write_text(
+        json.dumps(contract, ensure_ascii=False), encoding="utf-8"
+    )
+    for sid in (1, 2):
+        _write_refs(run_dir, sid)
+    # 두 씬 모두 참조 사진이 refs.json에 있어야 "모드가 갈랐다"를 말할 수 있다.
+    (run_dir / frames_stage.REFS_FILE).write_text(
+        json.dumps({
+            "run_id": "20260825-probe",
+            "scenes": [
+                {"scene_id": sid,
+                 "images": [{"file": f"refs/{sid}/01.jpg", "reference_ok": True}]}
+                for sid in (1, 2)
+            ],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    client = FakeSDXLClient()
+    run_frames_stage(
+        "20260825-probe", client=client, paths=paths,
+        llm=FakeLLMClient([_verdict(), _verdict()]), line=reference_line, jobs=1,
+    )
+    by_scene = {call["scene_id"]: call for call in client.calls}
+    identity = vocab.reference_mode("identity")
+    assert by_scene[1]["weight"] == identity["weight"]
+    assert by_scene[1]["start_at"] == identity["start_at"]
+    assert by_scene[1]["reference"] is not None
+    # `none`은 참조를 안 붙인다 — 사진이 있어도다.
+    assert by_scene[2]["weight"] == vocab.reference_mode("none")["weight"] == 0.0
+
+
+def test_a_scene_without_a_reference_photo_is_not_a_demotion(paths, reference_line):
+    """참조가 없으면 참조 없이 그린다 — 실패도 강등도 아니다 (ADR-0087 결정 2)."""
+    _setup(paths, [_scene(1)])
+    client = FakeSDXLClient()
+    result = run_frames_stage(
+        "20260825-probe", client=client, paths=paths,
+        llm=FakeLLMClient([_verdict()]), line=reference_line, jobs=1,
+    )
+    outcome = result.outcomes[0]
+    assert outcome.status == DONE and outcome.demoted_from is None
+    assert client.calls[0]["reference"] is None
+
+
+def test_a_reference_mode_outside_the_vocabulary_stops_before_drawing(paths, reference_line):
+    """어휘 밖 값은 그림을 그리기 전에 멈춘다 (ADR-0033 §3)."""
+    run_dir = _setup(paths, [_scene(1)])
+    contract = _contract([_scene(1)])
+    contract["scenes"][0]["reference"] = "structure"  # 사람이 뺀 모드다
+    (run_dir / "scenes.json").write_text(
+        json.dumps(contract, ensure_ascii=False), encoding="utf-8"
+    )
+    client = FakeSDXLClient()
+    with pytest.raises(ValueError, match="reference_mode"):
+        run_frames_stage(
+            "20260825-probe", client=client, paths=paths,
+            llm=FakeLLMClient([]), line=reference_line, jobs=1,
+        )
+    assert client.calls == []
+
+
+def test_the_local_frame_address_is_a_local_path(paths, reference_line):
+    """`local`의 프레임은 R2에 올리지 않는다 — 같은 기계가 읽는다 (ADR-0087 결정 7)."""
+    run_dir = _setup(paths, [_scene(1)])
+    result = run_frames_stage(
+        "20260825-probe", client=FakeSDXLClient(), paths=paths,
+        llm=FakeLLMClient([_verdict()]), line=reference_line, jobs=1,
+    )
+    url = result.outcomes[0].clean_url
+    assert not url.startswith("http")
+    assert Path(url) == (run_dir / "frames" / "1-clean.png")
+
+
+def test_a_rejected_frame_is_redrawn_with_a_new_seed(paths, reference_line):
+    """사다리는 사분면 교체가 아니라 새 시드다 — 그리드가 없다 (ADR-0087)."""
+    _setup(paths, [_scene(1)])
+    client = FakeSDXLClient()
+    llm = FakeLLMClient([_verdict("fail", ["구조가 안 맞는다"]), _verdict()])
+    result = run_frames_stage(
+        "20260825-probe", client=client, paths=paths, llm=llm, line=reference_line, jobs=1,
+    )
+    assert result.outcomes[0].status == DONE
+    assert len(client.calls) == 2, "기각된 씬을 다시 그리지 않았다"
+
+
+def test_the_ladder_ends_by_taking_the_last_frame_unreviewed(paths, reference_line):
+    """`[7]`은 first 없이 못 돈다 — 사다리 끝에서는 마지막 장을 그대로 쓴다."""
+    _setup(paths, [_scene(1)])
+    client = FakeSDXLClient()
+    llm = FakeLLMClient([_verdict("fail", ["x"])] * frames_stage._LocalRunner.SEED_ATTEMPTS)
+    result = run_frames_stage(
+        "20260825-probe", client=client, paths=paths, llm=llm, line=reference_line, jobs=1,
+    )
+    outcome = result.outcomes[0]
+    assert outcome.status == DONE and outcome.demoted_from == DEMOTED_UNREVIEWED
+    assert len(client.calls) == frames_stage._LocalRunner.SEED_ATTEMPTS
+
+
+def test_the_local_line_does_not_need_the_mj_line(paths, reference_line):
+    """`local`은 MJ를 안 타므로 `mj_image_prompt`가 없어도 돈다 (ADR-0087)."""
+    run_dir = _setup(paths, [_scene(1)])
+    (run_dir / "prompts.json").write_text(
+        json.dumps(_prompts([_scene(1)], mj=False), ensure_ascii=False), encoding="utf-8"
+    )
+    result = run_frames_stage(
+        "20260825-probe", client=FakeSDXLClient(), paths=paths,
+        llm=FakeLLMClient([_verdict()]), line=reference_line, jobs=1,
+    )
+    assert result.outcomes[0].status == DONE
+
+
+def test_the_art_path_is_untouched_by_the_local_path(paths):
+    """단계 독립 6원칙 — `art`는 여전히 MJ 그리드·사분면으로 돈다."""
+    _setup(paths, [_scene(1)])
+    client = FakeImageClient()
+    result = run_frames_stage(
+        "20260825-probe", client=client, paths=paths,
+        llm=FakeLLMClient([_verdict()]), line="art", jobs=1,
+    )
+    assert result.outcomes[0].status == DONE
+    assert client.grids == 1 and client.upscales == [0]
+    assert result.outcomes[0].clean_url.startswith("https://")

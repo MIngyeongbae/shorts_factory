@@ -287,10 +287,15 @@ def test_keep_without_order_still_survives():
 # --- ③ 렌더 기하 ---------------------------------------------------------------
 
 
-def test_only_the_last_cut_has_no_tail():
-    """specs/05 `[7]`의 클립 기하 그대로 — 꼬리는 다음 컷과 겹치는 몫이다 (ADR-0024)."""
-    assert clip_lengths(3, seconds=2.4, dissolve=0.6) == [3.0, 3.0, 2.4]
-    assert clip_lengths(1, seconds=2.4, dissolve=0.6) == [2.4]
+def test_every_pool_cut_carries_a_tail():
+    """**전부 꼬리를 단다** (ADR-0092가 「마지막만 없다」를 뒤집었다).
+
+    `photos`가 화면 순서가 아니라 언어별로 갈라 쓸 풀이 되면서 **어느 장이 마지막인지가
+    언어마다 다르다.** 한 언어의 마지막 장이 다른 언어에서는 가운데라 꼬리가 필요하다.
+    남는 꼬리는 `[9]`의 `trim`이 자른다.
+    """
+    assert clip_lengths(3, seconds=2.4, dissolve=0.6) == [3.0, 3.0, 3.0]
+    assert clip_lengths(1, seconds=2.4, dissolve=0.6) == [3.0]
 
 
 def test_the_photo_is_never_cropped_or_zoomed():

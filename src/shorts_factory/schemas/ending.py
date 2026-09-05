@@ -29,6 +29,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from . import vocab
+from .timed_scenes import LANGUAGES
 
 #: specs/schema/ending.schema.json — 손으로 옮겨 적지 않는다 (ADR-0034 §3).
 ENDING_SCHEMA: dict[str, Any] = vocab.ENDING_SCHEMA_DOC
@@ -56,13 +57,47 @@ def credit_required_licenses() -> tuple[str, ...]:
 
 
 def max_photos() -> int:
-    """엔딩에 세울 사진 수의 상한."""
+    """**한 언어의** 엔딩에 세울 사진 수의 상한."""
     return int(ENDING_SCHEMA["meta"]["max_photos"])
 
 
 def photo_seconds() -> float:
     """사진 한 장이 화면에 서 있는 시간(초)."""
     return float(ENDING_SCHEMA["meta"]["photo_seconds"])
+
+
+def pool_size() -> int:
+    """`[8]`이 렌더할 풀의 크기 — `max_photos × 언어 수` (ADR-0092).
+
+    언어 수의 정본은 `schemas/timed_scenes.LANGUAGES`이고 여기 옮겨 적지 않는다
+    (ADR-0034 §3). 풀이 이만큼 차면 세 언어가 **겹치는 사진 없이** 갈라 쓴다.
+    """
+    return max_photos() * len(LANGUAGES)
+
+
+def language_window(pool_size_: int, lang: str, *, limit: int | None = None) -> list[int]:
+    """언어 하나가 쓸 풀 인덱스 — 회전이다 (ADR-0092).
+
+    언어 위치 `i`, 장수 `m`, 풀 크기 `N`, 언어 수 `L`에 대해 시작점이 `i × 보폭`이고
+    **보폭이 풀 깊이에 따라 갈린다.**
+
+    - `N >= m×L`이면 보폭이 `m`이라 세 언어가 **겹치는 사진이 하나도 없다**
+    - 얕으면 보폭이 **1**이다. 보폭 `m`을 그대로 쓰면 `N`이 `m`의 배수일 때
+      `i*m mod N`이 자리를 되돌려 **세 언어가 똑같아진다** — 실데이터 28편 중 21편이
+      풀 3장이라 정확히 그 함정에 빠졌다. 보폭 1은 그 편들에 서로 다른 순서를 준다
+    - `N == 1`이면 세 언어가 같다. **못 고치는 자리라 오류가 아니다** — 부르는 쪽이
+      경고를 남긴다 (specs/05 D-3). `N == 2`에 언어가 셋이면 두 언어가 같아지는 것도
+      마찬가지로 못 고친다 (2원소 순환의 서로 다른 회전이 둘뿐이다)
+
+    `lang`이 `LANGUAGES`에 없으면 첫 자리로 본다 — 언어가 늘어도 배분이 죽지 않는다.
+    """
+    if pool_size_ <= 0:
+        return []
+    count = limit if limit is not None else max_photos()
+    position = LANGUAGES.index(lang) if lang in LANGUAGES else 0
+    stride = count if pool_size_ >= count * len(LANGUAGES) else 1
+    start = position * stride
+    return [(start + offset) % pool_size_ for offset in range(min(count, pool_size_))]
 
 
 def is_publishable(license_name: str) -> bool:
@@ -98,9 +133,11 @@ def semantic_errors(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     photos = data.get("photos", [])
 
-    limit = max_photos()
+    # 상한은 **풀 크기**다 (ADR-0092) — `photos`는 화면 순서가 아니라 언어별로 갈라 쓸
+    # 재고이고, 한 언어가 세우는 장수(`max_photos`)는 `[9]`가 회전으로 잘라 낸다.
+    limit = pool_size()
     if len(photos) > limit:
-        errors.append(f"photos: {len(photos)}장인데 상한은 {limit}장이다")
+        errors.append(f"photos: {len(photos)}장인데 풀 상한은 {limit}장이다")
 
     for position, photo in enumerate(photos):
         where = f"photos/{position}"

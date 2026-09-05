@@ -206,3 +206,62 @@ def test_mode_picks_the_endpoint_prefix_not_a_flag():
     """모드는 프리픽스가 정한다 — 틀리면 다른 엔드포인트가 된다 (ADR-0039 §4)."""
     assert MidjourneyEndImageClient(mode="fast").prefix == "/mj-fast"
     assert MidjourneyEndImageClient(mode="relax").prefix == "/mj-relax"
+
+
+# --- 프레임을 받는 이유가 둘이다 (ADR-0087) ----------------------------------
+
+
+def test_the_two_frame_switches_are_different_axes():
+    """`style_in_frames`와 `reference_frames`는 겹치지 않는다 — 다른 것을 프레임이 진다.
+
+    **어느 라인이 어느 스위치를 켰는지는 여기서 못박지 않는다** — `local`의
+    `reference_frames`는 2026-09-02에 꺼졌고(H3가 프레임을 이어 그리지 않는다) 다시 켜질 수
+    있다. 계약은 "둘이 다른 축이고 겹치지 않는다"는 것이다.
+    """
+    assert vocab.style_in_frames("art") is True
+    assert vocab.reference_frames("art") is False
+    # 둘 다 참인 라인은 없다 — 있으면 프롬프트 규약이 서로를 덮는다.
+    for line in vocab.values("video_line"):
+        assert not (vocab.style_in_frames(line) and vocab.reference_frames(line))
+        # 어느 한쪽이라도 참이면 그 라인의 `info` 없는 씬은 `[6]`을 탄다.
+        assert vocab.scene_takes_frames(line, has_info=False) is (
+            vocab.style_in_frames(line) or vocab.reference_frames(line)
+        )
+        assert vocab.scene_takes_frames(line, has_info=True) is False
+
+
+def test_the_reference_line_keeps_the_style_clause_in_the_video_prompt():
+    """스타일을 프레임이 지지 않으므로 말로 시켜야 한다 (ADR-0087).
+
+    `art`의 일반 씬은 STYLE 절이 없고, `local`의 같은 씬은 있다 — 갈리는 것은
+    `style_in_frames`이지 "프레임을 받는가"가 아니다.
+    """
+    common = dict(
+        subject_prompt="a bronze bell hanging in a wooden frame",
+        staging="location",
+        camera="slow_zoom_in",
+        camera_target="the bell lip",
+        action_prompt=None,
+        red_prompt=None,
+    )
+    art_prompt, _ = vr.build_video_prompt(**common, frames=True, style="")
+    local_prompt, _ = vr.build_video_prompt(
+        **common, frames=False, style=vocab.line_style("local", engine=vocab.TTV_ENGINE)
+    )
+    assert "STYLE" not in art_prompt and "SUBJECT" not in art_prompt
+    assert "SUBJECT" in local_prompt
+    assert vocab.style("base_style").split(".")[0] in local_prompt
+
+
+def test_the_still_style_is_the_clip_style_minus_one_clause():
+    """`frame_style`은 `base_style`에서 한 절만 뺀 것이다 (ADR-0087 결정 5, 맥락 5).
+
+    둘이 따로 놀면 프레임과 클립의 그림체가 갈린다 — 그래서 어휘를 최대한 공유한다.
+    """
+    base = vocab.style("base_style")
+    frame = vocab.style("frame_style")
+    culprit = "real surface microdetail - grain, wear, weave and tool marks on every material, "
+    assert culprit in base, "base_style이 바뀌었다 — frame_style을 다시 잰다"
+    assert base.replace(culprit, "") == frame
+    # 실측이 남기라고 한 절은 살아 있다 (뺀 변종이 전경의 손을 잃었다).
+    assert "shallow depth of field on foreground detail" in frame

@@ -30,8 +30,9 @@ specs/05-pipeline.md:
 
 ## 엔딩은 붙이되 검증하지 않는다 (ADR-0055)
 
-`ending.json`이 있으면 마지막 씬 뒤에 **하드컷**으로 잇고 컷 사이는 디졸브다. 세 언어가
-같은 엔딩 클립을 쓴다. **자막과 싱크 검증(±200ms)은 씬 구간만 본다.**
+`ending.json`이 있으면 마지막 씬 뒤에 **하드컷**으로 잇고 컷 사이는 디졸브다. **엔딩 사진은
+언어마다 다르다** (ADR-0092) — `photos`는 화면 순서가 아니라 풀이고 `language_window`가
+회전으로 이 언어의 몫을 고른다. **자막과 싱크 검증(±200ms)은 씬 구간만 본다.**
 
 ## 산출물
 
@@ -44,11 +45,12 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Sequence
 
 from ..config import Paths, write_text
+from ..judgment import JudgmentError, languages_for
 from ..runstate import RunState
 from .contract import (
     SceneContractNotFound,
@@ -59,6 +61,8 @@ from .contract import (
 from ..schemas import ending as ending_schema
 from ..schemas.timed_scenes import LANGUAGES, PRIMARY_LANGUAGE, present_languages
 from ..schemas.timed_scenes import validate_timed_scenes
+from ..video.grade import grade_for
+from ..video.pools import clip_source_dir, overlay_record
 from ..video.ffmpeg import (
     DEFAULT_FFMPEG,
     FFmpegError,
@@ -286,15 +290,21 @@ def _clip_paths(run_dir: Path, timeline: Timeline) -> list[Path]:
     return paths
 
 
-def _load_ending(run_dir: Path, warnings: list[str]) -> list[float]:
-    """`ending.json` → 컷마다의 표시 초. 파일이 없으면 빈 목록이다 (D-3).
+def _load_ending(
+    run_dir: Path, lang: str, warnings: list[str]
+) -> tuple[list[int], list[float]]:
+    """`ending.json` → **이 언어가 쓸** `(컷 id, 표시 초)`. 파일이 없으면 빈 목록 (D-3).
 
     **계약을 어긴 문서는 붙이지 않는다.** 깨진 엔딩 때문에 완성 영상 전체를 잃는 것보다
     엔딩 없이 나가는 쪽이 낫다 — 엔딩은 마감이지 본편이 아니다 (specs/05 D-5).
+
+    `photos`는 **화면 순서가 아니라 풀**이고, 이 언어의 몫은 `language_window`가 회전으로
+    고른다 (ADR-0092). 풀이 얕으면 언어끼리 사진이 겹치되 구성과 순서가 다르고, 1장뿐이면
+    세 언어가 같다 — **못 고치는 자리라 경고만 남기고 엔딩은 그대로 붙인다.**
     """
     path = run_dir / ENDING_FILE
     if not path.exists():
-        return []
+        return [], []
 
     document = _load_json(path, ENDING_FILE)
     errors = ending_schema.validate_ending(document)
@@ -303,7 +313,7 @@ def _load_ending(run_dir: Path, warnings: list[str]) -> list[float]:
             f"{ENDING_FILE}이 계약을 어겨 엔딩을 붙이지 않았다 ({'; '.join(errors[:3])}). "
             "[8. ending]을 --force로 다시 돌린다"
         )
-        return []
+        return [], []
 
     photos = document.get("photos", [])
     missing = [p["file"] for p in photos if not (run_dir / p["file"]).exists()]
@@ -312,14 +322,27 @@ def _load_ending(run_dir: Path, warnings: list[str]) -> list[float]:
             f"엔딩 클립 {len(missing)}개가 없어 엔딩을 붙이지 않았다 "
             f"({', '.join(missing[:3])}). [8. ending]을 --force로 다시 돌린다"
         )
-        return []
+        return [], []
 
-    return [float(photo["seconds"]) for photo in photos]
+    if not photos:
+        return [], []
+
+    window = ending_schema.language_window(len(photos), lang)
+    if len(photos) == 1:
+        warnings.append(
+            "엔딩 풀이 1장뿐이라 세 언어가 같은 사진으로 닫는다 — "
+            "채널 간 화면이 갈리지 않는다 (ADR-0092, ADR-0055 되돌릴 조건)"
+        )
+    chosen = [photos[position] for position in window]
+    return (
+        [int(photo["index"]) for photo in chosen],
+        [float(photo["seconds"]) for photo in chosen],
+    )
 
 
-def _clip_seconds(run_dir: Path) -> dict[int, float]:
+def _clip_seconds(run_dir: Path, record_file: str = CLIPS_RECORD_FILE) -> dict[int, float]:
     """`clips.json`의 씬별 클립 길이 — **선택적 입력이다** (D-3). 없거나 깨지면 빈 dict."""
-    path = run_dir / CLIPS_RECORD_FILE
+    path = run_dir / record_file
     if not path.exists():
         return {}
     try:
@@ -333,6 +356,20 @@ def _clip_seconds(run_dir: Path) -> dict[int, float]:
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+def _with_language_pool(timeline: Timeline, run_dir: Path, lang: str) -> Timeline:
+    """씬 구간의 클립 자리를 그 언어의 것으로 — 겹풀에 있으면 `clips.{lang}/`, 없으면 `clips/`.
+
+    파일 존재로 가른다 (ADR-0095 결정 4) — 기록이 아니라 파일이 정본이다. 겹풀이
+    통째로 없는 옛 편은 전 씬이 기본 풀이라 지금까지와 같이 돈다 (D-4).
+    """
+    segments = tuple(
+        replace(segment, source_dir=clip_source_dir(run_dir, lang, segment.scene_id))
+        if segment.is_scene else segment
+        for segment in timeline.segments
+    )
+    return replace(timeline, segments=segments)
 
 
 def padded_indices(
@@ -389,7 +426,11 @@ def run_assemble_stage(
             f"scenes.timed.{PRIMARY_LANGUAGE}.json이 없다: {run_dir}. [3. tts+sync]를 먼저 실행하라 — "
             "총 길이가 상한을 넘어 멈춘 run에는 이 파일이 일부러 없다 (ADR-0017)."
         )
-    wanted = list(langs) if langs else present
+    # 돌리는 언어는 **명시 > 판정 > 있는 것 전부**다 (ADR-0094 결정 4).
+    try:
+        wanted = languages_for(paths, run_id, langs=langs, present=present)
+    except JudgmentError as exc:
+        raise AssembleStageError(str(exc)) from exc
     unknown = [l for l in wanted if l not in LANGUAGES]
     if unknown:
         raise AssembleStageError(f"모르는 언어다: {unknown} (가능: {', '.join(LANGUAGES)})")
@@ -511,15 +552,22 @@ def _assemble_language(
     warnings: list[str] = list(loaded["warnings"])
 
     try:
-        timeline = build_timeline(scenes)
+        timeline = _with_language_pool(build_timeline(scenes), run_dir, lang)
     except TimelineError as exc:
         raise fail(str(exc)) from exc
 
+    # 엔딩 실사 컷을 잇는다 (ADR-0055). 싱크 검증의 대조 대상은 씬 구간이다 — `check_sync`에
+    # 넘기는 것은 `full`이 아니라 `timeline`이다. **엔딩 구간에는 자막이 없다** (ADR-0096).
+    ending_ids, ending_lengths = _load_ending(run_dir, lang, warnings)
+    full = extend_with_ending(
+        timeline, ending_lengths, source_dir=ENDING_DIR, clip_ids=ending_ids
+    )
+
     font_name = font_name_for(lang)
-    # 제목은 선택 필드다 — 없으면 제목 훅 없이 지금까지와 같이 굽는다 (ADR-0065, D-3).
+    # 제목은 선택 필드다 — 없으면 그것만 빼고 지금까지와 같이 굽는다 (D-3).
     title = str(document.get("title") or "")
     ass_document, ass_warnings = build_ass(
-        scenes, font_name=font_name, lang=lang, title=title
+        scenes, font_name=font_name, lang=lang, title=title,
     )
     warnings.extend(ass_warnings)
     # 강등됐는지는 경고 문구가 아니라 **문서에 스타일이 실렸는지**로 본다 (ADR-0065).
@@ -541,15 +589,13 @@ def _assemble_language(
     if font_warning:
         warnings.append(font_warning)
 
-    # 검증이 끝난 뒤에 엔딩을 붙인다 — 싱크 검증의 대조 대상은 씬 구간이고, 엔딩에는
-    # 자막 큐도 실측 시각도 없다 (ADR-0055).
-    ending_lengths = _load_ending(run_dir, warnings)
-    full = extend_with_ending(timeline, ending_lengths, source_dir=ENDING_DIR)
     try:
         clips = _clip_paths(run_dir, full)
     except AssembleStageError as exc:
         raise fail(str(exc)) from exc
 
+    # 겹풀 씬의 클램프 정보는 그 언어의 기록에 있다 — 기본 풀 위에 덮는다 (선택 입력, D-3).
+    clip_seconds = {**clip_seconds, **_clip_seconds(run_dir, overlay_record(lang))}
     pads = padded_indices(full, clip_seconds)
     padded_ids = tuple(full.segments[i].scene_id for i in pads)
     for index in pads:
@@ -570,6 +616,8 @@ def _assemble_language(
         subtitles=escape_filter_path(subtitles_path, run_dir),
         fontsdir=escape_filter_path(fonts_dir, run_dir) if fonts_dir else None,
         pad_indices=pads,
+        #: 그 언어의 채널 룩 (ADR-0093). ko는 비어 있고 그것이 정상이다 (D-3).
+        grade=grade_for(lang),
     )
     cmd = build_command(
         full,

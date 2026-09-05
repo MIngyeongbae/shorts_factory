@@ -99,6 +99,13 @@ FRAMES_DIR = "frames"
 #: `[5]`가 완성해 실어 주는 MJ 한 줄 (`prompts.json`의 필드 — `visual_rules.PROMPT_SCENE_SCHEMA`).
 #: **`info` 씬에는 없는 것이 정상이다** — 그 씬은 MJ를 타지 않는다 (ADR-0075 결정 3).
 MJ_IMAGE_PROMPT_FIELD = "mj_image_prompt"
+#: `[5]`의 소재 단락 — `reference_frames` 라인에서 로컬 SDXL이 그리는 원료 (ADR-0087).
+#: MJ 한 줄과 달리 **모든 씬에 있다** (`visual_rules.PROMPT_SCENE_SCHEMA`의 필수 필드).
+SUBJECT_PROMPT_FIELD = "subject_prompt"
+#: 씬 계약의 참조 모드 필드 (ADR-0087). 어휘 이름은 `vocab.json`의 `reference_mode`다 —
+#: 씬이 부르는 이름과 어휘의 이름이 다르므로 둘을 따로 둔다.
+REFERENCE_FIELD = "reference"
+REFERENCE_VOCAB = "reference_mode"
 
 #: 검수 세션의 도구 — CLEAN을 직접 열어 본다 (`[7]`과 같은 메커니즘).
 TOOLS: tuple[str, ...] = ("Read",)
@@ -175,6 +182,12 @@ class FrameJob:
     #: ADR-0077 — 이 씬의 실물 참조 사진 (run 디렉터리 기준 경로). `[4]`가 `reference_ok`로
     #: 고른 것이고, 없으면 참조 없이 그린다. 라이선스가 아니라 **적합성**이 고른 값이다.
     reference_file: str = ""
+    #: ADR-0087 — 로컬 경로(`reference_frames`)에서 SDXL이 그릴 프롬프트의 원료. `[5]`의
+    #: `subject_prompt`이고, MJ 한 줄(`mj_prompt`)과 달리 **여기서 조립한다** — 스틸용
+    #: 스타일(`frame_style`)이 영상용(`base_style`)과 다르기 때문이다 (ADR-0087 결정 5).
+    subject_prompt: str = ""
+    #: ADR-0087 — 이 씬이 고른 참조 모드. 빈 값이면 어휘의 `_default`(`identity`)다.
+    reference_mode: str = ""
 
 
 def pick_reference(scene_refs: dict[str, Any] | None) -> str:
@@ -235,13 +248,27 @@ def build_jobs(
             raise FramesStageError(
                 f"{PROMPTS_FILE}에 씬 {scene_id}이 없다 — [5]를 다시 돌려야 한다"
             )
+        # 프레임을 그리는 엔진이 라인마다 다르므로 요구하는 원료도 다르다 (ADR-0087).
+        # `reference_frames`는 로컬 SDXL이라 MJ 한 줄이 아니라 `subject_prompt`를 쓴다.
+        local_path = vocab.reference_frames(line)
         mj_prompt = str(planned.get(MJ_IMAGE_PROMPT_FIELD) or "").strip()
-        if not mj_prompt:
+        subject_prompt = str(planned.get(SUBJECT_PROMPT_FIELD) or "").strip()
+        if local_path and not subject_prompt:
+            raise FramesStageError(
+                f"씬 {scene_id}에 `{SUBJECT_PROMPT_FIELD}`가 없다. 라인 '{line}'은 이 씬의 "
+                "first frame을 로컬 SDXL로 그리므로 [5]의 소재 단락이 있어야 한다 "
+                "(ADR-0087 결정 1) — 옛 prompts.json이면 [5]를 다시 돌려라"
+            )
+        if not local_path and not mj_prompt:
             raise FramesStageError(
                 f"씬 {scene_id}에 `{MJ_IMAGE_PROMPT_FIELD}`가 없다. 라인 '{line}'은 이 씬의 "
                 "CLEAN 이미지를 사므로 [5]가 MJ 한 줄을 완성해 실어야 한다 (ADR-0075 결정 3) "
                 "— 옛 prompts.json이면 [5]를 다시 돌려라"
             )
+        reference_mode = str(scene.get(REFERENCE_FIELD) or "").strip()
+        if reference_mode:
+            # 어휘 밖 값은 여기서 멈춘다 — 그림을 그린 뒤에 알면 늦다 (ADR-0033 §3).
+            vocab.require(REFERENCE_VOCAB, reference_mode)
         jobs.append(
             FrameJob(
                 scene_id=scene_id, mj_prompt=mj_prompt,
@@ -249,6 +276,8 @@ def build_jobs(
                 subject=str(scene.get("subject") or ""),
                 visual_goal=str(scene.get("visual_goal") or ""),
                 reference_file=pick_reference(refs_by_id.get(scene_id)),
+                subject_prompt=subject_prompt,
+                reference_mode=reference_mode,
             )
         )
     if skipped:
@@ -636,6 +665,94 @@ class _Runner:
         self.stop.set()
 
 
+class _LocalRunner(_Runner):
+    """`reference_frames` 라인의 씬 하나 — 로컬 SDXL + IP-Adapter (ADR-0087).
+
+    `_Runner`의 검수 게이트(`_clean_gate`)·기록 모양을 그대로 쓰고 **생성만 갈아탄다.**
+    사다리는 사분면 교체가 아니라 **새 시드로 다시 그리기**다 — 그리드가 없어 뽑을 칸이
+    없고, 변동비 0이라 다시 그리는 것이 가장 싸다.
+
+    소재 단락 교정(`_fix_subject`)은 부르지 않는다. 그것은 MJ 한 줄의 예산·방언을 다시
+    재는 경로라 여기 계약이 아니고, 이 라인의 프롬프트 교정은 `[7]`의 `clipfix`가 진다.
+    """
+
+    #: 시드 사다리의 길이. 검수가 기각하면 새 시드로 이만큼 다시 그린다.
+    SEED_ATTEMPTS = 3
+
+    def run_scene(self, job: FrameJob) -> SceneOutcome:
+        outcome = SceneOutcome(scene_id=job.scene_id)
+        if self.stop.is_set():
+            outcome.warnings.append("프로바이더 거절로 시도하지 않았다")
+            self.on_scene_done(outcome)
+            return outcome
+
+        mode = job.reference_mode or vocab.reference_mode_default()
+        knobs = vocab.reference_mode(mode)
+        reference = self.run_dir / job.reference_file if job.reference_file else None
+        if reference is not None and not reference.is_file():
+            self._warn_once(
+                f"씬 {job.scene_id}: 참조 사진 파일이 없다 ({job.reference_file}) — 참조 없이 그린다"
+            )
+            reference = None
+        prompt = build_frame_prompt(job.subject_prompt)
+        negative = ", ".join(negative_items(has_info=False))
+
+        for attempt_no in range(self.SEED_ATTEMPTS):
+            attempt: dict[str, Any] = {"attempt": attempt_no, "reference_mode": mode}
+            outcome.attempts.append(attempt)
+            try:
+                data, meta = self.client.generate_frame(
+                    scene_id=job.scene_id, prompt=prompt, negative_prompt=negative,
+                    reference=reference, weight=float(knobs["weight"]),
+                    start_at=float(knobs["start_at"]), timeout=self.image_timeout,
+                )
+            except ProviderNotConfigured as exc:
+                self._refuse(str(exc))
+                attempt["error"] = str(exc)
+                break
+            except ImageGenError as exc:
+                attempt["error"] = f"CLEAN 생성 실패: {exc}"
+                continue
+            attempt.update(meta)
+            path = self.frames_dir / f"{job.scene_id}{CLEAN_SUFFIX}.png"
+            path.write_bytes(data)
+            outcome.clean_file = _relative(path, self.run_dir)
+            # 주소는 로컬 경로다 — 이 프레임을 읽을 쪽이 같은 기계의 ComfyUI다 (결정 7).
+            outcome.clean_url = path.as_posix()
+            attempt["clean_file"] = outcome.clean_file
+
+            verdict = self._clean_gate(job, path, attempt_no)
+            attempt["review"] = verdict
+            if verdict["verdict"] == FAIL:
+                continue
+            if verdict["verdict"] == ERROR:
+                outcome.warnings.extend(verdict["reasons"])
+            outcome.status = DONE
+            self.on_scene_done(outcome)
+            return outcome
+
+        # 사다리 끝 — 마지막 장을 검수 없이 쓴다 (`[7]`은 first 없이 못 돈다).
+        if outcome.clean_file:
+            outcome.status = DONE
+            outcome.demoted_from = DEMOTED_UNREVIEWED
+            outcome.warnings.append(
+                f"CLEAN {self.SEED_ATTEMPTS}장이 다 걸려 마지막 장을 검수 없이 쓴다 "
+                f"(demoted_from: {DEMOTED_UNREVIEWED})"
+            )
+        self.on_scene_done(outcome)
+        return outcome
+
+
+def build_frame_prompt(subject_prompt: str) -> str:
+    """소재 단락 + 스틸용 스타일 → SDXL 프롬프트 (ADR-0087 결정 5).
+
+    **`base_style`이 아니라 `frame_style`이다.** 실측 2026-09-01: `base_style`의
+    `real surface microdetail …` 절이 정지 이미지 모델을 극단적 근접 질감으로 끌어
+    구조를 뭉갠다. 문자열은 어휘가 지고 코드는 잇기만 한다 (ADR-0034).
+    """
+    return f"{subject_prompt.strip()}\n\nFORMAT: {vocab.style('frame_style')}"
+
+
 def _relative(path: Path, run_dir: Path) -> str:
     try:
         return path.relative_to(run_dir).as_posix()
@@ -763,10 +880,15 @@ def run_frames_stage(
         )
 
     resolved_line = resolve_line(paths, run_id, slug=slug, line=line)
-    if not vocab.style_in_frames(resolved_line):
+    # 프레임을 받는 이유는 둘이다 — 스타일이 프레임에 있거나(`style_in_frames`), 실물
+    # 고증이 프레임에 있거나(`reference_frames`, ADR-0087). 코드가 라인 이름을 분기하지
+    # 않는다 (ADR-0034) — 스위치 둘을 묻는다.
+    local_frames = vocab.reference_frames(resolved_line)
+    if not vocab.style_in_frames(resolved_line) and not local_frames:
         raise FramesStageError(
             f"영상 라인 '{resolved_line}'은 프레임을 입력으로 받지 않는다 — 이 단계가 필요 없다 "
-            "(vocab.json meta.video_line.{line}.style_in_frames). [7]을 바로 돌려라"
+            "(vocab.json meta.video_line.{line}의 style_in_frames·reference_frames가 둘 다 "
+            "거짓이다). [7]을 바로 돌려라"
         )
 
     # 실물 참조 (ADR-0077). `[4]`를 안 돌렸거나 파일이 없으면 참조 없이 도는 것이 정상이다.
@@ -782,8 +904,9 @@ def run_frames_stage(
     with_reference = sum(1 for job in all_jobs if job.reference_file)
     if with_reference:
         log.info(
-            "[%s] 실물 참조를 붙일 씬 %d/%d개 — 그 씬만 v7으로 돈다 (ADR-0077)",
+            "[%s] 실물 참조를 붙일 씬 %d/%d개 — %s",
             STAGE, with_reference, len(all_jobs),
+            "IP-Adapter로 물린다 (ADR-0087)" if local_frames else "그 씬만 v7으로 돈다 (ADR-0077)",
         )
     #: 만들지 **않은** 씬 수. 지표로 남기지만 강등이 아니다 (ADR-0075 결정 2).
     skipped_info = sum(1 for scene in contract.get("scenes", []) if scene.get("info"))
@@ -842,7 +965,8 @@ def run_frames_stage(
             outcomes[outcome.scene_id] = outcome
             write_record()
 
-    runner = _Runner(
+    runner_cls = _LocalRunner if local_frames else _Runner
+    runner = runner_cls(
         client=client, llm=llm, run_dir=run_dir, topic=topic,
         review=review, image_timeout=image_timeout, session_timeout=session_timeout,
         on_scene_done=on_scene_done, line=resolved_line,

@@ -1,0 +1,82 @@
+{
+  "_comment": "ComfyUI API-format workflow for the [6] local first-frame path (ADR-0087). SDXL (RealVisXL V5.0) + IP-Adapter Plus + CLIP-ViT-H. This is the graph the 2026-09-01 probe measured (reports/ipadapter-probe/probe.py:build) — 832x1472 (the SDXL training resolution closest to 9:16), 28 steps, cfg 5.0, dpmpp_2m/karras, IPAdapterAdvanced linear/concat/'V only'. imagegen/comfy_sdxl.py finds nodes by _meta.title and fills: POSITIVE.text, NEGATIVE.text, KSampler.seed, IPAdapterAdvanced.weight/start_at, REFERENCE.image, SaveImage.filename_prefix. When a scene has no reference photo (or reference: none) the adapter DELETES the four IP-Adapter nodes and points KSampler.model back at the checkpoint — that is the documented 'no reference' path, not a failure.",
+  "workflow": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {"ckpt_name": "RealVisXL_V5.0_fp16.safetensors"},
+      "_meta": {"title": "Checkpoint"}
+    },
+    "2": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {"text": "", "clip": ["1", 1]},
+      "_meta": {"title": "POSITIVE"}
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {"text": "", "clip": ["1", 1]},
+      "_meta": {"title": "NEGATIVE"}
+    },
+    "4": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {"width": 832, "height": 1472, "batch_size": 1},
+      "_meta": {"title": "Latent"}
+    },
+    "5": {
+      "class_type": "IPAdapterModelLoader",
+      "inputs": {"ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"},
+      "_meta": {"title": "IPAdapter Model"}
+    },
+    "6": {
+      "class_type": "CLIPVisionLoader",
+      "inputs": {"clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"},
+      "_meta": {"title": "CLIP Vision"}
+    },
+    "7": {
+      "class_type": "LoadImage",
+      "inputs": {"image": ""},
+      "_meta": {"title": "REFERENCE"}
+    },
+    "8": {
+      "class_type": "IPAdapterAdvanced",
+      "inputs": {
+        "model": ["1", 0],
+        "ipadapter": ["5", 0],
+        "image": ["7", 0],
+        "clip_vision": ["6", 0],
+        "weight": 0.7,
+        "weight_type": "linear",
+        "combine_embeds": "concat",
+        "start_at": 0.4,
+        "end_at": 1.0,
+        "embeds_scaling": "V only"
+      },
+      "_meta": {"title": "IPAdapter"}
+    },
+    "9": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": ["8", 0],
+        "positive": ["2", 0],
+        "negative": ["3", 0],
+        "latent_image": ["4", 0],
+        "seed": 20260901,
+        "steps": 28,
+        "cfg": 5.0,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 1.0
+      },
+      "_meta": {"title": "KSampler"}
+    },
+    "10": {
+      "class_type": "VAEDecode",
+      "inputs": {"samples": ["9", 0], "vae": ["1", 2]},
+      "_meta": {"title": "Decode"}
+    },
+    "11": {
+      "class_type": "SaveImage",
+      "inputs": {"images": ["10", 0], "filename_prefix": "frames/shorts-factory"},
+      "_meta": {"title": "Save"}
+    }
+  }
+}

@@ -47,13 +47,13 @@ ${refs}
 - **진행 중인 동작으로 쓴다.** 완료형(`has failed`, `has skewed`, `has forced`)은 **이미 끝난 상태**라 영상이 되지 않는다 — "고장 나는 순간"이 "이미 고장 난 물건"이 된다. 현재형·진행형으로 쓴다: `the hook twists sideways off its bar and the row tears open at that point`
 - **시작 → 끝이 있어야 한다.** `subject_prompt`가 그린 화면에서 출발해 무엇이 어떤 상태로 끝나는지. 흐름이면 **시작점·방향·부딪히는 경계·결과**를 적는다 — 어디서 나와서, 어디로 가고, 무엇에 막히고, 그래서 무엇이 되는가
 - **사람·환경도 사건이다.** 외면·통과·붐빔·멈춤처럼 사람이 하는 일도 여기 쓴다: `shoppers stream past the case without slowing, none turning toward it`
-- **카메라를 지시하지 마라.** 움직이는 것은 피사체다. 카메라 워크 단어(pan, tilt, zoom, dolly, orbit, track, push, pull, rush, fly, sweep, spin, rotate…)를 쓰면 기계 검사가 반려한다 — 워크는 씬 계약의 `camera`에서 온다
+- **카메라를 지시하지 마라.** 움직이는 것은 피사체다. 카메라 워크 단어를 쓰면 기계 검사가 반려한다 (금지어 전부: ${forbidden_words}) — 워크는 씬 계약의 `camera`에서 온다
 - **빨강·화살표·라벨을 쓰지 마라.** 계측 표시가 움직이는 것은 `red_prompt`가 쓴다
 - **없는 사건을 지어내지 마라.** 씬 계약에 `action`이 없으면 이 필드를 쓰지 않는다 — 정물이 맞는 씬이 있고, 대본에 없는 동작이 화면에 뜨면 그것이 곧 대본과 겉도는 영상이다
 
 ## `camera_target` — 카메라가 닿는 곳 (영어 한 구절, ${target_min}~${target_max}자)
 
-CAMERA 절은 "워크 문구, 착지 구절." 꼴로 조립된다. 당신은 **착지**만 쓴다 — 워크가 끝나는 순간 프레임 한가운데 무엇이 있는가: "arriving on the dark rectangular doorway at the foot of the mound", "holding on the vent shaft at the crown of the arch where the warm air leaves". **카메라 워크 단어(pan, tilt, zoom, dolly, orbit, track, push, pull, rush, fly, sweep, spin, rotate…)를 쓰지 마라** — 쓰면 기계 검사가 반려한다. 워크는 씬 계약의 `camera`에서 온다.
+CAMERA 절은 "워크 문구, 착지 구절." 꼴로 조립된다. 당신은 **착지**만 쓴다 — 워크가 끝나는 순간 프레임 한가운데 무엇이 있는가: "arriving on the dark rectangular doorway at the foot of the mound", "holding on the vent shaft at the crown of the arch where the warm air leaves". **카메라 워크 단어를 쓰지 마라** — 쓰면 기계 검사가 반려한다 (금지어 전부: ${forbidden_words}). 워크는 씬 계약의 `camera`에서 온다.
 
 이 규칙은 **품사를 안 가린다.** 소재의 일부 이름이 이 목록의 단어와 우연히 같으면(예: 지퍼의 "fly"는 카메라 동사가 아니라 바지 앞섶이라는 명사다) 그래도 반려된다. 착지를 그 이름으로 부르지 말고 **생김새·재질·부위로 풀어서** 써라: "arriving on the fly" 대신 "arriving on the row of interlocked teeth where the two panels meet"처럼.
 

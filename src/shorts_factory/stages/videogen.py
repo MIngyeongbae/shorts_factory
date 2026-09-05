@@ -67,6 +67,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ..config import Paths, write_text
+from ..judgment import JudgmentError, languages_for
 from ..jsonio import JSONExtractionError, dump_json, extract_json_object
 from ..llm.base import LLMClient, LLMError
 from ..runstate import RunState
@@ -76,6 +77,14 @@ from ..schemas.visual_rules import build_video_prompt, demote_info, fill_seconds
 from ..video.clips import FRAME_POSITIONS, FRAME_SUFFIX, frame_command, frame_times, normalize_command
 from ..video.ffmpeg import DEFAULT_FFMPEG, FFmpegError, relative_path, run_ffmpeg
 from ..video.ocr import OCR, OCRError, detect_ocr, gate as ocr_gate
+from ..video.pools import (
+    REVIEW_STEM,
+    overlay_dir,
+    overlay_record,
+    overlay_review,
+    overlay_review_dir,
+    overlay_scene_ids,
+)
 from ..video.timeline import CLIPS_DIR, DISSOLVE_SECONDS
 from ..videogen.base import (
     VideoClient,
@@ -101,11 +110,12 @@ PROMPT = "16-clipreview.md"
 #: 고쳐쓰기 세션 프롬프트 (ADR-0067) — 기각 사유를 받아 단락을 다시 쓴다.
 FIX_PROMPT = "17-clipfix.md"
 
-#: 이 단계의 **실행 기록** 둘 (specs/05 계약 표).
-RECORD_FILE = "clips.json"
-REVIEW_FILE = "clip_review.json"
+#: 이 단계의 **실행 기록** 둘 (specs/05 계약 표) — 기본 풀의 것. 언어별 겹풀은
+#: `clips.{lang}.json`·`clip_review.{lang}.json`이다 (`video/pools.py`, ADR-0095).
+RECORD_FILE = f"{CLIPS_DIR}.json"
+REVIEW_FILE = f"{REVIEW_STEM}.json"
 #: 검수 재료 — 프로바이더 원본·정규화 후보·프레임. `clips/`에는 채택된 클립만 놓는다.
-REVIEW_DIR = "clip_review"
+REVIEW_DIR = REVIEW_STEM
 
 REVIEW_NONE, REVIEW_OCR, REVIEW_FULL = "none", "ocr", "full"
 REVIEW_MODES = (REVIEW_NONE, REVIEW_OCR, REVIEW_FULL)
@@ -212,7 +222,12 @@ class SceneJob:
     #: 따라간다 — 프레임을 받는 씬은 카메라 구절 하나라 초 수 자리도 없고, `info` 씬은
     #: 텍스트→영상이라 전체 골격에 STYLE 절까지 있다.
     takes_frames: bool = False
-    #: 이 씬의 영상 프롬프트가 쓰는 룩 (`ttv_style`). 프레임을 받는 씬은 빈 문자열이다 —
+    #: **프롬프트 규약이 프레임의 것인가** (ADR-0087이 `takes_frames`에서 갈라냈다).
+    #: 프레임을 받는 이유가 둘이라 둘이 더 이상 같은 값이 아니다: `style_in_frames` 라인은
+    #: 그림·무대를 프레임이 지므로 프롬프트가 카메라 구절 하나이고, `reference_frames`
+    #: 라인은 **실물의 형태·재질만** 프레임이 지므로 골격 전체 + STYLE 절을 그대로 쓴다.
+    frame_prompt: bool = False
+    #: 이 씬의 영상 프롬프트가 쓰는 룩 (`ttv_style`). `frame_prompt`인 씬만 빈 문자열이다 —
     #: 스타일을 프레임이 지므로 말로 다시 시키지 않는다 (ADR-0070 규칙 1).
     style: str = ""
 
@@ -224,6 +239,7 @@ def build_jobs(
     *,
     seconds_range: tuple[int, int] = (VideoClient.min_seconds, VideoClient.max_seconds),
     frames: dict[int, dict[str, Any]] | None = None,
+    style_frames: bool = True,
 ) -> tuple[list[SceneJob], list[str]]:
     """세 입력 → 씬별 작업. `{seconds}`를 채우고 길이를 정한다. `(jobs, warnings)`.
 
@@ -231,6 +247,11 @@ def build_jobs(
     `frames`는 `[6]`의 씬별 프레임 주소다 (ADR-0071) — 프레임을 입력으로 받는 라인에서만
     넘어오고, 그 라인인데 씬이 비면 **여기서 멈춘다**: 프레임 없이 사면 라벨 없는 클립을
     돈 주고 사게 된다.
+
+    `style_frames`는 **그 프레임이 스타일까지 지는가**다 (ADR-0087). 참이면 그 씬의
+    프롬프트는 카메라 구절 하나이고(`style_in_frames` 라인), 거짓이면 프레임을 받으면서도
+    골격 전체 + STYLE 절을 쓴다(`reference_frames` 라인). 기본이 참인 것은 이 갈래가 생기기
+    전의 동작이 그것이라서다 — `frames`가 None이면 어느 쪽이든 결과가 같다.
     """
     warnings: list[str] = []
     low, high = seconds_range
@@ -277,11 +298,14 @@ def build_jobs(
         # **프레임을 받는지는 씬이 정한다** (ADR-0075 결정 1·3). 프레임 라인이라도 `info`
         # 씬은 텍스트→영상으로 가므로 `[6]`이 그 씬의 CLEAN을 만들지 않았다.
         takes_frames = frames is not None and not has_info
+        # 프레임을 받는 것과 **프롬프트가 프레임의 규약을 따르는 것**은 다른 값이다
+        # (ADR-0087) — `reference_frames` 라인은 프레임을 받으면서도 골격 전체를 쓴다.
+        frame_prompt = takes_frames and style_frames
         frame_urls = _frame_urls(sid, frames) if takes_frames else (None, None)
         jobs.append(SceneJob(
             scene_id=sid,
             prompt=_with_seconds(
-                str(entry["video_prompt"]), seconds, takes_frames=takes_frames
+                str(entry["video_prompt"]), seconds, takes_frames=frame_prompt
             ),
             negative_prompt=str(entry.get("negative_prompt") or ""),
             has_info=has_info,
@@ -313,7 +337,8 @@ def build_jobs(
             first_frame=frame_urls[0],
             last_frame=frame_urls[1],
             takes_frames=takes_frames,
-            style="" if takes_frames else video_style,
+            frame_prompt=frame_prompt,
+            style="" if frame_prompt else video_style,
         ))
     return jobs, warnings
 
@@ -415,10 +440,16 @@ class VideogenResult:
     skipped: bool = False
     record_path: Path | None = None
     review_path: Path | None = None
+    #: 언어별 겹풀의 결과 (ADR-0095) — 판정이 고른 ko 아닌 언어만 키가 있다.
+    overlays: dict[str, list[SceneOutcome]] = field(default_factory=dict)
 
     @property
     def scene_count(self) -> int:
         return len(self.outcomes)
+
+    @property
+    def overlay_clips(self) -> int:
+        return sum(o.generated for outcomes in self.overlays.values() for o in outcomes)
 
     @property
     def generated_clips(self) -> int:
@@ -433,7 +464,11 @@ class VideogenResult:
 
     @property
     def passed(self) -> bool:
-        return bool(self.outcomes) and all(o.status == DONE for o in self.outcomes)
+        return (
+            bool(self.outcomes)
+            and all(o.status == DONE for o in self.outcomes)
+            and all(o.status == DONE for outcomes in self.overlays.values() for o in outcomes)
+        )
 
     @property
     def summary(self) -> str:
@@ -443,6 +478,10 @@ class VideogenResult:
             f"({self.purchased_seconds}초, {self.provider}) / 검수 {self.review} / "
             f"강등 info {self.demoted(DEMOTED_INFO)} · 미검수채택 {self.demoted(DEMOTED_UNREVIEWED)} "
             f"→ {CLIPS_DIR}/ + {RECORD_FILE}{tail}"
+            + "".join(
+                f" · 겹풀 {lang} {len(outcomes)}씬/호출 {sum(o.generated for o in outcomes)}회"
+                for lang, outcomes in self.overlays.items()
+            )
         )
 
 
@@ -491,6 +530,8 @@ def render_fix_prompt(
         camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD) or "(없음)",
         red_block=red_block,
         reasons="\n".join(f"- {r}" for r in reasons) or "- (사유 없음)",
+        # 금지어는 어휘에서 온다 (ADR-0098) — 손으로 옮겨 적으면 계약과 갈라진다.
+        forbidden_words=promptplan.forbidden_words_text(),
     )
 
 
@@ -554,6 +595,7 @@ class _Runner:
         backoff: float, on_scene_done: Callable[[SceneOutcome], None],
         gen_slots: int = 1, review_slots: int = 1,
         info_client: VideoClient | None = None,
+        clips_dir: Path | None = None, review_dir: Path | None = None,
     ) -> None:
         self.client = client
         # `info` 씬만 다른 엔진으로 보낸다 (ADR-0072 결정 5). MJ는 끝 이미지를 목표로
@@ -590,8 +632,9 @@ class _Runner:
         self.refusal: VideoProviderNotConfigured | None = None
         self._serial = False
         self._serial_lock = threading.Lock()
-        self.review_dir = run_dir / REVIEW_DIR
-        self.clips_dir = run_dir / CLIPS_DIR
+        # 풀마다 자기 자리다 (ADR-0095) — 기본 풀은 `clips/`·`clip_review/`, 겹풀은 `.{lang}`.
+        self.review_dir = review_dir or run_dir / REVIEW_DIR
+        self.clips_dir = clips_dir or run_dir / CLIPS_DIR
 
     # --- 생성 -------------------------------------------------------------
 
@@ -879,12 +922,12 @@ class _Runner:
                 camera_target=parts.get(promptplan.CAMERA_TARGET_FIELD, ""),
                 action_prompt=parts.get(promptplan.ACTION_FIELD),
                 red_prompt=parts.get(promptplan.RED_FIELD),
-                frames=job.takes_frames,
-                style="" if job.takes_frames else job.style,
+                frames=job.frame_prompt,
+                style="" if job.frame_prompt else job.style,
             )
         except (ValueError, KeyError):
             return None
-        return _with_seconds(prompt, job.seconds, takes_frames=job.takes_frames), negative
+        return _with_seconds(prompt, job.seconds, takes_frames=job.frame_prompt), negative
 
     # --- 사다리 -----------------------------------------------------------
 
@@ -1022,11 +1065,13 @@ class _Runner:
 # --- 단계 ---------------------------------------------------------------------
 
 
-def _existing_done(run_dir: Path, force: bool) -> dict[int, dict[str, Any]]:
-    """지난 실행의 `clips.json`에서 `done`이고 파일이 남아 있는 씬 — 다시 사지 않는다."""
+def _existing_done(
+    run_dir: Path, force: bool, *, record_file: str = RECORD_FILE
+) -> dict[int, dict[str, Any]]:
+    """지난 실행의 기록에서 `done`이고 파일이 남아 있는 씬 — 다시 사지 않는다. 풀마다 기록이 다르다."""
     if force:
         return {}
-    path = run_dir / RECORD_FILE
+    path = run_dir / record_file
     if not path.exists():
         return {}
     try:
@@ -1040,10 +1085,12 @@ def _existing_done(run_dir: Path, force: bool) -> dict[int, dict[str, Any]]:
     return done
 
 
-def _existing_review(run_dir: Path, force: bool) -> dict[int, dict[str, Any]]:
+def _existing_review(
+    run_dir: Path, force: bool, *, review_file: str = REVIEW_FILE
+) -> dict[int, dict[str, Any]]:
     if force:
         return {}
-    path = run_dir / REVIEW_FILE
+    path = run_dir / review_file
     if not path.exists():
         return {}
     try:
@@ -1056,6 +1103,21 @@ def _existing_review(run_dir: Path, force: bool) -> dict[int, dict[str, Any]]:
 FRAMES_FILE = "frames.json"
 
 
+def resolve_video_line(
+    paths: Paths, run_id: str, *, slug: str | None, line: str | None
+) -> str:
+    """사람이 고른 영상 라인 (`[6]`·`[3s]`와 같은 자리). `--line`이 이긴다 (디버깅)."""
+    from ..judgment import JudgmentError, read_video_line, slug_from_run_id
+
+    if line:
+        vocab.require("video_line", line)
+        return str(line)
+    try:
+        return read_video_line(paths, slug or slug_from_run_id(run_id))
+    except JudgmentError as exc:
+        raise VideogenStageError(str(exc)) from exc
+
+
 def load_frames(
     paths: Paths, run_dir: Path, run_id: str, *, slug: str | None, line: str | None
 ) -> dict[int, dict[str, Any]] | None:
@@ -1064,13 +1126,8 @@ def load_frames(
     **부재가 경고로 끝나지 않는다.** 그 라인인데 파일이 없으면 여기서 멈춘다 — 조용히
     텍스트→영상으로 내려가면 라벨 없는 클립을 돈 주고 사게 된다 (스펙 05 `[7]`).
     """
-    from ..judgment import JudgmentError, read_video_line, slug_from_run_id
-
-    try:
-        resolved = line or read_video_line(paths, slug or slug_from_run_id(run_id))
-    except JudgmentError as exc:
-        raise VideogenStageError(str(exc)) from exc
-    if not vocab.style_in_frames(resolved):
+    resolved = resolve_video_line(paths, run_id, slug=slug, line=line)
+    if not vocab.style_in_frames(resolved) and not vocab.reference_frames(resolved):
         return None
     path = run_dir / FRAMES_FILE
     if not path.exists():
@@ -1098,125 +1155,69 @@ def load_frames(
     }
 
 
-def run_videogen_stage(
-    run_id: str,
-    *,
-    client: VideoClient,
-    paths: Paths | None = None,
-    llm: LLMClient | None = None,
-    review: str = REVIEW_FULL,
-    ocr: OCR | None = None,
-    detect: Callable[[], OCR | None] = detect_ocr,
-    force: bool = False,
-    info_client: VideoClient | None = None,
-    jobs: int | None = None,
-    review_jobs: int | None = None,
-    video_timeout: int | None = None,
-    session_timeout: int = SESSION_TIMEOUT,
-    ffmpeg: str = DEFAULT_FFMPEG,
-    runner: Callable[..., Any] = subprocess.run,
-    sleep: Callable[[float], None] = time.sleep,
-    backoff: float = RATE_LIMIT_BACKOFF,
-    line: str | None = None,
-    slug: str | None = None,
-) -> VideogenResult:
-    if review not in REVIEW_MODES:
-        raise VideogenStageError(f"review는 {'|'.join(REVIEW_MODES)} 중 하나다: {review!r}")
-    if review == REVIEW_FULL and llm is None:
-        raise VideogenStageError("--review full에는 비전 세션 클라이언트가 필요하다 (ocr·none은 없어도 된다)")
+@dataclass
+class _Pool:
+    """클립 풀 하나 — 기본 풀(`clips/`) 또는 언어별 겹풀(`clips.{lang}/`, ADR-0095).
 
-    paths = paths or Paths.from_env()
-    run_dir = paths.run_dir(run_id)
+    풀마다 자기 기록(`record_file`·`review_file`)과 검수 재료 디렉터리를 갖고, 재실행
+    스킵도 자기 기록으로 본다 (ADR-0020). 프롬프트·검수·강등 사다리는 풀과 무관하다.
+    """
 
+    lang: str | None
+    jobs: list[SceneJob]
+    clips_dir: str
+    record_file: str
+    review_file: str
+    review_dir: str
+
+    @property
+    def name(self) -> str:
+        return self.lang or "base"
+
+
+def _overlay_languages(
+    paths: Paths, run_id: str, *, slug: str | None, langs: Sequence[str] | None,
+    present: Sequence[str],
+) -> list[str]:
+    """겹풀을 만들 언어 — 판정이 고른 ko 아닌 언어 중 실측이 있는 것 (ADR-0094·0095)."""
     try:
-        contract = find_contract_for_run(paths, run_id)
-    except SceneContractNotFound as exc:
+        chosen = languages_for(paths, run_id, langs=langs, present=present, slug=slug)
+    except JudgmentError as exc:
         raise VideogenStageError(str(exc)) from exc
-    if contract.get("run_id") != run_id:
-        raise VideogenStageError(
-            f"scenes.json의 run_id({contract.get('run_id')})가 대상 run({run_id})과 다르다"
-        )
-    topic = str(contract.get("topic") or run_id)
-    prompts = _load_json(run_dir / PROMPTS_FILE, f"[5]의 산출물({PROMPTS_FILE})")
-    if prompts.get("run_id") != run_id:
-        raise VideogenStageError(
-            f"{PROMPTS_FILE}의 run_id({prompts.get('run_id')})가 대상 run({run_id})과 다르다"
-        )
+    return [lang for lang in chosen if lang != PRIMARY_LANGUAGE and lang in present]
 
-    langs = present_languages(run_dir)
-    if PRIMARY_LANGUAGE not in langs:
-        raise VideogenStageError(
-            f"scenes.timed.{PRIMARY_LANGUAGE}.json이 없다: {run_dir}. [3. tts+sync]를 먼저 실행하라 — "
-            "ko는 필수이고 ja·en은 있는 것만 본다 (D-3)"
-        )
-    try:
-        timed_by_lang = {lang: load_timed_scenes(run_dir, lang) for lang in langs}
-    except TimedScenesNotFound as exc:
-        raise VideogenStageError(str(exc)) from exc
-    for lang, timed in timed_by_lang.items():
-        if timed.get("run_id") != run_id:
-            raise VideogenStageError(
-                f"scenes.timed.{lang}.json의 run_id({timed.get('run_id')})가 대상 run({run_id})과 다르다"
-            )
 
-    state = RunState.load_or_create(run_dir, run_id, topic=topic)
-    record_path = run_dir / RECORD_FILE
-    review_path = run_dir / REVIEW_FILE
+def _outcomes_from_record(run_dir: Path, record_file: str) -> list[SceneOutcome]:
+    previous = json.loads((run_dir / record_file).read_text(encoding="utf-8"))
+    outcomes = []
+    for entry in previous.get("scenes", []):
+        outcomes.append(SceneOutcome(
+            scene_id=int(entry["scene_id"]), status=entry.get("status", DONE),
+            file=entry.get("file"), seconds=int(entry.get("seconds") or 0),
+            lang_seconds=entry.get("lang_seconds") or {}, clamped=entry.get("clamped"),
+            demoted_from=entry.get("demoted_from"),
+            attempts=[{"request_id": rid} for rid in entry.get("request_ids", [])],
+        ))
+    return outcomes
 
-    frames = load_frames(paths, run_dir, run_id, slug=slug, line=line)
-    if frames is not None and not client.accepts_frames:
-        raise VideogenStageError(
-            f"이 라인은 씬마다 프레임 두 장을 주는데 어댑터 '{client.name}'은 그것을 안 받는다 "
-            "(ADR-0071) — 프레임을 실어도 버려지므로 [6]이 만든 계측 표시가 화면에서 사라진다. "
-            "라인의 provider로 돌리거나 --line으로 텍스트→영상 라인을 지정하라"
-        )
-    all_jobs, warnings = build_jobs(
-        contract, prompts, timed_by_lang, seconds_range=(client.min_seconds, client.max_seconds),
-        frames=frames,
-    )
-    done_before = _existing_done(run_dir, force)
-    review_before = _existing_review(run_dir, force)
 
-    if state.is_done(STAGE) and not force and record_path.exists() and len(done_before) == len(all_jobs):
-        log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
-        previous = json.loads(record_path.read_text(encoding="utf-8"))
-        outcomes = []
-        for entry in previous.get("scenes", []):
-            outcomes.append(SceneOutcome(
-                scene_id=int(entry["scene_id"]), status=entry.get("status", DONE),
-                file=entry.get("file"), seconds=int(entry.get("seconds") or 0),
-                lang_seconds=entry.get("lang_seconds") or {}, clamped=entry.get("clamped"),
-                demoted_from=entry.get("demoted_from"),
-                attempts=[{"request_id": rid} for rid in entry.get("request_ids", [])],
-            ))
-        return VideogenResult(
-            run_id=run_id, run_dir=run_dir, topic=topic, provider=str(previous.get("provider") or client.name),
-            review=str(previous.get("review") or review), outcomes=outcomes,
-            warnings=previous.get("warnings", []), skipped=True,
-            record_path=record_path, review_path=review_path,
-        )
+def _run_pool(
+    pool: _Pool, *, run_id: str, run_dir: Path, topic: str, client: VideoClient,
+    info_client: VideoClient | None, review: str, ocr_backend: OCR | None,
+    llm: LLMClient | None, ffmpeg: str, runner: Callable[..., Any],
+    video_timeout: int | None, session_timeout: int, sleep: Callable[[float], None],
+    backoff: float, gen_slots: int, review_slots: int, force: bool,
+    languages: Sequence[str], warnings: Sequence[str],
+) -> tuple[list[SceneOutcome], list[str], int, VideoProviderNotConfigured | None]:
+    """풀 하나를 끝까지 돈다 → `(결과, 이 풀의 경고, 지난 done 수, 프로바이더 거절)`."""
+    record_path = run_dir / pool.record_file
+    review_path = run_dir / pool.review_file
+    done_before = _existing_done(run_dir, force, record_file=pool.record_file)
+    review_before = _existing_review(run_dir, force, review_file=pool.review_file)
 
-    state.mark_running(STAGE)
-
-    # 게이트를 켤지는 계약이 정한다 (ADR-0068) — 실측에서 끝 프레임 130장 중 6장만 통과했고
-    # 질감 잡음의 신뢰도가 진짜 라벨보다 높아 문턱으로 갈리지 않았다. 배선은 남긴다.
-    if not END_FRAME_OCR:
-        ocr_backend = None
-        if review != REVIEW_NONE:
-            warnings.append(
-                "끝 프레임 OCR 게이트는 계약에서 꺼져 있다 (script-rules.json checks.end_frame_ocr, "
-                "ADR-0068) — 라벨 대조는 비전 검수만 본다"
-            )
-    else:
-        ocr_backend = ocr if ocr is not None else (detect() if review != REVIEW_NONE else None)
-        if review != REVIEW_NONE and ocr_backend is None:
-            warnings.append(
-                "tesseract가 PATH에 없어 끝 프레임 OCR 게이트를 건너뛴다 — 라벨 대조는 비전 검수만 본다 (ADR-0056 결정 6)"
-            )
-
-    pending = [job for job in all_jobs if job.scene_id not in done_before]
+    pending = [job for job in pool.jobs if job.scene_id not in done_before]
     if done_before:
-        log.info("[%s] 지난 실행의 done 씬 %d개는 다시 사지 않는다", STAGE, len(done_before))
+        log.info("[%s] %s: 지난 실행의 done 씬 %d개는 다시 사지 않는다", STAGE, pool.name, len(done_before))
 
     outcomes: dict[int, SceneOutcome] = {}
     for sid, entry in done_before.items():
@@ -1241,7 +1242,9 @@ def run_videogen_stage(
             "model": getattr(client, "model_id", None),
             "review": review,
             "ocr_backend": getattr(ocr_backend, "name", None),
-            "languages": langs,
+            "languages": list(languages),
+            "pool": pool.name,
+            "clips_dir": pool.clips_dir,
             "scenes": [o.clip_record(client.name) for o in ordered],
             "warnings": list(warnings) + list(extra_warnings),
         }
@@ -1250,6 +1253,7 @@ def run_videogen_stage(
             "topic": topic,
             "review": review,
             "ocr_backend": getattr(ocr_backend, "name", None),
+            "pool": pool.name,
             "scenes": [
                 review_before[o.scene_id] if (o.scene_id in done_before and o.scene_id in review_before)
                 else o.review_record()
@@ -1265,21 +1269,20 @@ def run_videogen_stage(
             outcomes[outcome.scene_id] = outcome
             write_records()
 
-    gen_slots = max(1, int(jobs)) if jobs else max(1, int(client.concurrency() or 1))
-    review_slots = max(1, int(review_jobs or DEFAULT_REVIEW_SLOTS))
     runner_state = _Runner(
         client=client, run_dir=run_dir, topic=topic, review=review, ocr=ocr_backend, llm=llm,
         ffmpeg=ffmpeg, runner=runner, video_timeout=video_timeout, session_timeout=session_timeout,
         sleep=sleep, backoff=backoff, on_scene_done=on_scene_done,
         gen_slots=gen_slots, review_slots=review_slots, info_client=info_client,
+        clips_dir=run_dir / pool.clips_dir, review_dir=run_dir / pool.review_dir,
     )
-    (run_dir / REVIEW_DIR).mkdir(parents=True, exist_ok=True)
-    (run_dir / CLIPS_DIR).mkdir(parents=True, exist_ok=True)
+    (run_dir / pool.review_dir).mkdir(parents=True, exist_ok=True)
+    (run_dir / pool.clips_dir).mkdir(parents=True, exist_ok=True)
     write_records()
 
     log.info(
-        "[%s] %d씬 제출 (생성 %d · 검수 %d 동시, 엔진 %s%s, 검수 %s, OCR %s) — 지난 done %d",
-        STAGE, len(pending), gen_slots, review_slots, client.name,
+        "[%s] %s: %d씬 제출 (생성 %d · 검수 %d 동시, 엔진 %s%s, 검수 %s, OCR %s) — 지난 done %d",
+        STAGE, pool.name, len(pending), gen_slots, review_slots, client.name,
         f" · info는 {info_client.name}" if info_client is not None else "",
         review, getattr(ocr_backend, "name", "없음"), len(done_before),
     )
@@ -1293,64 +1296,237 @@ def run_videogen_stage(
         # 슬롯이 하나뿐이라 성능상 잃는 것도 없다.
         serial = gen_slots == 1 and review_slots == 1 and info_client is None
         threads = 1 if serial else len(pending)
-        with ThreadPoolExecutor(max_workers=threads) as pool:
-            list(pool.map(runner_state.run_scene, pending))
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            list(executor.map(runner_state.run_scene, pending))
 
     # 인접 재사용은 없다 (사람 결정 2026-08-25) — 검수를 못 통과한 씬은 **자기 첫 후보**를
     # 그대로 쓴다(`run_scene`의 `_salvage`). 옆 씬을 복사하면 같은 그림이 편 안에서
     # 반복되고(실측: 한 편에 씬 7이 5회), 그 씬을 위해 산 클립은 버려진다.
     salvaged = [sid for sid, o in outcomes.items() if o.demoted_from == DEMOTED_UNREVIEWED]
-    reuse_warnings: list[str] = []
+    pool_warnings: list[str] = []
     if salvaged:
-        reuse_warnings.append(
-            f"검수를 통과 못 해 첫 후보를 그대로 쓴 씬: {', '.join(map(str, sorted(salvaged)))} "
+        pool_warnings.append(
+            f"{pool.name}: 검수를 통과 못 해 첫 후보를 그대로 쓴 씬: {', '.join(map(str, sorted(salvaged)))} "
             f"— 편당 {len(salvaged)}/{len(outcomes)}씬이면 프롬프트나 검수 잣대를 본다"
         )
     with write_lock:
-        write_records(reuse_warnings)
-    warnings.extend(reuse_warnings)
+        write_records(pool_warnings)
+    ordered = [outcomes[sid] for sid in sorted(outcomes)]
+    for outcome in ordered:
+        for warning in outcome.warnings:
+            log.warning("[%s] %s 씬 %d: %s", STAGE, pool.name, outcome.scene_id, warning)
+    return ordered, pool_warnings, len(done_before), runner_state.refusal
+
+
+def run_videogen_stage(
+    run_id: str,
+    *,
+    client: VideoClient,
+    paths: Paths | None = None,
+    llm: LLMClient | None = None,
+    review: str = REVIEW_FULL,
+    ocr: OCR | None = None,
+    detect: Callable[[], OCR | None] = detect_ocr,
+    force: bool = False,
+    info_client: VideoClient | None = None,
+    jobs: int | None = None,
+    review_jobs: int | None = None,
+    video_timeout: int | None = None,
+    session_timeout: int = SESSION_TIMEOUT,
+    ffmpeg: str = DEFAULT_FFMPEG,
+    runner: Callable[..., Any] = subprocess.run,
+    sleep: Callable[[float], None] = time.sleep,
+    backoff: float = RATE_LIMIT_BACKOFF,
+    line: str | None = None,
+    slug: str | None = None,
+    langs: Sequence[str] | None = None,
+) -> VideogenResult:
+    if review not in REVIEW_MODES:
+        raise VideogenStageError(f"review는 {'|'.join(REVIEW_MODES)} 중 하나다: {review!r}")
+    if review == REVIEW_FULL and llm is None:
+        raise VideogenStageError("--review full에는 비전 세션 클라이언트가 필요하다 (ocr·none은 없어도 된다)")
+
+    paths = paths or Paths.from_env()
+    run_dir = paths.run_dir(run_id)
+
+    try:
+        contract = find_contract_for_run(paths, run_id)
+    except SceneContractNotFound as exc:
+        raise VideogenStageError(str(exc)) from exc
+    if contract.get("run_id") != run_id:
+        raise VideogenStageError(
+            f"scenes.json의 run_id({contract.get('run_id')})가 대상 run({run_id})과 다르다"
+        )
+    topic = str(contract.get("topic") or run_id)
+    prompts = _load_json(run_dir / PROMPTS_FILE, f"[5]의 산출물({PROMPTS_FILE})")
+    if prompts.get("run_id") != run_id:
+        raise VideogenStageError(
+            f"{PROMPTS_FILE}의 run_id({prompts.get('run_id')})가 대상 run({run_id})과 다르다"
+        )
+
+    present = present_languages(run_dir)
+    if PRIMARY_LANGUAGE not in present:
+        raise VideogenStageError(
+            f"scenes.timed.{PRIMARY_LANGUAGE}.json이 없다: {run_dir}. [3. tts+sync]를 먼저 실행하라 — "
+            "ko는 필수이고 ja·en은 있는 것만 본다 (D-3)"
+        )
+    try:
+        timed_by_lang = {lang: load_timed_scenes(run_dir, lang) for lang in present}
+    except TimedScenesNotFound as exc:
+        raise VideogenStageError(str(exc)) from exc
+    for lang, timed in timed_by_lang.items():
+        if timed.get("run_id") != run_id:
+            raise VideogenStageError(
+                f"scenes.timed.{lang}.json의 run_id({timed.get('run_id')})가 대상 run({run_id})과 다르다"
+            )
+
+    state = RunState.load_or_create(run_dir, run_id, topic=topic)
+    record_path = run_dir / RECORD_FILE
+    review_path = run_dir / REVIEW_FILE
+
+    resolved_line = resolve_video_line(paths, run_id, slug=slug, line=line)
+    frames = load_frames(paths, run_dir, run_id, slug=slug, line=resolved_line)
+    if frames is not None and not client.accepts_frames:
+        raise VideogenStageError(
+            f"이 라인은 씬마다 프레임 두 장을 주는데 어댑터 '{client.name}'은 그것을 안 받는다 "
+            "(ADR-0071) — 프레임을 실어도 버려지므로 [6]이 만든 계측 표시가 화면에서 사라진다. "
+            "라인의 provider로 돌리거나 --line으로 텍스트→영상 라인을 지정하라"
+        )
+    seconds_range = (client.min_seconds, client.max_seconds)
+    style_frames = vocab.style_in_frames(resolved_line)
+    all_jobs, warnings = build_jobs(
+        contract, prompts, timed_by_lang, seconds_range=seconds_range,
+        style_frames=style_frames, frames=frames,
+    )
+
+    # **풀은 기본 풀 하나 + 언어별 겹풀이다** (ADR-0095). 기본 풀은 전 씬을 있는 언어의
+    # 최장 길이로, 겹풀은 판정이 고른 ko 아닌 언어(ADR-0094)마다 계약이 정한 씬(홀·짝)을
+    # **그 언어의 길이**로 산다 — `build_jobs`에 그 언어의 실측만 넣으면 산식이 그대로다.
+    pools = [_Pool(None, all_jobs, CLIPS_DIR, RECORD_FILE, REVIEW_FILE, REVIEW_DIR)]
+    for lang in _overlay_languages(paths, run_id, slug=slug, langs=langs, present=present):
+        ids = set(overlay_scene_ids(lang, [job.scene_id for job in all_jobs]))
+        if not ids:
+            continue
+        lang_jobs, lang_warnings = build_jobs(
+            contract, prompts, {lang: timed_by_lang[lang]}, seconds_range=seconds_range,
+            style_frames=style_frames, frames=frames,
+        )
+        warnings.extend(f"[{lang} 겹풀] {w}" for w in lang_warnings)
+        pools.append(_Pool(
+            lang, [job for job in lang_jobs if job.scene_id in ids],
+            overlay_dir(lang), overlay_record(lang), overlay_review(lang), overlay_review_dir(lang),
+        ))
+
+    def pool_done(pool: _Pool) -> bool:
+        return (
+            (run_dir / pool.record_file).exists()
+            and len(_existing_done(run_dir, False, record_file=pool.record_file)) == len(pool.jobs)
+        )
+
+    if state.is_done(STAGE) and not force and all(pool_done(pool) for pool in pools):
+        log.info("[%s] 이미 완료된 단계라 스킵한다 (run_id=%s)", STAGE, run_id)
+        previous = json.loads(record_path.read_text(encoding="utf-8"))
+        result = VideogenResult(
+            run_id=run_id, run_dir=run_dir, topic=topic, provider=str(previous.get("provider") or client.name),
+            review=str(previous.get("review") or review),
+            outcomes=_outcomes_from_record(run_dir, RECORD_FILE),
+            warnings=previous.get("warnings", []), skipped=True,
+            record_path=record_path, review_path=review_path,
+        )
+        for pool in pools[1:]:
+            result.overlays[pool.lang or ""] = _outcomes_from_record(run_dir, pool.record_file)
+        return result
+
+    state.mark_running(STAGE)
+
+    # 게이트를 켤지는 계약이 정한다 (ADR-0068) — 실측에서 끝 프레임 130장 중 6장만 통과했고
+    # 질감 잡음의 신뢰도가 진짜 라벨보다 높아 문턱으로 갈리지 않았다. 배선은 남긴다.
+    if not END_FRAME_OCR:
+        ocr_backend = None
+        if review != REVIEW_NONE:
+            warnings.append(
+                "끝 프레임 OCR 게이트는 계약에서 꺼져 있다 (script-rules.json checks.end_frame_ocr, "
+                "ADR-0068) — 라벨 대조는 비전 검수만 본다"
+            )
+    else:
+        ocr_backend = ocr if ocr is not None else (detect() if review != REVIEW_NONE else None)
+        if review != REVIEW_NONE and ocr_backend is None:
+            warnings.append(
+                "tesseract가 PATH에 없어 끝 프레임 OCR 게이트를 건너뛴다 — 라벨 대조는 비전 검수만 본다 (ADR-0056 결정 6)"
+            )
+
+    gen_slots = max(1, int(jobs)) if jobs else max(1, int(client.concurrency() or 1))
+    review_slots = max(1, int(review_jobs or DEFAULT_REVIEW_SLOTS))
 
     result = VideogenResult(
         run_id=run_id, run_dir=run_dir, topic=topic, provider=client.name, review=review,
-        outcomes=[outcomes[sid] for sid in sorted(outcomes)], warnings=warnings,
-        record_path=record_path, review_path=review_path,
+        warnings=warnings, record_path=record_path, review_path=review_path,
     )
-    for outcome in result.outcomes:
-        for warning in outcome.warnings:
-            log.warning("[%s] 씬 %d: %s", STAGE, outcome.scene_id, warning)
+    reused = 0
+    overlay_info: dict[str, dict[str, Any]] = {}
+    for pool in pools:
+        outcomes, pool_warnings, done_before, refusal = _run_pool(
+            pool, run_id=run_id, run_dir=run_dir, topic=topic, client=client,
+            info_client=info_client, review=review, ocr_backend=ocr_backend, llm=llm,
+            ffmpeg=ffmpeg, runner=runner, video_timeout=video_timeout,
+            session_timeout=session_timeout, sleep=sleep, backoff=backoff,
+            gen_slots=gen_slots, review_slots=review_slots, force=force,
+            languages=[pool.lang] if pool.lang else present, warnings=warnings,
+        )
+        warnings.extend(pool_warnings)
+        reused += done_before
+        if pool.lang is None:
+            result.outcomes = outcomes
+        else:
+            result.overlays[pool.lang] = outcomes
+            overlay_info[pool.lang] = {
+                "scene_count": len(outcomes),
+                "generated_clips": sum(o.generated for o in outcomes),
+                "clips_dir": pool.clips_dir,
+            }
+        if refusal is not None:
+            info = _stage_info(result, review, ocr_backend, client, reused, overlay_info, paths, record_path, review_path)
+            message = (
+                f"프로바이더가 거절해 남은 씬을 시도하지 않았다 (D-5): {refusal}. "
+                f"산 클립 {result.generated_clips}개와 기록은 남아 있다 — 고치고 다시 돌리면 done 씬은 건너뛴다"
+            )
+            state.mark_failed(STAGE, message, **info)
+            raise ProviderRefused(message)
+        failed = [o.scene_id for o in outcomes if o.status != DONE]
+        if failed:
+            info = _stage_info(result, review, ocr_backend, client, reused, overlay_info, paths, record_path, review_path)
+            message = (
+                f"{pool.name}: 클립을 만들지 못한 씬이 있다: {failed[:8]}{' …' if len(failed) > 8 else ''}"
+            )
+            state.mark_failed(STAGE, message, **info)
+            raise VideogenStageError(message)
+
     for warning in warnings:
         log.warning("[%s] %s", STAGE, warning)
+    info = _stage_info(result, review, ocr_backend, client, reused, overlay_info, paths, record_path, review_path)
+    state.mark_done(STAGE, **info)
+    return result
 
-    info = {
+
+def _stage_info(
+    result: VideogenResult, review: str, ocr_backend: OCR | None, client: VideoClient,
+    reused: int, overlays: dict[str, dict[str, Any]], paths: Paths, record_path: Path,
+    review_path: Path,
+) -> dict[str, Any]:
+    return {
         "scene_count": result.scene_count,
         "generated_clips": result.generated_clips,
         "purchased_seconds": result.purchased_seconds,
-        "reused_from_previous_run": len(done_before),
+        "reused_from_previous_run": reused,
         "demoted_info": result.demoted(DEMOTED_INFO),
         "demoted_unreviewed": result.demoted(DEMOTED_UNREVIEWED),
         "rate_limited": sum(o.rate_limited for o in result.outcomes),
         "review": review,
         "ocr_backend": getattr(ocr_backend, "name", None),
         "provider": client.name,
-        "warnings": warnings,
+        "overlays": overlays,
+        "warnings": list(result.warnings),
         "outputs": [
             p.relative_to(paths.root).as_posix() for p in (record_path, review_path)
         ],
     }
-
-    if runner_state.refusal is not None:
-        message = (
-            f"프로바이더가 거절해 남은 씬을 시도하지 않았다 (D-5): {runner_state.refusal}. "
-            f"산 클립 {result.generated_clips}개와 기록은 남아 있다 — 고치고 다시 돌리면 done 씬은 건너뛴다"
-        )
-        state.mark_failed(STAGE, message, **info)
-        raise ProviderRefused(message)
-
-    failed = [o.scene_id for o in result.outcomes if o.status != DONE]
-    if failed:
-        message = f"클립을 만들지 못한 씬이 있다: {failed[:8]}{' …' if len(failed) > 8 else ''}"
-        state.mark_failed(STAGE, message, **info)
-        raise VideogenStageError(message)
-
-    state.mark_done(STAGE, **info)
-    return result

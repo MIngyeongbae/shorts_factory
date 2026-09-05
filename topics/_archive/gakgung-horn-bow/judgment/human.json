@@ -1,0 +1,7 @@
+{
+  "judge": "human",
+  "decision": "go",
+  "video_line": "local",
+  "notes": "사람 지시(2026-08-31, \"2, 4, 7, 10은 쇼츠로 만들고\"). 영상 라인은 `local` — 어휘의 기본 라인이다(ComfyUI + MiniMax H3, 변동비 0). 사전 일괄 go라 축별 점수·confidence는 비운다.",
+  "judged_at": "2026-08-31T14:30:05+09:00"
+}

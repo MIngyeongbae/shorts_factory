@@ -51,9 +51,9 @@ STOP_CHARS = frozenset(
     + "“”‘’"
 )
 
-#: 문장 끝으로 인정하는 문자. `sync.SENTENCE_ENDINGS`와 같은 집합이어야 한다 — 변환이
-#: 이 부호를 먹으면 그 줄의 경계 추출이 마지막 문자로 떨어진다 (ADR-0013).
-SENTENCE_ENDINGS = (".", "?", "!", "…")
+#: 문장 끝으로 인정하는 문자. **`sync.SENTENCE_ENDINGS`와 같은 출처를 본다** (ADR-0089) —
+#: 변환이 이 부호를 먹으면 그 줄의 경계 추출이 마지막 문자로 떨어진다 (ADR-0013).
+SENTENCE_ENDINGS = speech_rules.sentence_endings()
 
 
 @dataclass(frozen=True)
@@ -189,7 +189,30 @@ def spoken_line(text: str, lang: str) -> SpokenLine:
         cursor = end
 
     out.append(text[cursor:])
-    return SpokenLine(text=text, spoken="".join(out), warnings=_dedupe(warnings))
+    spoken = _close_sentence("".join(out), rules)
+    return SpokenLine(text=text, spoken=spoken, warnings=_dedupe(warnings))
+
+
+def _close_sentence(spoken: str, rules: dict[str, Any]) -> str:
+    """발화형 줄을 **종결 부호로 닫는다** (ADR-0089).
+
+    TTS는 대본 전체를 한 덩어리로 받는데(ADR-0004) 줄을 잇는 것은 공백 하나다
+    (`sync.LINE_JOINER`). 대본 줄은 자막이기도 해서 마침표를 안 찍으므로(ADR-0013),
+    엔진은 부호가 거의 없는 수백 자를 받고 스스로 호흡을 정한다 — 그러면 **줄 경계를
+    지나쳐 다음 줄 한두 단어 뒤에서** 끊는다 (실측 2026-09-02).
+
+    **화면에 나가는 것은 안 바뀐다** — 부호는 발화형에만 붙고 자막·`scenes.timed`의
+    `text`는 대본 줄 그대로다 (ADR-0002·0013). 부호는 로케일이 정한다 (ADR-0034) —
+    일본어에 라틴 마침표를 찍으면 엔진이 약어로 읽는다.
+    """
+    mark = str(rules.get("sentence_end") or "")
+    if not mark:
+        return spoken
+    stripped = spoken.rstrip()
+    if not stripped or stripped.endswith(SENTENCE_ENDINGS) or stripped.endswith(mark):
+        return spoken
+    # 끝의 공백은 버리고 붙인다 — 부호 앞 공백은 어느 로케일에서도 오식이다.
+    return stripped + mark
 
 
 def _dedupe(warnings: Sequence[str]) -> tuple[str, ...]:

@@ -1,0 +1,283 @@
+{
+  "_comment": "ComfyUI API-format workflow for MiniMax H3 FIRST-frame-only image-to-video (ADR-0087 decision 6). Derived from h3-fl2v.api.json by dropping last_frame and its LoadImage/ImageScale pair - everything else is character-for-character the same. The `local` line's non-info scenes get a first frame from [6] (local SDXL + IP-Adapter) and no last frame, so the fl2v adapter (which requires BOTH and stops without them) cannot serve them. videogen/comfy_h3.py:ComfyH3FirstClient finds the LoadImage node by _meta.title 'First Frame (CLEAN)'.",
+  "workflow": {
+    "92": {
+      "inputs": {
+        "filename_prefix": "video/shorts-factory",
+        "format": "auto",
+        "codec": "auto",
+        "video": [
+          "105:91",
+          0
+        ]
+      },
+      "class_type": "SaveVideo",
+      "_meta": {
+        "title": "비디오 저장"
+      }
+    },
+    "115": {
+      "inputs": {
+        "aspect_ratio": "9:16 (Portrait Widescreen)",
+        "megapixels": 0.4,
+        "multiple": 32
+      },
+      "class_type": "ResolutionSelector",
+      "_meta": {
+        "title": "해상도 선택기"
+      }
+    },
+    "105:11": {
+      "inputs": {
+        "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "VAE 로드"
+      }
+    },
+    "105:24": {
+      "inputs": {
+        "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "VAE 로드"
+      }
+    },
+    "105:23": {
+      "inputs": {
+        "samples": [
+          "105:14",
+          0
+        ],
+        "vae": [
+          "105:24",
+          0
+        ]
+      },
+      "class_type": "VAEDecodeAudio",
+      "_meta": {
+        "title": "오디오 VAE 디코드"
+      }
+    },
+    "105:10": {
+      "inputs": {
+        "samples": [
+          "105:14",
+          0
+        ],
+        "vae": [
+          "105:11",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE 디코드"
+      }
+    },
+    "105:17": {
+      "inputs": {
+        "sampler_name": "res_multistep"
+      },
+      "class_type": "KSamplerSelect",
+      "_meta": {
+        "title": "KSampler (선택)"
+      }
+    },
+    "105:9": {
+      "inputs": {
+        "scheduler": "simple",
+        "steps": 20,
+        "denoise": 1.0,
+        "model": [
+          "105:6",
+          0
+        ]
+      },
+      "class_type": "BasicScheduler",
+      "_meta": {
+        "title": "기본 스케줄러"
+      }
+    },
+    "105:14": {
+      "inputs": {
+        "noise": [
+          "105:15",
+          0
+        ],
+        "guider": [
+          "105:16",
+          0
+        ],
+        "sampler": [
+          "105:17",
+          0
+        ],
+        "sigmas": [
+          "105:9",
+          0
+        ],
+        "latent_image": [
+          "105:104",
+          1
+        ]
+      },
+      "class_type": "SamplerCustomAdvanced",
+      "_meta": {
+        "title": "고급 사용자 정의 샘플러"
+      }
+    },
+    "105:16": {
+      "inputs": {
+        "model": [
+          "105:6",
+          0
+        ],
+        "conditioning": [
+          "105:104",
+          0
+        ]
+      },
+      "class_type": "BasicGuider",
+      "_meta": {
+        "title": "기본 가이드"
+      }
+    },
+    "105:6": {
+      "inputs": {
+        "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader",
+      "_meta": {
+        "title": "확산 모델 로드"
+      }
+    },
+    "105:13": {
+      "inputs": {
+        "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "type": "minimax",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "CLIP 로드"
+      }
+    },
+    "105:15": {
+      "inputs": {
+        "noise_seed": 0
+      },
+      "class_type": "RandomNoise",
+      "_meta": {
+        "title": "무작위 노이즈"
+      }
+    },
+    "105:91": {
+      "inputs": {
+        "fps": 24.0,
+        "bit_depth": 8,
+        "images": [
+          "105:10",
+          0
+        ],
+        "audio": [
+          "105:23",
+          0
+        ]
+      },
+      "class_type": "CreateVideo",
+      "_meta": {
+        "title": "비디오 생성"
+      }
+    },
+    "105:104": {
+      "inputs": {
+        "prompt": "{prompt}",
+        "width": [
+          "115",
+          0
+        ],
+        "height": [
+          "115",
+          1
+        ],
+        "length": [
+          "105:107",
+          1
+        ],
+        "clip": [
+          "105:13",
+          0
+        ],
+        "vae": [
+          "105:11",
+          0
+        ],
+        "first_frame": [
+          "202",
+          0
+        ]
+      },
+      "class_type": "MiniMaxH3ImageToVideo",
+      "_meta": {
+        "title": "MiniMax H3 Image to Video"
+      }
+    },
+    "105:107": {
+      "inputs": {
+        "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+        "values.a": [
+          "105:111",
+          0
+        ]
+      },
+      "class_type": "ComfyMathExpression",
+      "_meta": {
+        "title": "수학식"
+      }
+    },
+    "105:111": {
+      "inputs": {
+        "value": 5.0
+      },
+      "class_type": "PrimitiveFloat",
+      "_meta": {
+        "title": "Float (duration)"
+      }
+    },
+    "200": {
+      "inputs": {
+        "image": "{first_frame}"
+      },
+      "class_type": "LoadImage",
+      "_meta": {
+        "title": "First Frame (CLEAN)"
+      }
+    },
+    "202": {
+      "inputs": {
+        "upscale_method": "lanczos",
+        "width": [
+          "115",
+          0
+        ],
+        "height": [
+          "115",
+          1
+        ],
+        "crop": "center",
+        "image": [
+          "200",
+          0
+        ]
+      },
+      "class_type": "ImageScale",
+      "_meta": {
+        "title": "Scale First Frame"
+      }
+    }
+  }
+}

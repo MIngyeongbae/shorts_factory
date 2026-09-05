@@ -10,6 +10,8 @@
   위반은 보고·중단이고 prompts.json을 쓰지 않는다 (ADR-0044)
 - ADR-0017 경계 — 산출물은 runs/{run_id}/prompts.json 하나, topics/에는 쓰지 않는다
 - ADR-0033 — 연출은 씬 계약에서 온다. 비었을 때만 기본값으로 떨어지고 그 수를 센다
+- **ADR-0098 — 계약 위반이면 고쳐쓰기 세션 1회로 위반한 씬만 다시 쓰고 재검사한다. 사다리는
+  1칸이고 루프가 아니다. 금지어 목록은 어휘에서 주입하고 손으로 옮겨 적지 않는다**
 """
 
 from __future__ import annotations
@@ -33,10 +35,13 @@ from shorts_factory.schemas.visual_rules import (
 from shorts_factory.stages.prompt import (
     PROMPTS_FILE,
     PromptStageError,
+    build_fix_prompt,
     build_prompts,
     build_session_prompt,
+    merge_fix,
     run_prompt_stage,
     scene_brief,
+    violating_scenes,
 )
 from test_scenetable_stage import FakeLLM
 
@@ -302,3 +307,185 @@ def test_session_prompt_has_no_unfilled_placeholders():
     )
     assert "${" not in prompt and described == 0
     assert "(없음" in prompt
+
+
+# --- 고쳐쓰기 사다리 1칸 (ADR-0098) ------------------------------------------------
+
+
+class SequenceLLM:
+    """호출마다 다음 페이로드를 준다 — 사다리(세션 2회)를 재는 데 쓴다.
+
+    `FakeLLM`은 늘 같은 답을 주므로 「고쳐서 다시 낸다」를 표현하지 못한다.
+    """
+
+    def __init__(self, *payloads):
+        self.payloads = [
+            p if isinstance(p, str) else json.dumps(p, ensure_ascii=False) for p in payloads
+        ]
+        self.prompts: list[str] = []
+        self.labels: list[str] = []
+
+    def run(self, prompt, *, allowed_tools=(), timeout=None, label="", **_kw):
+        from types import SimpleNamespace
+
+        self.prompts.append(prompt)
+        self.labels.append(label)
+        text = self.payloads[min(len(self.prompts) - 1, len(self.payloads) - 1)]
+        return SimpleNamespace(
+            text=text, meta={"session_id": None, "num_turns": None, "duration_ms": None}
+        )
+
+
+def _entry(plan: dict, scene_id: int) -> dict:
+    return next(e for e in plan["scenes"] if e["scene_id"] == scene_id)
+
+
+def plan_with_camera_word(contract: dict, scene_id: int = 1, word: str = "panning") -> dict:
+    """`camera_target`에 워크 단어를 넣어 **씬 단위** 계약 위반을 만든다."""
+    plan = fake_plan(contract)
+    _entry(plan, scene_id)["camera_target"] = f"{word} across the key part of the scene"
+    return plan
+
+
+def test_contract_violation_is_rewritten_once_and_then_passes(paths, install):
+    """위반 → 고쳐쓰기 1회 → 통과하면 prompts.json을 쓴다 (ADR-0098 결정 1)."""
+    contract = install(PISA)
+    bad = plan_with_camera_word(contract)
+    fix = {"scenes": [_entry(fake_plan(contract), 1)]}
+    llm = SequenceLLM(bad, fix)
+
+    result = run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    assert result.passed and not result.errors
+    assert result.prompts_path.exists()
+    assert len(llm.prompts) == 2, "세션은 두 번 돈다 — 본 세션 + 고쳐쓰기 1회"
+    assert llm.labels[1].endswith("-fix")
+    assert result.revision["scenes"] == [1]
+    assert result.revision["changed"] == [1]
+    assert any("고쳐쓰기 1회로 살렸다" in w for w in result.warnings)
+
+
+def test_second_violation_stops_without_writing_prompts(paths, install):
+    """두 번째도 어기면 거기서 중단한다 — 루프가 아니다 (ADR-0044 유지)."""
+    contract = install(PISA)
+    bad = plan_with_camera_word(contract)
+    still_bad = {"scenes": [dict(_entry(bad, 1))]}
+    llm = SequenceLLM(bad, still_bad)
+
+    result = run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    assert not result.passed and result.errors
+    assert not (paths.run_dir(contract["run_id"]) / PROMPTS_FILE).exists()
+    assert len(llm.prompts) == 2, "사다리는 1칸이다 — 세 번째 세션은 없다"
+
+
+def test_failed_fix_session_stops_on_the_first_violation(paths, install):
+    """고쳐쓰기 세션이 깨지면 첫 위반으로 중단한다 — 사다리가 사다리를 막지 않는다."""
+    contract = install(PISA)
+    bad = plan_with_camera_word(contract)
+    llm = SequenceLLM(bad, "이건 JSON이 아니다")
+
+    result = run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    assert not result.passed and result.errors
+    assert not (paths.run_dir(contract["run_id"]) / PROMPTS_FILE).exists()
+    assert "session_error" in result.revision
+
+
+def test_only_violating_scenes_reach_the_fix_session(paths, install):
+    """통과한 씬은 고쳐쓰기 입력에 실리지 않는다 — 멀쩡한 단락이 바뀌면 안 된다."""
+    contract = install(PISA)
+    assert len(contract["scenes"]) > 1
+    bad = plan_with_camera_word(contract, scene_id=1)
+    llm = SequenceLLM(bad, {"scenes": [_entry(fake_plan(contract), 1)]})
+
+    run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    fix_prompt = llm.prompts[1]
+    assert "## 씬 1" in fix_prompt
+    for scene in contract["scenes"][1:]:
+        assert f"## 씬 {scene['scene_id']}" not in fix_prompt
+    assert "camera_target가 카메라 워크를 새로 지시한다" in fix_prompt, "위반 문장이 사유로 실린다"
+
+
+def test_non_scene_violation_skips_the_ladder(paths, install):
+    """씬에 안 걸리는 위반(스키마·씬 누락)은 사다리를 태우지 않는다 — 고칠 자리가 없다."""
+    contract = install(PISA)
+    plan = fake_plan(contract)
+    plan["scenes"] = plan["scenes"][:-1]          # 씬 하나를 통째로 뺀다
+    llm = SequenceLLM(plan, {"scenes": []})
+
+    result = run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    assert not result.passed
+    assert len(llm.prompts) == 1, "고쳐쓰기를 부르지 않는다"
+    assert result.revision is None
+
+
+def test_forbidden_words_come_from_vocab_not_a_hand_copy(paths, install):
+    """세션 프롬프트의 금지어는 어휘에서 온다 (ADR-0098 결정 2 · ADR-0034).
+
+    `crane`이 어휘에만 있고 프롬프트에 없어 `tokyo-tower-tanks`가 세 번 죽은 것이 근거다.
+    """
+    contract = install(PISA)
+    llm = FakeLLM(fake_plan(contract))
+    run_prompt_stage(PISA, llm=llm, paths=paths)
+
+    prompt = llm.prompts[0]
+    for word in vocab.camera_target_forbidden_words():
+        assert word in prompt, f"어휘의 금지어 {word!r}가 세션 프롬프트에 없다"
+    assert "crane" in prompt
+
+
+def test_violating_scenes_reads_scene_ids_or_gives_up():
+    assert violating_scenes(["scenes/3: 어쩌고", "scenes/1: 저쩌고", "scenes/3: 또"]) == [1, 3]
+    assert violating_scenes(["씬 4의 샷 서술이 없다"]) is None
+    assert violating_scenes([]) == []
+
+
+def test_schema_violation_number_is_an_array_index_not_a_scene_id():
+    """`scenes/{i}/{필드}`의 `i`는 **배열 인덱스**다 (ADR-0098 개정 1).
+
+    씬 id가 1부터 시작하므로 인덱스 13이 씬 14다. 뭉쳐 읽으면 사다리가 엉뚱한 씬을
+    고쳐 써서 검사만 통과하고 화면이 틀린다 — `tokyo-tower-tanks` 실측이 근거다.
+    """
+    plan = {"scenes": [{"scene_id": i + 1} for i in range(16)]}
+    assert violating_scenes(["scenes/13/red_prompt: is too long"], plan) == [14]
+    # 교차 규칙은 같은 자리에 **씬 번호**를 쓴다 — 같은 문자열 모양, 다른 번호 체계다
+    assert violating_scenes(["scenes/13: action_prompt가 …"], plan) == [13]
+    # 옮길 수 없는 인덱스는 추측하지 않는다
+    assert violating_scenes(["scenes/99/red_prompt: is too long"], plan) is None
+    assert violating_scenes(["scenes/0/red_prompt: is too long"], None) is None
+    assert violating_scenes(["(root): 'scenes' is a required property"], plan) is None
+
+
+def test_field_level_schema_violation_rides_the_ladder_on_the_right_scene(paths, install):
+    """길이 초과 같은 **필드 내용** 스키마 위반은 사다리에 태우고, 그 씬을 정확히 짚는다."""
+    contract = install(PISA, mutate=with_info)
+    plan = fake_plan(contract)
+    index = len(plan["scenes"]) - 1
+    target_id = plan["scenes"][index]["scene_id"]
+    assert index != target_id, "인덱스와 씬 번호가 달라야 이 테스트가 뜻이 있다"
+    plan["scenes"][index]["camera_target"] = "x" * 4000        # maxLength 위반
+    llm = SequenceLLM(plan, {"scenes": [_entry(fake_plan(contract), target_id)]})
+
+    result = run_prompt_stage(PISA, llm=llm, paths=paths, timeout=5)
+
+    assert result.passed, result.errors
+    assert result.revision["scenes"] == [target_id]
+    assert f"## 씬 {target_id}" in llm.prompts[1]
+
+
+def test_merge_fix_replaces_only_the_named_scenes_and_drops_absent_keys():
+    """없는 키는 지운다 — 「없어야 할 단락이 있다」도 위반이라 키를 빼는 것이 고치는 방법이다."""
+    plan = {"scenes": [
+        {"scene_id": 1, "subject_prompt": "old one", "red_prompt": "old red"},
+        {"scene_id": 2, "subject_prompt": "untouched"},
+    ]}
+    merged, changed = merge_fix(plan, {"scenes": [{"scene_id": 1, "subject_prompt": "new one"}]}, [1])
+
+    assert changed == [1]
+    assert _entry(merged, 1)["subject_prompt"] == "new one"
+    assert "red_prompt" not in _entry(merged, 1)
+    assert _entry(merged, 2)["subject_prompt"] == "untouched"
+    assert _entry(plan, 1)["subject_prompt"] == "old one", "원본 plan은 그대로다"

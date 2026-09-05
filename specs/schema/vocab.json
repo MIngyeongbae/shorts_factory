@@ -129,6 +129,13 @@
         "section_profile",
         "plate_wall"
       ]
+    },
+    "reference_mode": {
+      "_role": "실물 참조 사진을 first frame에 어떻게 물릴지 (ADR-0087). 값은 meta.reference_mode가 진다",
+      "enum": [
+        "identity",
+        "none"
+      ]
     }
   },
   "meta": {
@@ -390,8 +397,10 @@
       }
     },
     "style": {
-      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0056 결정 4 — ADR-0023의 펜선·수채 문자열을 대체). 렌더 언어는 하나이고 무대(staging)만 둘이다. fal 프로브 15클립이 이 문자열(원카 레퍼런스 프롬프트의 STYLE·COLOR 절)로 찍혔다. 글자 하나를 바꾸면 재검증이 필요하다.",
-      "base_style": "semi-stylized 3D visualization render sitting halfway between clean low-poly and photoreal. STYLE: simplified readable geometry with real modeled detail, smooth shading with no visible polygon edges, matte materials, no mirror gloss, soft studio daylight with mild ambient occlusion, no sun disc. COLOR IS RICH AND CLEAN: fully saturated, no gray wash and no desaturated grading",
+      "_role": "전 씬 공통. 채널 룩을 실제로 지키는 것이 이 문자열이다 (ADR-0086 — ADR-0056 결정 4의 세미 스타일라이즈드 3D를 대체). 렌더 언어는 하나이고 무대(staging)만 둘이다. **실사에 가까운 3D 렌더다** — 사람 판독이 회화체를 기각한 것이 근거이고(2026-08-31, ADR-0044대로 판정은 사람이 한다), 2026-08-26에 극사실을 걷어낸 실측은 MJ+앵커 경로의 것이라 앵커를 안 받는 `local`에는 걸리지 않는다. **재검증 대기 상태다** — 옛 문자열을 찍은 fal 프로브 15클립은 이 교체로 만료됐고, 새 룩의 첫 편(자유의 여신상, 2026-08-31)이 프로브다. 글자 하나를 바꾸면 재검증이 필요하다.",
+      "base_style": "photorealistic 3D render with physically based materials and ray traced lighting. STYLE: real surface microdetail - grain, wear, weave and tool marks on every material, accurate reflection and roughness, natural daylight with a clear sun direction and true cast shadows, no sun disc in frame, shallow depth of field on foreground detail. COLOR IS RICH AND CLEAN: fully saturated, no gray wash and no desaturated grading",
+      "frame_style": "photorealistic 3D render with physically based materials and ray traced lighting. STYLE: accurate reflection and roughness, natural daylight with a clear sun direction and true cast shadows, no sun disc in frame, shallow depth of field on foreground detail. COLOR IS RICH AND CLEAN: fully saturated, no gray wash and no desaturated grading",
+      "_frame_style": "`[6]`이 first frame을 그릴 때만 쓰는 스타일 (ADR-0087 결정 5). **`base_style`에서 `real surface microdetail - grain, wear, weave and tool marks on every material, ` 한 절만 뺀 문자열이고 나머지는 글자 그대로 같다** — 실측 2026-09-01(ADR-0087 맥락 5, 16장/2소재/2시드): 그 절이 정지 이미지 모델을 극단적 근접 질감으로 끌어 살창이 평평한 판벽이 됐고, 빼면 구조가 돌아온다. **`shallow depth of field on foreground detail`은 빼면 안 된다** — 같은 실측에서 그 절만 뺀 변종이 전경의 손을 잃었다. ADR-0086은 영상(fal 15클립 + 여신상 1편)으로 승인된 문자열이라 스틸 적용이 미검증이었던 것이 원인이다. **`[7]`의 영상 프롬프트는 계속 `base_style`이다** — 둘이 어긋나면 프레임과 클립의 그림체가 갈리므로 어휘를 최대한 공유한다. `base_style`을 고치면 여기도 같이 본다",
       "composition": "vertical 9:16",
       "aspect_ratio": "9:16",
       "resolution": "720p",
@@ -428,10 +437,24 @@
       },
       "_composition": "레이아웃 지시는 없다 (ADR-0038). 자막 자리를 비우라는 절은 실측에서 먹지 않았다. 자막 가독성은 [9]가 외곽선·그림자로 책임진다 (specs/05 D-6)."
     },
+    "reference_mode": {
+      "_role": "실물 참조 사진을 first frame에 어떻게 물릴지 (ADR-0087). `[3s]`가 씬마다 고르고 `[6]`이 그 값을 IP-Adapter에 건다. **노브가 둘인 이유는 실측이다** (2026-09-01, 65장/4소재/2시드): 구도의 주인을 정하는 것은 `weight`가 아니라 `start_at`이고, 0.35~0.5라야 구도는 프롬프트·재질은 참조로 갈린다. **어휘가 둘뿐인 것은 사람 결정이다** — 실측은 도면·단면 씬에 `start_at 0.0`(참조가 구도를 가져가는 `structure` 모드)을 가리켰지만 그 대가가 사실상 사진 재현이라 사람이 뺐다 (ADR-0087 「사람이 정한 지점」). 그 씬은 `none`으로 간다. 참조 사진이 없는 씬에서는 어떤 값이든 참조 없이 그린다.",
+      "_default": "identity",
+      "identity": {
+        "gloss": "재질·정체성만 참조가 지고 구도·동작은 프롬프트가 지휘한다. 기본값",
+        "weight": 0.7,
+        "start_at": 0.4
+      },
+      "none": {
+        "gloss": "참조를 안 붙인다. 실물이 없는 대상(가시 들판·컷 모델)과 형태·배치가 곧 정보인 씬(도면·단면)",
+        "weight": 0.0,
+        "start_at": 0.0
+      }
+    },
     "staging": {
       "_role": "무대. 렌더 언어(style.base_style)는 하나이고 무대만 둘이다 (ADR-0056 결정 4). [3s]가 씬마다 고르고 비면 beat-defaults.json의 기본값이다. phrase는 [5]가 프롬프트 STAGING 절에 그대로 넣는 영어 구절이다 — 코드는 문장을 들지 않는다 (ADR-0034).",
       "studio": {
-        "gloss": "중성 회색 바닥 위 기술 모델 — 구조·물건·메커니즘·수치를 보이는 씬. 프로브에서 치수선·라벨이 가장 잘 붙은 무대",
+        "gloss": "중성 회색 바닥 위 기술 모델 — **계측 표시(`info`)가 붙는 씬과 단면·도해 구도 전용이다** (ADR-0086). 빈 바닥은 치수선·라벨이 가장 잘 붙어서 남긴 것이므로 그 값을 하는 씬에만 쓴다. 계측이 없는 일반 씬은 `location`이다 — 배경 없는 화면이 사람 판독에서 졌다 (2026-08-31 실측: 399씬 중 studio 234씬이고 그중 154씬만 `info`가 붙었다).",
         "phrase": "SUBJECT staged as a technical model on a flat neutral pale gray studio ground with soft contact shadows, clean empty studio space around it, seen from a low three-quarter angle."
       },
       "location": {
@@ -541,7 +564,10 @@
       "local": {
         "gloss": "로컬 GPU — ComfyUI + MiniMax H3. 변동비 0. 초기 기본 (테스트·초기 쇼츠)",
         "provider": "comfy-h3",
-        "shot2": false
+        "shot2": false,
+        "style_in_frames": false,
+        "reference_frames": false,
+        "_reference_frames": "**2026-09-02에 사람이 껐다.** true면 `info`가 없는 씬이 `[6]`에서 로컬 SDXL + IP-Adapter로 first frame을 받는다 (ADR-0087). `style_in_frames`와 다른 스위치다 — 스타일은 여전히 말이 지고 프레임이 지는 것은 실물의 형태·재질뿐이다. **끈 이유는 H3가 그 프레임을 이어 그리지 않기 때문이다** (실측 2026-09-02, ADR-0087 되돌릴 조건 1): 준 그림을 1프레임만 내보내고 버린 뒤 자기 영상을 그리거나, 아예 정지 영상을 낸다. 같은 씬·같은 시드로 프레임 있이/없이 돌린 대조에서 프레임 쪽이 5초 내내 정지했고, 프레임 없는 쪽이 씬 계약에 더 맞는 그림을 그렸다. `[6]`의 그림 자체는 좋았다(참조 사진이 붙은 씬은 실물 재질을 잡았다) — 못 쓰는 것은 **H3에 물리는 경로**다. 다시 켜려면 프레임을 이어 그리는 엔진이 먼저 필요하다."
       },
       "api": {
         "gloss": "유료 API — Gemini Omni Flash (ADR-0056). 인포·설명 소재, 전환 조건 충족 뒤",

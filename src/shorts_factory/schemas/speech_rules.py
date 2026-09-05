@@ -56,6 +56,26 @@ def reading_languages() -> tuple[str, ...]:
     return tuple(lang for lang in languages() if reading_line(lang))
 
 
+#: 어느 로케일에나 문장 끝인 부호. 로케일이 자기 부호를 더한다 (`sentence_end`).
+BASE_SENTENCE_ENDINGS = (".", "?", "!", "…")
+
+
+def sentence_endings() -> tuple[str, ...]:
+    """문장 끝으로 인정하는 부호 전부 (ADR-0089).
+
+    라틴 넷은 코드가 들고, **로케일 부호는 계약에서 온다** (ADR-0034) — 일본어 `。`가
+    빠져 있으면 `[3]`이 일본어 줄마다 *"줄이 문장부호로 끝나지 않는다"*고 거짓 경고를
+    낸다. `tts/speech.py`(부호를 붙이는 쪽)와 `tts/sync.py`(씬 끝을 찾는 쪽)가 **같은
+    집합**을 봐야 한다 — 갈리면 붙여 놓고도 못 알아본다.
+    """
+    marks = list(BASE_SENTENCE_ENDINGS)
+    for lang in languages():
+        mark = str((locale(lang) or {}).get("sentence_end") or "")
+        if mark and mark not in marks:
+            marks.append(mark)
+    return tuple(marks)
+
+
 def range_chars() -> tuple[str, ...]:
     """범위·부호 문자. 숫자 양옆에 붙으면 그 숫자를 건드리지 않는다 (ADR-0063 결정 4)."""
     return tuple(SPEECH_RULES["range_chars"])

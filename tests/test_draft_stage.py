@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from shorts_factory.gate import strip_gate_block
 from shorts_factory.stages.draft import DraftStageError, run_draft_stage
 from shorts_factory.stages.factcheck import FactcheckStageError, run_factcheck_stage
 from shorts_factory.stages.topic import run_topic_stage
@@ -44,7 +45,9 @@ def test_draft_writes_script_and_passes(paths, seeded):
     result = run_draft_stage(seeded.slug, llm=llm, paths=paths, run_id=seeded.run_id)
 
     assert result.passed and result.script_path.is_file()
-    assert result.script_path.read_text(encoding="utf-8").startswith("# 테스트 소재")
+    text = result.script_path.read_text(encoding="utf-8")
+    # 맨 위는 판정 블록이고(ADR-0094) 대본은 그 뒤다
+    assert strip_gate_block(text).startswith("# 테스트 소재")
     # 시드와 웹 도구가 세션에 실렸다
     assert SEED in llm.prompts[0]
     assert "WebSearch" in llm.tools[0] and "WebFetch" in llm.tools[0]

@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from ..gate import strip_gate_block
 from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..llm.base import LLMClient
@@ -410,7 +411,7 @@ def run_localize_stage(
                 topic=topic,
                 targets=", ".join(todo) or "(없음 — 대본은 전부 이미 있다)",
                 line_count=ko_lines,
-                script=script_text,
+                script=strip_gate_block(script_text),
                 factcheck=factcheck_text,
                 limits="\n\n".join(_format_language_limits(lang) for lang in todo)
                 or "(대본을 새로 만들 언어가 없다)",

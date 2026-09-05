@@ -81,6 +81,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from ..judgment import read_gate
 from ..config import Paths, write_text
 from ..jsonio import dump_json
 from ..runstate import RunNotFound, RunState, find_run_for_slug
@@ -371,7 +372,24 @@ def run_tts_stage(
         raise TTSStageError(
             f"대본이 없다: {ko_path}. 1부가 끝난 토픽만 2부에 들어온다 (ADR-0017)."
         )
-    wanted = [l for l in (langs or LANGUAGES)]
+    # **게이트는 여기서 읽는다** (ADR-0094 결정 4) — 2부의 첫 단계다. 반려·보류면 멈추고,
+    # 언어는 ko + 사람이 고른 것이다. `--lang`이 오면 그것이 이긴다. ko는 고르지 않아도
+    # 실측한다 — `[3s]`의 줄 경계와 `[7]` 기본 풀의 입력이다.
+    gate = read_gate(paths, slug)
+    if gate.rejected:
+        raise TTSStageError(
+            f"{slug}: 반려된 편이다 — script.md 맨 위 블록의 reject가 풀려 있다 (ADR-0094)"
+        )
+    if langs is None and gate.pending:
+        raise TTSStageError(
+            f"{slug}: 보류 — script.md 맨 위 블록에서 언어(ko·ja·en)의 주석을 풀어야 2부가 돈다 "
+            "(ADR-0094). 명시하려면 --lang"
+        )
+    if langs is None and gate.present:
+        wanted = [PRIMARY_LANGUAGE, *gate.languages]
+        log.info("[%s] 판정: %s (script.md 맨 위 블록)", STAGE, ", ".join(gate.languages))
+    else:
+        wanted = [l for l in (langs or LANGUAGES)]
     unknown = [l for l in wanted if l not in LANGUAGES]
     if unknown:
         raise TTSStageError(f"모르는 언어다: {unknown} (가능: {', '.join(LANGUAGES)})")
@@ -379,7 +397,7 @@ def run_tts_stage(
         wanted.insert(0, PRIMARY_LANGUAGE)
     present = [l for l in LANGUAGES if l in wanted and script_path(paths, slug, l).exists()]
 
-    scripts_by_lang: dict[str, tuple[str, list[str], list[str]]] = {
+    scripts_by_lang: dict[str, tuple[str, list[str], list[str], str]] = {
         lang: _read_script(script_path(paths, slug, lang), lang) for lang in present
     }
     texts_by_lang: dict[str, list[str]] = {

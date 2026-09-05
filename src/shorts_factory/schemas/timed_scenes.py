@@ -65,6 +65,18 @@ TITLE_PROPERTY: dict[str, Any] = {
     ),
 }
 
+#: **폐기된 필드 (ADR-0096).** ADR-0090의 엔딩 여운 대사였다. `[3]`은 더 쓰지 않고 읽는
+#: 곳도 없다 — 스키마에 남는 이유는 이미 만든 편의 실측 파일에 이 값이 있고
+#: `additionalProperties: false`라 지우면 보관함 편의 `[9]` 재실행이 깨지기 때문이다
+#: (ADR-0088 되돌릴 조건 1). 그 파일들이 다 폐기되면 같이 지운다.
+OUTRO_PROPERTY: dict[str, Any] = {
+    "type": "string",
+    "minLength": 1,
+    "description": (
+        "폐기 (ADR-0096). 옛 편의 파일 호환으로만 허용한다 — 읽는 곳이 없다."
+    ),
+}
+
 #: 이 파일에 싣지 않는 대본 필드. **이미지 지시는 여기 올 이유가 없다** (ADR-0020·0022).
 #: 실측 파일을 읽는 곳은 `[7]`(클립 길이)과 `[9]`(전환·자막)뿐이고 둘 다 그림이 무엇을
 #: 설명하는지도, 어떤 구도로 잡는지도 알 필요가 없다. 그림 쪽 소비자는 `prompts.json`을
@@ -100,6 +112,7 @@ TIMED_SCENES_SCHEMA["properties"]["scenes"]["items"] = TIMED_SCENE_SCHEMA
 #: 언어 중립이라 그쪽에 제목이 있을 자리가 없다. `merge_scene_direction`은 `dict(timed)`로
 #: 시작하므로 실측 문서의 `title`이 병합본에 그대로 살아남는다.
 TIMED_SCENES_SCHEMA["properties"]["title"] = copy.deepcopy(TITLE_PROPERTY)
+TIMED_SCENES_SCHEMA["properties"]["outro"] = copy.deepcopy(OUTRO_PROPERTY)
 
 _VALIDATOR = Draft202012Validator(TIMED_SCENES_SCHEMA, registry=vocab.REGISTRY)
 
@@ -190,6 +203,7 @@ LINE_TIMED_SCHEMA: dict[str, Any] = {
         "topic": {"type": "string", "minLength": 1},
         "total_duration": {"type": "number", "exclusiveMinimum": 0},
         "title": copy.deepcopy(TITLE_PROPERTY),
+        "outro": copy.deepcopy(OUTRO_PROPERTY),
         "scenes": {
             "type": "array",
             "minItems": 1,
@@ -224,6 +238,8 @@ def build_line_timed_scenes(
     `title`은 그 언어 대본의 `# 제목`이고 **선택이다** — 빈 문자열이면 필드 자체를 쓰지
     않는다. 스키마가 `minLength: 1`이라 빈 값을 실으면 계약 위반이고, 없는 것은 위반이
     아니다 (ADR-0065, D-3).
+
+    `outro`는 쓰지 않는다 — ADR-0096이 폐기했고 스키마가 옛 파일을 위해 허용만 한다.
     """
     if len(lines) != len(boundaries):
         raise ValueError(f"줄 {len(lines)}개에 경계 {len(boundaries)}개가 왔다")

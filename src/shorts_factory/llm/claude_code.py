@@ -26,8 +26,12 @@ from .base import LLMClient, LLMError, LLMRateLimited, LLMResult, LLMTimeout
 log = logging.getLogger(__name__)
 
 #: 구독 한도/일시적 과부하 신호. 매칭되면 백오프 후 재시도한다.
+#: `session limit`은 2026-09-04 실측으로 들어왔다 — 1부 8편 병렬이
+#: "You've hit your session limit · resets 12am (Asia/Seoul)"로 죽었는데
+#: 이 문구에는 usage/reached/exceeded가 하나도 없어 백오프 없이 즉사했다.
 _RETRYABLE_PATTERNS = (
     r"usage limit",
+    r"session limit",
     r"rate.?limit",
     r"limit reached",
     r"limit exceeded",

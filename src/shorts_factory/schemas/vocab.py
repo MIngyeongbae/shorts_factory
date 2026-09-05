@@ -61,6 +61,7 @@ PROMPTPLAN_SCHEMA_DOC: dict[str, Any] = load("promptplan.schema.json")
 REFS_SCHEMA_DOC: dict[str, Any] = load("refs.schema.json")
 ENDING_SCHEMA_DOC: dict[str, Any] = load("ending.schema.json")
 SUBTITLE_STYLE: dict[str, Any] = load("subtitle-style.json")
+CHANNEL_LOOK: dict[str, Any] = load("channel-look.json")
 SCRIPT_RULES: dict[str, Any] = load("script-rules.json")
 BEAT_DEFAULTS: dict[str, Any] = load("beat-defaults.json")
 
@@ -152,14 +153,44 @@ def style_in_frames(line: str) -> bool:
     return bool(VOCAB["meta"]["video_line"][line].get("style_in_frames", False))
 
 
+def reference_frames(line: str) -> bool:
+    """이 라인의 **프레임을 받는 씬**은 실물 고증을 프레임이 지는가 (ADR-0087).
+
+    `style_in_frames`와 **다른 스위치다.** 참이면 `[6]`이 로컬 SDXL + IP-Adapter로
+    first frame을 그리되 **스타일은 여전히 말이 진다** — `[7]`의 영상 프롬프트는 골격
+    전체를 유지하고 STYLE 절도 그대로다. 프레임이 지는 것은 실물의 형태·재질뿐이다.
+    """
+    require("video_line", line)
+    return bool(VOCAB["meta"]["video_line"][line].get("reference_frames", False))
+
+
 def scene_takes_frames(line: str, *, has_info: bool) -> bool:
-    """이 씬이 프레임을 입력으로 받는가 (ADR-0075 결정 1·3).
+    """이 씬이 프레임을 입력으로 받는가 (ADR-0075 결정 1·3 — ADR-0087이 이유를 둘로 갈랐다).
 
     프레임 라인이라도 `info` 씬은 H3 텍스트→영상으로 가므로 프레임이 없다 — 그 씬은
     `[6]`을 타지 않고 프롬프트가 전체 골격이다. 옛 경로(MJ CLEAN → NB2 표시 편집 →
     H3 first/last)는 표시 정확성은 얻었지만 사람 판독에서 졌다 (2026-08-26).
+
+    프레임을 받는 이유는 둘이다 — **스타일이 프레임에 있거나**(`style_in_frames`)
+    **실물 고증이 프레임에 있거나**(`reference_frames`). 어느 쪽인지는 프롬프트 취급이
+    갈리므로 이 함수가 아니라 각 스위치를 따로 묻는다.
     """
-    return style_in_frames(line) and not has_info
+    return (style_in_frames(line) or reference_frames(line)) and not has_info
+
+
+def reference_mode_default() -> str:
+    """씬이 `reference`를 비웠을 때의 값 (`meta.reference_mode._default`, ADR-0087)."""
+    return str(VOCAB["meta"]["reference_mode"]["_default"])
+
+
+def reference_mode(mode: str) -> dict[str, Any]:
+    """참조 모드 한 값의 노브 — `weight`·`start_at` (ADR-0087 결정 3·4).
+
+    **코드가 값을 선언하지 않는다** (ADR-0034). 어느 노브를 얼마나 거는지는 실측이
+    정한 어휘의 것이고, 고치는 자리는 `vocab.json` 하나다.
+    """
+    require("reference_mode", mode)
+    return dict(VOCAB["meta"]["reference_mode"][mode])
 
 
 def negatives(key: str) -> Any:

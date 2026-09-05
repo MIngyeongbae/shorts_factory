@@ -1,0 +1,7 @@
+{
+  "judge": "human",
+  "decision": "go",
+  "video_line": "art",
+  "notes": "사람 지시(2026-08-29, \"…이렇게 쇼츠를 만들자 1부 다 만들면 go, art 라인으로해서 쭉 다 만들어\"). 영상 라인은 art — 일반 씬은 MJ CLEAN을 first로 잇고 `info` 씬은 H3 텍스트→영상이다 (ADR-0070·0075). 사전 일괄 go라 축별 점수·confidence는 비운다.",
+  "judged_at": "2026-08-30T12:47:38+09:00"
+}

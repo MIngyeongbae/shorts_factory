@@ -7,7 +7,7 @@ Spec-Driven Development로 운영하는 AI 쇼츠 자동 생성 파이프라인.
 
 ## 구현 현황
 
-`specs/05-pipeline.md`의 1부 `[0]`~`[2l]`(ADR-0049·0056)와 2부 `[3]`·`[3s]`·`[4]`·`[5]`·`[7]`·`[8]`·`[9]`.
+`specs/05-pipeline.md`의 1부 `[0]`~`[2l]`(ADR-0049·0056)와 2부 `[3]`·`[3s]`·`[4]`·`[5]`·`[7]`·`[8]`·`[9]`·`[10]`.
 **2부는 ADR-0056(2026-08-22 승인)으로 갈아엎는 중이다** — 아래 표가 현재 위치다.
 
 ```
@@ -16,16 +16,20 @@ topics/backlog.md (소재 + 시드 기사 URL)
   → [1. draft]     script.md   시드 기사 → 통짜 내레이션. 직후 기계 엔벨로프 검사 (LLM 0회)
   → [2. factcheck] factcheck.md + script.md 정정   대본이 쓴 주장만 검증 (스펙 06)
   → [2l. localize] script.ja.md + script.en.md   줄 1:1 번안 — 한 세션에 두 언어. 직후 줄 수·빈 줄 검사 (구현됨)
-  → 사람 게이트    script.md를 읽고 STATUS.md에 go / no-go (ADR-0009) — ko의 go가 셋의 go다
+  → 사람 게이트    script.md **맨 위 주석 블록**의 주석을 푼다 (ADR-0094) — reject / ko·ja·en.
+                   언어별로 2부 대상이 갈린다. 아무것도 안 풀면 보류라 2부가 안 돈다
   → [3. tts]       narration.{lang}.wav + scenes.timed.{lang}.json — 언어당 1회, ko 필수 (구현됨)
   → [3s. scenetable] scenes.json — ko 실측 위에서 1회. staging·ASCII 라벨·annotation (구현됨)
   → [4. refpack]   refs.json (서술 경로)
   → [5. prompt]    prompts.json — 영상 프롬프트 골격, 영어 문장은 전부 vocab.json (구현됨)
   → [7. videogen]  clips/ + clips.json + clip_review.json — 씬당 클립 1개, 어댑터는 human.json의
+                   + 언어별 겹풀 clips.{lang}/ (ja 홀수 · en 짝수 씬을 새 시드로 — ADR-0095)
                    video_line (로컬 ComfyUI+H3 기본 / Omni / MJ 예약 — ADR-0059), 끝 프레임 OCR +
                    씬당 비전 검수, 강등 사다리 (구현됨 — 실편 관통은 아직. 오프라인 관통은 `--provider fake`)
   → [8. ending]    엔딩 실사 컷 (구현됨, 실편 관통은 아직)
   → [9. assemble]  timeline.{lang}.mp4 — 언어당 1회, 언어별 트림·자막·나레이션 (구현됨)
+  → [10. upload]   upload.json — 타임라인을 구글 드라이브로. 폴더 `{올리는 날} {한국어 제목}`,
+                   파일명은 그 언어 대본의 제목 (구현됨 — ADR-0084. 코치닐 3개 국어 관통)
 ```
 
 | ADR-0056 코드 단계 | 상태 |
@@ -35,7 +39,8 @@ topics/backlog.md (소재 + 시드 기사 URL)
 | **B** `[2l] localize` + `script-rules.json` 로케일 로더 | **완료**. 언어별 엔벨로프(`locales.{lang}.limits`)는 블록이 있으면 읽고 없으면 줄 수 일치만 — 초 상한은 `[3]`이 실측으로 본다 (값은 실편 5편 뒤, ADR-0056 되돌릴 조건 4) |
 
 **MJ 이미지 어댑터(`imagegen/base·midjourney·fake`)는 휴면 코드다** — 어느 단계도 부르지
-않고 계약 테스트만 돈다 (ADR-0056 결정 1). `[10] mix`는 여전히 미구현이다.
+않고 계약 테스트만 돈다 (ADR-0056 결정 1). **`[10] mix`는 폐기됐고 그 번호를 `upload`가
+받았다** (ADR-0084) — SFX·BGM은 구현된 적이 없고 사람이 필요 없다고 정했다.
 
 ## 준비물
 
@@ -92,6 +97,12 @@ python run.py ending --slug hubeodaem-konkeuriteu-naenggak
 # [9] 클립 + 언어별 실측 → timeline.{lang}.mp4 (2부, 언어당 1회 — 디졸브 + 자막 번인 + 나레이션)
 python run.py assemble --slug hubeodaem-konkeuriteu-naenggak
 python run.py assemble --slug hubeodaem-konkeuriteu-naenggak --lang ja
+
+# [10] 조립된 타임라인 → 구글 드라이브 (2부 마지막 — ADR-0084)
+#      폴더 `{올리는 날} {한국어 제목}`, 파일명은 그 언어 대본의 제목.
+#      .env의 GOOGLE_CLIENT_ID·GOOGLE_CLIENT_SECRET·GOOGLE_REFRESH_TOKEN이 있어야 돈다
+#      (토큰 받기: python runs/logs/gdrive_oauth.py)
+python run.py upload --slug hubeodaem-konkeuriteu-naenggak
 ```
 
 `[8]`은 `[4] refpack`이 내려받아 둔 사진만 쓴다 — 새로 수집하지 않는다. `[4]`를 안
@@ -105,8 +116,13 @@ python run.py assemble --slug hubeodaem-konkeuriteu-naenggak --lang ja
 대본 파일이 있는 언어의 id가 비어 있으면 **어느 언어도 부르기 전에** 멈춘다. 키 없이
 경로만 확인하려면 `--provider fake`를 준다 — **무음 wav가 나오므로 기본값이 아니다.**
 
-`[7]`의 로컬 라인은 `.env`의 `COMFY_URL`(기본 `http://127.0.0.1:8188`)·`COMFY_H3_MEGAPIXELS`
-(비우면 템플릿의 0.4)를, 유료 라인은 `GEMINI_API_KEY`(Omni Flash, 유료 티어)를 쓴다. 로컬 라인은
+`[6]`·`[7]`의 로컬 라인은 `.env`의 `COMFY_URL`(기본 `http://127.0.0.1:8188`)·`COMFY_H3_MEGAPIXELS`
+(비우면 템플릿의 0.4)를, 유료 라인은 `GEMINI_API_KEY`(Omni Flash, 유료 티어)를 쓴다.
+**`local` 라인은 `[6] frames`를 먼저 돌려야 한다** (ADR-0087) — `info`가 없는 씬의 first
+frame을 같은 ComfyUI에서 SDXL + IP-Adapter로 그려 `[4]`의 실물 사진을 물린다. 필요한 모델은
+`RealVisXL_V5.0_fp16`·`CLIP-ViT-H-14`·`ip-adapter-plus_sdxl_vit-h`와 `ComfyUI_IPAdapter_plus`
+노드이고, 설치 스크립트는 `runs/logs/install-ipadapter-stack.ps1`이다. **`[6]`은 SDXL을,
+`[7]`은 H3를 물므로 편당 모델 스왑이 한 번 생긴다** — `[6]`을 전 씬 끝낸 뒤 `[7]`로 간다. 로컬 라인은
 GPU 추론 중 Windows가 "유휴"로 보고 절전에 들어갈 수 있다 — `powercfg /change standby-timeout-ac 0`
 (2026-08-23 BSOD 1회, worklog (35)). 끝 프레임 OCR 게이트는
 PATH에 `tesseract`가 있을 때만 돌고, 없으면 건너뛰고 `clip_review.json`에 경고를 남긴다 —
@@ -169,6 +185,7 @@ runs/{run_id}/          # 기계용 단계 간 계약 (ADR-0011)
 ├── clips/ clips.json clip_review.json clip_review/   # [7] 채택 클립 + 기록 + 검수 재료(원본·프레임)
 ├── ending/ ending.json # [8] 엔딩 실사 컷 + credits.txt (없는 편이 정상이다)
 ├── subtitles.{lang}.ass · timeline.{lang}.mp4        # [9] 언어당 둘
+├── upload.json         # [10] 드라이브 폴더·파일 id (재실행이 이것으로 갱신한다)
 └── logs/
 ```
 

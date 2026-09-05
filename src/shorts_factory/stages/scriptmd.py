@@ -15,6 +15,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from ..gate import (  # noqa: F401 — 재수출 (ADR-0094)
+    Gate,
+    GateError,
+    attach_gate_block,
+    parse_gate,
+    render_gate_block,
+    split_gate_block,
+    strip_gate_block,
+)
 from ..schemas import speech_rules, vocab
 from ..schemas.script_rules import core_chars, max_total_seconds, noun_stems
 from ..schemas.timed_scenes import PRIMARY_LANGUAGE
@@ -38,8 +47,8 @@ UNFIT_MARK = "부적합"
 
 #: 대본 파일명 (specs/05 1부↔2부 경계 절, ADR-0056) — ko는 `script.md`, 나머지는
 #: `script.{lang}.md`. 2부(`stages/tts.py`)도 같은 이름을 읽는다 — 파일명이 계약이다.
-SCRIPT_MD_FILE = "script.md"
-SCRIPT_MD_PATTERN = "script.{lang}.md"
+#: 값은 `stages_script_name.py`에 있다 — `judgment.py`가 `stages/` 없이 읽어야 해서다.
+from ..stages_script_name import SCRIPT_MD_FILE, SCRIPT_MD_PATTERN  # noqa: E402,F401
 
 
 def script_md_name(lang: str) -> str:
@@ -170,10 +179,12 @@ class ScriptMd:
         return self.header.get("시드", "")
 
 
+
 def parse_script_md(text: str) -> ScriptMd:
     doc = ScriptMd()
     section: str | None = None
-    for raw in text.splitlines():
+    # 판정 블록은 대본이 아니다 (ADR-0094) — 머리 항목 파싱 전에 뗀다.
+    for raw in strip_gate_block(text).splitlines():
         line = raw.strip()
         if line.startswith("## "):
             name = line[3:].strip()

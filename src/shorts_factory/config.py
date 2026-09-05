@@ -108,6 +108,15 @@ class Paths:
         return self.root / "topics"
 
     @property
+    def topics_archive(self) -> Path:
+        """끝난 토픽의 보관 자리 (ADR-0088).
+
+        `_` 접두는 슬러그가 될 수 없는 문자라(`[a-z0-9-]`, ADR-0011) 토픽 이름과 충돌하지
+        않는다. `[10] upload`가 성공하면 그 토픽을 여기로 옮긴다.
+        """
+        return self.topics / "_archive"
+
+    @property
     def backlog(self) -> Path:
         return self.topics / "backlog.md"
 
@@ -116,7 +125,17 @@ class Paths:
         return self.root / "runs"
 
     def topic_dir(self, slug: str) -> Path:
-        return self.topics / slug
+        """현역 자리를 먼저 보고, 없으면 보관함을 본다 (ADR-0088).
+
+        `[3s] scenetable`·`[5] prompt`는 2부인데도 `script.md`·`factcheck.md`를 읽으므로,
+        보관된 편도 이 폴백으로 재실행이 그대로 된다. **둘 다 없으면 현역 자리를 돌려준다**
+        — 새로 만드는 쪽은 언제나 `topics/{slug}`이고 보관함에 새 토픽이 생기지 않는다.
+        """
+        active = self.topics / slug
+        if active.exists():
+            return active
+        archived = self.topics_archive / slug
+        return archived if archived.exists() else active
 
     def run_dir(self, run_id: str) -> Path:
         return self.runs / run_id

@@ -14,6 +14,21 @@ from shorts_factory.tts.speech import spoken_line, spoken_lines
 
 # --- 세 언어의 읽기 ----------------------------------------------------------
 
+
+def reads(text: str, lang: str) -> str:
+    """그 줄의 **읽기**만. 줄 끝 종결 부호는 떼고 본다.
+
+    ADR-0089가 발화형 줄을 종결 부호로 닫는데, 그것은 읽기 변환과 다른 계약이다
+    (엔진이 줄 경계에서 쉬게 하는 장치다). 이 파일의 읽기 테스트가 그 부호까지 적으면
+    부호를 바꾸는 날 스무 곳이 같이 틀린다 — 닫기는 아래 전용 테스트가 본다.
+    """
+    spoken = spoken_line(text, lang).spoken
+    mark = (speech_rules.locale(lang) or {}).get("sentence_end") or ""
+    if mark and spoken.endswith(mark) and not text.rstrip().endswith(mark):
+        return spoken[: -len(mark)]
+    return spoken
+
+
 #: 석빙고 실편(2026-08-24)의 숫자 토큰 다섯 개 — 사람이 어색하다고 한 그것들이다.
 SEOKBINGGO = [
     ("ko", "바닥 배수로는 5도 기울여", "바닥 배수로는 오도 기울여"),
@@ -71,32 +86,32 @@ JA_SAMPLES = [
 @pytest.mark.parametrize("lang, text, expected", SEOKBINGGO)
 def test_seokbinggo_numbers_are_spoken_in_the_locale(lang, text, expected):
     """첫 실편에서 사람이 어색하다고 한 토큰들 (ADR-0063 맥락 1)."""
-    assert spoken_line(text, lang).spoken == expected
+    assert reads(text, lang) == expected
 
 
 @pytest.mark.parametrize("text, expected", KO_SAMPLES)
 def test_korean_numerals_follow_the_counter(text, expected):
     """한국어 수사는 조수사가 고른다 — 표가 없으면 엔진보다 나빠진다 (ADR-0063 맥락 4)."""
-    assert spoken_line(text, "ko").spoken == expected
+    assert reads(text, "ko") == expected
 
 
 @pytest.mark.parametrize("text, expected", JA_SAMPLES)
 def test_japanese_readings_include_euphony(text, expected):
-    assert spoken_line(text, "ja").spoken == expected
+    assert reads(text, "ja") == expected
 
 
 def test_english_spells_units_but_not_numbers():
     """영어 수사는 문맥이 고른다 — 연도를 우리가 펴면 엔진보다 나빠진다 (결과 절)."""
     assert speech_rules.locale("en")["spell_numbers"] is False
-    assert spoken_line("in 1592 the tower", "en").spoken == "in 1592 the tower"
-    assert spoken_line("1 cm wide", "en").spoken == "1 centimeter wide"  # 단수형
-    assert spoken_line("25 kg", "en").spoken == "25 kilograms"
+    assert reads("in 1592 the tower", "en") == "in 1592 the tower"
+    assert reads("1 cm wide", "en") == "1 centimeter wide"  # 단수형
+    assert reads("25 kg", "en") == "25 kilograms"
 
 
 def test_latin_abbreviations_need_a_word_boundary():
     """`12 mi`가 `12 metersi`가 되면 안 된다 — 라틴 키는 낱말 끝에서만 맞는다."""
     result = spoken_line("12 mi away", "en")
-    assert result.spoken == "12 mi away"
+    assert reads("12 mi away", "en") == "12 mi away"
     assert any("mi" in w for w in result.warnings)
 
 
@@ -106,8 +121,8 @@ def test_korean_skips_the_space_only_for_latin_units():
     출력은 붙인다 (`unit_space_out: ""`, ADR-0079) — 입력에서 띄어 온 `3 m`도 `삼미터`가 된다.
     두 축이 다르다: 무엇을 단위로 **볼지**와 그것을 어떻게 **읽힐지**.
     """
-    assert spoken_line("지반에 3 m 박힌", "ko").spoken == "지반에 삼미터 박힌"
-    assert spoken_line("5분의 1 모형", "ko").spoken == "오분의 일 모형"
+    assert reads("지반에 3 m 박힌", "ko") == "지반에 삼미터 박힌"
+    assert reads("5분의 1 모형", "ko") == "오분의 일 모형"
     assert spoken_line("5분의 1 모형", "ko").warnings == ()
 
 
@@ -127,7 +142,7 @@ def test_ambiguous_counters_are_left_alone_with_a_warning():
 def test_unknown_units_are_left_alone_with_a_warning():
     result = spoken_line("273계단을 올라", "ko")
 
-    assert result.spoken == "273계단을 올라"
+    assert reads("273계단을 올라", "ko") == "273계단을 올라"
     assert "사전에 없어" in result.warnings[0]
 
 
@@ -142,12 +157,12 @@ def test_ranges_are_left_alone_and_warn_once():
 
 def test_a_hyphen_with_spaces_is_punctuation_not_a_range():
     """`1592년 — 임진왜란`의 줄표는 범위가 아니다. 떨어져 있으면 문장부호다."""
-    assert spoken_line("1592년 — 임진왜란", "ko").spoken == "천오백구십이년 — 임진왜란"
+    assert reads("1592년 — 임진왜란", "ko") == "천오백구십이년 — 임진왜란"
 
 
 def test_dropping_a_dictionary_entry_restores_the_engine_default(monkeypatch):
     """되돌리는 단위가 코드가 아니라 사전 항목 하나다 (ADR-0063 되돌릴 조건 2)."""
-    assert spoken_line("12cm", "ko").spoken == "십이센티미터"
+    assert reads("12cm", "ko") == "십이센티미터"
 
     trimmed = {
         **speech_rules.SPEECH_RULES,
@@ -166,7 +181,7 @@ def test_dropping_a_dictionary_entry_restores_the_engine_default(monkeypatch):
     monkeypatch.setattr(speech_rules, "SPEECH_RULES", trimmed)
 
     result = spoken_line("12cm", "ko")
-    assert result.spoken == "12cm"
+    assert reads("12cm", "ko") == "12cm"
     assert result.warnings
 
 
@@ -228,3 +243,66 @@ def test_units_are_matched_longest_first():
     """`mm`이 `m`에, `년대`가 `년`에 먹히면 안 된다."""
     keys = [key for key, _ in speech_rules.units("ko")]
     assert keys == sorted(keys, key=len, reverse=True)
+
+
+# --- 줄 끝 닫기 (ADR-0089) ---------------------------------------------------
+
+
+def test_a_spoken_line_ends_with_the_locale_sentence_mark():
+    """부호 없는 줄은 발화형이 닫는다. 부호는 **로케일이 정한다** (ADR-0034).
+
+    TTS는 대본 전체를 공백으로 이어 한 덩어리로 받는데(ADR-0004), 대본 줄은 자막이기도 해서
+    마침표를 안 찍는다(ADR-0013) — 그러면 엔진이 줄 경계를 지나쳐 **다음 줄 한두 단어 뒤에서**
+    끊는다 (실측 2026-09-02: 줄 경계 18곳 중 12곳만 쉬었고 최소 쉼이 0.04초였다).
+    """
+    for lang, text in (
+        ("ko", "케이블엔 불량 철사가 박혀 있습니다"),
+        ("ja", "ケーブルには不良な針金が入っています"),
+        ("en", "the cables still hold that bad wire"),
+    ):
+        mark = speech_rules.locale(lang)["sentence_end"]
+        assert spoken_line(text, lang).spoken == text + mark
+
+
+@pytest.mark.parametrize("text", [
+    "납품 사기였죠. 그런데 백사십삼년째 멀쩡해요.",
+    "그런데 왜 안 뜯었을까요?",
+    "그게 아직 그대로입니다!",
+    "그리고 그 다음은…",
+])
+def test_a_line_that_already_ends_with_a_mark_is_untouched(text):
+    """두 번 찍지 않는다 — `?..`는 엔진이 다르게 읽는다."""
+    assert spoken_line(text, "ko").spoken == text
+
+
+def test_the_mark_is_not_latin_in_japanese():
+    """일본어에 라틴 마침표를 찍으면 엔진이 약어로 읽는다 (ADR-0089 결정 3)."""
+    assert speech_rules.locale("ja")["sentence_end"] == "。"
+    assert spoken_line("十二センチ積もった雪", "ja").spoken.endswith("。")
+
+
+def test_sentence_endings_come_from_the_contract_not_the_code():
+    """`speech`와 `sync`가 **같은 집합**을 봐야 붙여 놓고도 알아본다 (ADR-0089).
+
+    갈리면 일본어 줄마다 "문장부호로 끝나지 않는다"는 거짓 경고가 난다.
+    """
+    from shorts_factory.tts import sync
+
+    endings = speech_rules.sentence_endings()
+    assert sync.SENTENCE_ENDINGS == endings
+    for lang in speech_rules.languages():
+        assert speech_rules.locale(lang)["sentence_end"] in endings
+
+
+def test_a_language_without_a_locale_block_is_not_closed(monkeypatch):
+    """로케일 블록이 없으면 아무것도 안 한다 — 닫기도 로케일의 것이다 (ADR-0063의 태도)."""
+    assert spoken_line("12cm", "xx").spoken == "12cm"
+
+
+def test_the_closed_line_keeps_the_line_count():
+    """닫기가 줄을 나누거나 합치지 않는다 (씬 경계의 전제 — ADR-0013)."""
+    lines = ["첫 줄입니다", "둘째 줄이죠", "셋째 줄이에요"]
+    result = spoken_lines(lines, "ko")
+    assert len(result.lines) == len(lines)
+    assert all(line.endswith(".") for line in result.lines)
+    assert not result.warnings

@@ -167,6 +167,20 @@ def format_vocab() -> str:
         "\n표시는 **구도 위의 주석**이다 (ADR-0075) — 이것 하나가 정보를 다 지게 두지 마라.\n"
     )
 
+    blocks.append(
+        "\n## reference (실물 참조를 first frame에 물릴지, 선택 — ADR-0087)\n"
+    )
+    blocks.append(
+        "\n".join(
+            f"- `{value}` — {item.get('gloss', '')}"
+            for value, item in _entries("reference_mode")
+        )
+    )
+    blocks.append(
+        "\n비우면 `identity`다. `none`은 **실물이 없는 대상**(개념도·은유·컷 모델)과 "
+        "**형태·배치가 곧 정보인 씬**(도면·단면)에만 쓴다.\n"
+    )
+
     blocks.append("\n## unit (info.labels에 쓰는 단위 기호 — ASCII만)\n")
     blocks.append(
         ", ".join(f"`{value}`({item.get('gloss', '')})" for value, item in _entries("unit"))

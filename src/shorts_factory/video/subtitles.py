@@ -112,6 +112,7 @@ TITLE_SHADOW = _TITLE["shadow"]
 #: 일본어 행두 금칙 — 이 글자로 줄을 시작하지 않는다 (ADR-0074 결정 5).
 TITLE_KINSOKU = _TITLE["kinsoku"]
 
+
 #: 자막 블록의 **아래끝**을 밴드의 아래끝에 맞추는 하단 여백(px). 위끝은 줄 수에 따라
 #: 움직이며(1줄 78.7% / 2줄 75.4%) 둘 다 밴드 안이다 — `subtitle_band()`가 계산한다.
 MARGIN_V = round(PLAY_RES_Y * (1 - BAND[1]))
@@ -491,6 +492,9 @@ def build_ass(
     `title`이 있으면 **첫 씬 구간 동안 상단에 뜨는 제목 훅**을 얹는다 (ADR-0065).
     빈 문자열이면 지금까지와 완전히 같은 문서가 나온다 (D-3). 제목은 자막의 2배 크기라
     **줄당 상한도 줄 수도 자막과 다른 값을 쓴다** (ADR-0074).
+
+    엔딩 실사 구간에는 자막이 없다 (ADR-0096이 ADR-0090의 CTA를 폐기했다) — 이 문서는
+    씬 큐와 제목 훅만 담는다.
     """
     limit = max_line_chars_for(lang) if lang else MAX_LINE_CHARS
     if not scenes:

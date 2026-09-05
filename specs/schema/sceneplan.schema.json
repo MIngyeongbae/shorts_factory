@@ -83,6 +83,9 @@
         "info": {
           "$ref": "scene.schema.json#/$defs/scene/properties/info"
         },
+        "reference": {
+          "$ref": "scene.schema.json#/$defs/scene/properties/reference"
+        },
         "notes": {
           "$ref": "scene.schema.json#/$defs/scene/properties/notes"
         }

@@ -96,6 +96,7 @@ def clip_filter(
     height: int = HEIGHT,
     fps: int = FPS,
     pad: bool = False,
+    grade: str = "",
 ) -> str:
     """입력 클립 하나를 규격에 맞춘다.
 
@@ -105,13 +106,20 @@ def clip_filter(
 
     `pad=True`면 `trim` 앞에 `tpad`로 마지막 프레임을 `length`까지 복제한다 — 클립이 씬보다
     짧을 때(`[7]`의 10초 클램프)만이다 (스펙 05 `[9]`). 길면 `trim`이 그대로 자른다.
+
+    `grade`는 그 언어의 채널 룩이다 (ADR-0093). **부르는 쪽이 씬에만 넘긴다** — 엔딩
+    실사에 걸면 ADR-0055의 무수정 표시가 깨진다. 빈 문자열이면 지금까지와 같은 체인이다.
     """
     head = f"tpad=stop_mode=clone:stop_duration={length:.3f}," if pad else ""
+    #: 규격을 맞춘 **뒤에** 건다 — `scale` 앞에 두면 원본 해상도에서 돌아 느리기만 하다.
+    #: `format` 앞이라 그레이드가 8비트로 깎이기 전에 끝난다.
+    look = f"{grade}," if grade else ""
     return (
         f"[{index}:v]"
         f"{head}"
         f"trim=end={length:.3f},setpts=PTS-STARTPTS,"
         f"scale={width}:{height},setsar=1,fps={fps},settb=1/{fps},"
+        f"{look}"
         f"format={PIXEL_FORMAT}"
         f"[{label}]"
     )
@@ -127,11 +135,16 @@ def build_filter_graph(
     fps: int = FPS,
     output_label: str = "vout",
     pad_indices: Sequence[int] = (),
+    grade: str = "",
 ) -> str:
     """전환 계획 + 자막 파일 → `-filter_complex` 문자열.
 
     `subtitles`/`fontsdir`은 **이미 escape된** 경로 문자열이다 (`escape_filter_path`).
     `pad_indices`는 마지막 프레임을 정지로 늘려야 하는 입력 번호다 (`clip_filter`의 `pad`).
+
+    `grade`는 그 언어의 채널 룩이다 (ADR-0093). **씬 세그먼트에만 걸고 엔딩 실사에는 안
+    건다** — ADR-0055의 무수정 표시가 `cc-by-sa` 사진을 실을 근거이고 색보정은 개작이다.
+    자막은 이 함수의 마지막 단계(`ass`)라 **그레이드가 흰 글자에 닿지 않는다.**
     """
     segments = timeline.segments
     if not segments:
@@ -147,6 +160,8 @@ def build_filter_graph(
             height=height,
             fps=fps,
             pad=index in padded,
+            #: 엔딩 실사는 무수정으로 나간다 (ADR-0055) — 색보정은 개작이다.
+            grade=grade if segment.is_scene else "",
         )
         for index, segment in enumerate(segments)
     ]

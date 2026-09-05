@@ -18,6 +18,7 @@ from conftest import HOOVER, PISA, install_script
 from timed_fixtures import install_run, timed_document
 
 from shorts_factory.cli import parse_args
+from shorts_factory.schemas import ending as ending_schema
 from shorts_factory.stages.assemble import (
     STAGE,
     AssembleStageError,
@@ -33,6 +34,7 @@ from shorts_factory.video.subtitles import (
     title_max_line_chars_for,
     TITLE_STYLE_NAME,
     parse_ass,
+    parse_timestamp,
 )
 
 
@@ -413,7 +415,6 @@ def install_ending(paths, run_id, count=2, *, seconds=2.4, clips=True):
     """`[8]`이 끝난 상태 — `ending.json`과 렌더된 컷."""
     from shorts_factory.config import write_text
     from shorts_factory.jsonio import dump_json
-    from shorts_factory.schemas import ending as ending_schema
 
     run_dir = paths.run_dir(run_id)
     photos = [
@@ -450,6 +451,56 @@ def test_ending_is_appended_after_the_last_scene(pisa):
     assert inputs[-2:] == ["ending/1.mp4", "ending/2.mp4"]
     assert result.ending_cuts == 2
     assert result.scene_count == len(document["scenes"])
+
+
+def _ending_inputs(call) -> list[str]:
+    """한 언어의 FFmpeg 호출에서 엔딩 클립 입력만."""
+    cmd = call["cmd"]
+    return [
+        cmd[i + 1]
+        for i, arg in enumerate(cmd)
+        if arg == "-i" and str(cmd[i + 1]).startswith("ending/")
+    ]
+
+
+def test_each_language_takes_a_different_slice_of_the_ending_pool(paths):
+    """**세 언어가 겹치는 사진이 하나도 없다** — 풀이 넉넉할 때 (ADR-0092)."""
+    run_id, _document = install_run(paths, PISA, langs={"ja": 1.13, "en": 0.78})
+    install_ending(paths, run_id, ending_schema.pool_size())
+    ffmpeg = FakeFFmpeg()
+
+    result = run(paths, run_id, ffmpeg=ffmpeg)
+
+    picked = [_ending_inputs(call) for call in ffmpeg.calls]
+    assert all(len(clips) == ending_schema.max_photos() for clips in picked)
+    flat = [clip for clips in picked for clip in clips]
+    assert len(set(flat)) == len(flat), f"언어끼리 사진이 겹쳤다: {picked}"
+    assert result.ending_cuts == ending_schema.max_photos()
+
+
+def test_a_shallow_pool_still_gives_each_language_a_different_order(paths):
+    """풀이 모자라면 사진은 겹치되 **구성과 순서가 다르다** (ADR-0092)."""
+    run_id, _document = install_run(paths, PISA, langs={"ja": 1.13, "en": 0.78})
+    install_ending(paths, run_id, ending_schema.max_photos() + 1)
+    ffmpeg = FakeFFmpeg()
+
+    result = run(paths, run_id, ffmpeg=ffmpeg)
+
+    picked = [_ending_inputs(call) for call in ffmpeg.calls]
+    assert len({tuple(clips) for clips in picked}) == 3, f"순서가 같다: {picked}"
+    #: 얕은 풀은 경고할 일이 아니다 — 갈리기는 갈린다. 경고는 1장일 때만이다.
+    assert not any("1장뿐" in w for w in result.warnings)
+
+
+def test_a_one_photo_pool_warns_that_the_languages_cannot_differ(paths):
+    """**못 고치는 자리라 오류가 아니다** — 경고만 남기고 엔딩은 그대로 붙인다 (D-3)."""
+    run_id, _document = install_run(paths, PISA)
+    install_ending(paths, run_id, 1)
+
+    result = run(paths, run_id)
+
+    assert result.ending_cuts == 1
+    assert any("1장뿐" in w for w in result.warnings)
 
 
 def test_ending_extends_the_timeline_but_not_the_narration(pisa):

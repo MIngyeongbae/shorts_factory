@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..gate import strip_gate_block
 from ..config import Paths, write_text
 from ..judgment import JudgmentError, read_video_line
 from ..jsonio import dump_json
@@ -338,7 +339,7 @@ def run_scenetable_stage(
             f"대본이 없다: {script_path}. [3s]는 새 편(script.md) 전용이다 — "
             "[3. tts]를 먼저 실행해야 한다."
         )
-    script_text = script_path.read_text(encoding="utf-8")
+    script_text = strip_gate_block(script_path.read_text(encoding="utf-8"))
 
     # 인포씬 라벨 수치의 근거 확인 **전용** 예외다 (specs/05 경계 절). 없으면 인포씬
     # 지정만 빠지고 단계는 돈다 (D-3).

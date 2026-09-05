@@ -29,6 +29,9 @@ from .scriptmd import (
     format_limits,
     load_prompt,
     split_factcheck_output,
+    attach_gate_block,
+    split_gate_block,
+    strip_gate_block,
 )
 
 log = logging.getLogger(__name__)
@@ -116,14 +119,19 @@ def run_factcheck_stage(
         prompt = load_prompt(PROMPT_FILE).substitute(
             topic=topic,
             seed_url=seed_url or "(시드 URL 미기재 — script.md 머리의 '시드' 참조)",
-            script=script_text,
+            script=strip_gate_block(script_text),
             limits=format_limits("total_chars", "line_count", "line_chars_max"),
         )
         result = llm.run(prompt, allowed_tools=WEB_TOOLS, timeout=timeout, label=STAGE)
         fact_text, new_script = split_factcheck_output(result.text)
         write_text(factcheck_path, fact_text)
         if new_script is not None:
-            write_text(script_path, new_script.rstrip() + "\n")
+            # 세션 산출은 `#`으로 시작해 판정 블록이 없다 — 옛 블록을 되붙인다 (ADR-0094 결정 3).
+            gate_block, _ = split_gate_block(script_text)
+            write_text(
+                script_path,
+                attach_gate_block(new_script.rstrip() + "\n", gate_block),
+            )
     except Exception as exc:
         state.mark_failed(STAGE, f"{type(exc).__name__}: {exc}")
         raise

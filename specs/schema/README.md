@@ -18,6 +18,7 @@ specs/schema/script-rules.json   ← 무엇인가.  코드가 로드한다
 | `promptplan.schema.json` | `[5]` 세션 산출(씬별 샷 서술) — SUBJECT 단락·카메라 착지·RED 기하, 영어·ASCII·길이 (ADR-0060) + 프레임 라인의 `mj_subject`(ADR-0071). 골격 조립은 코드가 `vocab.json`에서 | `schemas/promptplan.py` |
 | `script-rules.json` | 대본 결과 제약(분량 엔벨로프·검사 값) + 언어별 로케일 블록 자리 (ADR-0056) | `schemas/script_rules.py` |
 | `subtitle-style.json` | 번인 자막의 렌더 값 (레이어 B, ADR-0002) | `video/subtitles.py` |
+| `channel-look.json` | **채널마다 화면을 가르는 값** — `[9]`가 씬 클립마다 거는 언어별 그레이드 (ADR-0093, ko는 비어 있고 그것이 정상이다) + **언어별 겹풀이 새로 사는 씬(`clip_scenes` — ADR-0095, ja 홀수 · en 짝수)**. 씬 간 밝기 낙차를 줄이는 안은 여기 없다 (ADR-0093 「보류한 안 A」) | `video/grade.py` → `video/ffmpeg.py`, `video/clips.py`(`clip_scenes`) → `[7]`·`[9]`·`[9t]` |
 | `speech-rules.json` | 발화형 — TTS에 보낼 때 숫자·단위를 그 언어가 읽는 대로 펴는 로케일별 수사표·단위 사전 (ADR-0063) + 한자를 쓰는 로케일의 **읽기 절** 규칙 (`reading_line`, ADR-0073). 자막은 원문을 쓴다 | `schemas/speech_rules.py` → `tts/speech.py`, `stages/scriptmd.py`, `stages/localize.py` |
 | `beat-defaults.json` | 비트별 연출 **기본값**. 지시가 아니라 폴백이고, ADR-0033을 되돌릴 자리다 | `schemas/visual_rules.py` |
 | `refs.schema.json` | `[4]` 산출(`refs.json`) — 씬별 실사 참조(서술)와 게시 가능 라이선스 (ADR-0030·0055) | `schemas/refs.py`, `[8]` |

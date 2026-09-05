@@ -310,3 +310,111 @@ def test_empty_megapixels_env_falls_back_to_the_template(monkeypatch):
     client = ComfyH3Client(transport=FakeTransport([]))
     assert client.megapixels is None
     assert client.base_url == "http://127.0.0.1:8188"
+
+
+# --- first-only 어댑터 (ADR-0087 결정 6) ---------------------------------------
+
+
+class LooseTransport(FakeTransport):
+    """멀티파트 업로드 바디가 섞여도 죽지 않는 트랜스포트."""
+
+    def __call__(self, method, url, headers, body, timeout):
+        try:
+            parsed = json.loads(body) if body else None
+        except (ValueError, UnicodeDecodeError):
+            parsed = {"_multipart": len(body or b"")}
+        self.calls.append({
+            "method": method, "url": url, "headers": headers,
+            "body": parsed, "timeout": timeout, "raw": body,
+        })
+        item = self.responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        status, payload = item
+        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        return status, raw
+
+
+def first_client(transport, **kwargs):
+    from shorts_factory.videogen.comfy_h3 import ComfyH3FirstClient
+
+    kwargs.setdefault("base_url", "http://comfy.test:8188")
+    kwargs.setdefault("seed_fn", lambda: 4242)
+    return ComfyH3FirstClient(
+        transport=transport, poll_interval=0, sleep=lambda _s: None, **kwargs,
+    )
+
+
+def test_the_first_only_template_has_no_last_frame():
+    """`h3-f2v`는 first 하나만 받는다 — 그것이 `fl2v`와 갈리는 유일한 지점이다."""
+    from shorts_factory.videogen.comfy_h3 import (
+        F2V_TEMPLATE_PATH, FL2V_TEMPLATE_PATH, TITLE_FIRST, TITLE_LAST,
+        find_node, find_node_by_title, load_template,
+    )
+
+    f2v = load_template(F2V_TEMPLATE_PATH)
+    fl2v = load_template(FL2V_TEMPLATE_PATH)
+    node = f2v[find_node(f2v, "MiniMaxH3ImageToVideo")]["inputs"]
+    assert "first_frame" in node and "last_frame" not in node
+    assert find_node_by_title(f2v, TITLE_FIRST)
+    with pytest.raises(VideoProviderNotConfigured):
+        find_node_by_title(f2v, TITLE_LAST)
+    # 나머지는 fl2v 그대로다 — LoadImage·ImageScale 한 쌍만 빠졌다.
+    assert len(fl2v) - len(f2v) == 2
+
+
+def test_a_local_frame_path_is_read_from_disk_not_fetched(tmp_path):
+    """`local`의 프레임 주소는 로컬 경로다 (ADR-0087 결정 7) — HTTP로 받으러 가지 않는다."""
+    frame = tmp_path / "1-clean.png"
+    frame.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(16))
+    transport = LooseTransport([
+        (200, {"name": "sf-s4-clean.png", "subfolder": ""}),   # /upload/image
+        (200, {"prompt_id": PROMPT_ID, "node_errors": {}}),
+        (200, history_done()),
+        (200, MP4),
+    ])
+    clip = first_client(transport).generate(request_for(first_frame=frame.as_posix()))
+
+    assert clip.data == MP4
+    upload, submit, _poll, _view = transport.calls
+    assert upload["url"].endswith("/upload/image")
+    # 모든 호출이 ComfyUI로만 갔다 — 프레임을 받으러 밖으로 나가지 않았다.
+    assert all(call["url"].startswith("http://comfy.test:8188") for call in transport.calls)
+    workflow = submit["body"]["prompt"]
+    from shorts_factory.videogen.comfy_h3 import TITLE_FIRST, find_node_by_title
+    assert workflow[find_node_by_title(workflow, TITLE_FIRST)]["inputs"]["image"] == "sf-s4-clean.png"
+
+
+def test_a_missing_first_frame_stops_the_scene():
+    """first가 없으면 멈춘다 — 조용히 텍스트→영상으로 내려가지 않는다."""
+    with pytest.raises(VideoGenError, match="first"):
+        first_client(LooseTransport([])).generate(request_for(first_frame=None))
+
+
+def test_the_first_only_adapter_does_not_require_a_last_frame():
+    """`fl2v`는 둘 다 요구한다 — 그 자리를 안 건드리고 새 경로를 단 것이 이 어댑터다."""
+    from shorts_factory.videogen.comfy_h3 import ComfyH3FirstLastClient
+
+    with pytest.raises(VideoGenError, match="둘 다"):
+        ComfyH3FirstLastClient(
+            transport=LooseTransport([]), poll_interval=0, sleep=lambda _s: None,
+        ).generate(request_for(first_frame="https://x/1.png", last_frame=None))
+
+
+def test_the_first_only_adapter_is_wired_and_ready():
+    """`reference_frames`를 켠 라인이 가리킬 어댑터가 실제로 있다 (ADR-0034).
+
+    지금 그 스위치를 켠 라인은 없다 — `local`이 2026-09-02에 껐다(H3가 프레임을 이어 그리지
+    않는다). **어댑터와 템플릿은 남겨 둔다**: 프레임을 이어 그리는 엔진이 생기면 어휘 한 줄로
+    다시 켜는 자리이고, 그때 이 배선이 이미 서 있어야 한다.
+    """
+    from shorts_factory.videogen.comfy_h3 import ComfyH3FirstClient
+
+    assert ComfyH3FirstClient.name == "comfy-h3-f2v"
+    assert ComfyH3FirstClient.accepts_frames is True
+    assert F2V_TEMPLATE_PATH_EXISTS(), "h3-f2v 템플릿이 없다"
+
+
+def F2V_TEMPLATE_PATH_EXISTS() -> bool:
+    from shorts_factory.videogen.comfy_h3 import F2V_TEMPLATE_PATH
+    return F2V_TEMPLATE_PATH.is_file()

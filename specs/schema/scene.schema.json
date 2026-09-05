@@ -207,6 +207,10 @@
             }
           }
         },
+        "reference": {
+          "$ref": "vocab.json#/$defs/reference_mode",
+          "description": "선택. 실물 참조 사진을 first frame에 어떻게 물릴지 (ADR-0087). `[3s]`가 씬마다 고르고 `[6]`이 그 값을 IP-Adapter에 건다 — 값(weight·start_at)은 `vocab.json` `meta.reference_mode`가 진다. **빈칸이면 `_default`(`identity`)다.** `reference_frames` 라인의 `info` 없는 씬에서만 쓰이고, 다른 라인·`info` 씬에서는 무시된다. **참조 사진이 없는 씬은 어떤 값이든 참조 없이 그린다** — 강등이 아니다."
+        },
         "notes": {
           "type": "string"
         },

@@ -223,8 +223,12 @@ def extend_with_ending(
     ending_clips: Sequence[float],
     *,
     source_dir: str,
+    clip_ids: Sequence[int] | None = None,
 ) -> Timeline:
     """씬 타임라인 뒤에 엔딩 실사 컷을 잇는다 (ADR-0055). `ending_clips`는 장당 표시 초.
+
+    `clip_ids`는 그 컷이 여는 **파일의 id**다 (ADR-0092) — `ending.json`의 풀에서 이
+    언어가 고른 사진들이라 자리 번호와 다르다. 생략하면 자리를 그대로 쓴다.
 
     ## 왜 하드컷으로 진입하는가 — 기하가 정한다
 
@@ -256,9 +260,13 @@ def extend_with_ending(
     cursor = timeline.total_duration
     for index, seconds in enumerate(ending_clips, start=1):
         last = index == len(ending_clips)
+        # 파일을 가리키는 것은 **자리(index)가 아니라 풀에서 고른 컷 id**다 (ADR-0092) —
+        # 언어마다 다른 사진을 다른 순서로 쓰므로 둘이 갈린다. `clip_ids`가 없으면
+        # 자리를 그대로 쓴다 (배분 없이 쓰던 옛 `ending.json`).
+        clip_id = clip_ids[index - 1] if clip_ids is not None else index
         segments.append(
             Segment(
-                scene_id=index,
+                scene_id=clip_id,
                 beat=ENDING_BEAT,
                 start=cursor,
                 end=round(cursor + seconds, 3),
